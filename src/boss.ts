@@ -1,4 +1,5 @@
-import { TUNING } from './config';
+import { DEBRIS, TUNING } from './config';
+import { driftSpin, driftVelocity, stepDrift } from './debris';
 
 /**
  * Layered, carvable boss.
@@ -177,8 +178,7 @@ interface Fragment {
 
 /** Orphans at or below this many pixels are simply dusted away instead of becoming fragments. */
 const SPECK_PIXELS = 14;
-const FRAGMENT_GRAVITY = 520;
-const FRAGMENT_LIFE = 2.4;
+const FRAGMENT_LIFE = DEBRIS.life;
 const CONNECTIVITY_INTERVAL = 0.08;
 
 /** 8-connected component labelling of a mask; labels start at 1. */
@@ -295,10 +295,7 @@ export class Boss {
 
     for (const f of this.fragments) {
       f.age += dt;
-      f.vy += FRAGMENT_GRAVITY * dt;
-      f.x += f.vx * dt;
-      f.y += f.vy * dt;
-      f.rot += f.spin * dt;
+      stepDrift(f, dt);
     }
     this.fragments = this.fragments.filter((f) => f.age < FRAGMENT_LIFE);
   }
@@ -409,15 +406,15 @@ export class Boss {
       const wy = this.y + minY[c] + bh / 2;
       if (cv && fd) {
         cv.getContext('2d')!.putImageData(fd, 0, 0);
-        const dir = wx < this.x + this.core.x ? -1 : 1;
+        const v = driftVelocity({ x: wx, y: wy }, { x: this.x + this.core.x, y: this.y + this.core.y });
         this.fragments.push({
           canvas: cv,
           x: wx,
           y: wy,
-          vx: dir * (20 + Math.random() * 50),
-          vy: -30 + Math.random() * 40,
+          vx: v.vx,
+          vy: v.vy,
           rot: 0,
-          spin: dir * (0.6 + Math.random() * 1.6),
+          spin: driftSpin(v.vx),
           age: 0,
         });
       }
@@ -642,7 +639,7 @@ export class Boss {
 
     for (const f of this.fragments) {
       ctx.save();
-      ctx.globalAlpha = Math.min(1, (FRAGMENT_LIFE - f.age) / 0.8);
+      ctx.globalAlpha = Math.min(1, (FRAGMENT_LIFE - f.age) / DEBRIS.fade);
       ctx.translate(Math.round(f.x), Math.round(f.y));
       ctx.rotate(f.rot);
       ctx.drawImage(f.canvas, -f.canvas.width / 2, -f.canvas.height / 2);
