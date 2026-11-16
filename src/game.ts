@@ -278,7 +278,7 @@ export class Game {
         this.bossDefIndex = (this.bossDefIndex + 1) % BOSSES.length;
         this.setBoss(BOSSES[this.bossDefIndex]);
         break;
-      case 'KeyG':
+      case 'KeyE':
         this.fight.rooms.forceExpose(); // debug: trigger the next room's exposure reaction
         break;
       case 'KeyH':
@@ -770,7 +770,7 @@ export class Game {
       `next: ${this.fight.describeNext()}  [pixel ${this.fight.pixelDamagePercent.toFixed(1)}% core ${this.fight.coreDamagePercent.toFixed(1)}%]`,
       `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${TUNING.player.maxHealth}  hitbox r=${TUNING.player.hitbox}`,
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
-      `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component/room hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]  expose room [G]`,
+      `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component/room hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]  expose room [E]`,
     ];
     ctx.save();
     ctx.globalAlpha = 0.7;
