@@ -136,6 +136,8 @@ export class Game {
       health: this.health,
       attacks: this.attacks,
       setAttacks: (on: boolean) => (this.attacks.enabled = on),
+      components: this.fight.components,
+      setComponentDebug: (on: boolean) => (this.fight.components.debug = on),
       /** Advance the sim `seconds` of game time without rendering (for scripted measurements). */
       simulate: (seconds: number, mode: 'off' | 'sweep' | 'focus' = this.auto) => {
         this.auto = mode;
@@ -172,6 +174,8 @@ export class Game {
 
   private makeFight(def: BossDefinition = BOSSES[this.bossDefIndex]): BossFight {
     const fight = new BossFight(def);
+    fight.components.target = this.ship;
+    this.attacks.sources = fight.components;
     this.attacks.setScript(fight.makeScheduler());
     fight.onPhaseChange = (phase) => {
       this.attacks.setScript(fight.makeScheduler());
@@ -243,6 +247,9 @@ export class Game {
       case 'KeyB':
         this.bossDefIndex = (this.bossDefIndex + 1) % BOSSES.length;
         this.setBoss(BOSSES[this.bossDefIndex]);
+        break;
+      case 'KeyH':
+        this.fight.components.debug = !this.fight.components.debug;
         break;
       case 'KeyJ':
         this.fx.enabled = this.sfx.enabled = !this.fx.enabled;
@@ -339,6 +346,7 @@ export class Game {
     }
     this.updateThreat(dt);
     this.updateBullets(dt);
+    this.drainComponentEvents();
     this.updateParticles(dt);
     this.trackClears();
 
@@ -377,14 +385,26 @@ export class Game {
     }
   }
 
-  /** 0..1 multiplier on core damage: TUNING.coreArmor.min when fully walled in, 1 when all layers are gone. */
-  private coreVulnerability(): number {
-    const ls = this.boss.layers;
-    let dug = 0;
-    for (let i = 0; i < ls.length; i++) dug += 1 - Math.min(1, this.boss.layerRemaining(i) / 0.95);
-    dug = Math.max(0, Math.min(1, dug / ls.length));
-    const min = TUNING.coreArmor.min;
-    return min + (1 - min) * dug;
+  /** Juice and sound for what the boss's components did this frame (hits, damage states, destruction). */
+  private drainComponentEvents(): void {
+    for (const e of this.fight.components.events.splice(0)) {
+      switch (e.kind) {
+        case 'hit':
+          this.fx.onComponentHit();
+          this.sfx.componentHit();
+          break;
+        case 'state':
+          this.sfx.componentDamage(e.level);
+          break;
+        case 'destroy':
+          this.fx.onComponentDestroy(e.blast);
+          this.sfx.componentDestroy(e.blast);
+          break;
+        case 'detach':
+          this.sfx.componentDamage(1);
+          break;
+      }
+    }
   }
 
   private trackClears(): void {
@@ -501,13 +521,18 @@ export class Game {
 
   private resolveImpact(b: Bullet): void {
     const budget = b.energy * (1 - b.pierce);
+    // A component under the bullet takes the hit (hidden hp, no numbers) and consumes the bullet.
+    if (this.fight.components.hit(b.x, b.y, b.energy)) {
+      b.alive = false;
+      return;
+    }
     const hpBefore = this.boss.core.hp;
     const res = this.boss.hit(b.x, b.y, budget);
     if (!res) return;
     if (res.core) {
       // Core armor: a bullet tunnelled straight in only scratches the core until the outer layers are dug away.
       const dealt = hpBefore - this.boss.core.hp;
-      this.boss.core.hp = hpBefore - dealt * this.coreVulnerability();
+      this.boss.core.hp = hpBefore - dealt * this.fight.coreVulnerability();
     }
 
     this.fx.onHit(b.x, b.y, res.carved, res.spent, res.core);
@@ -596,6 +621,8 @@ export class Game {
 
     if (!this.boss.defeated || this.elapsed - this.wonAt < 1.2) this.enrageTint.render(ctx, this.boss, this.fight);
     this.attacks.drawBossDim(ctx);
+    this.fight.components.drawFx(ctx);
+    if (this.fight.components.debug) this.fight.components.drawDebug(ctx);
     this.drawBullets();
     this.attacks.draw(ctx);
     this.drawParticles();
@@ -666,7 +693,7 @@ export class Game {
       `cleared <=5%: ${[...this.boss.layers.map((l) => l.name.toLowerCase()), 'core']
         .map((n, i) => `${n} ${this.clearAt[i] == null ? '--' : this.clearAt[i]!.toFixed(1) + 's'}`)
         .join('  ')}`,
-      `core ${Math.ceil(this.boss.core.hp)} / ${TUNING.coreHp}  dmg taken x${this.coreVulnerability().toFixed(2)}`,
+      `core ${Math.ceil(this.boss.core.hp)} / ${TUNING.coreHp}  dmg taken x${this.fight.coreVulnerability().toFixed(2)}`,
       `dmg ${s.damage} [1/2]  rate ${s.fireRate} [3/4]`,
       `TEST MODE (fast dig) ${this.testMode ? 'ON' : 'off'} [Y]  autopilot ${this.auto} [P]`,
       `shots ${s.projectiles} [5/6]  pierce ${s.pierce} [7/8]  reset stats [0]`,
@@ -676,7 +703,7 @@ export class Game {
       `next: ${this.fight.describeNext()}  [pixel ${this.fight.pixelDamagePercent.toFixed(1)}% core ${this.fight.coreDamagePercent.toFixed(1)}%]`,
       `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${TUNING.player.maxHealth}  hitbox r=${TUNING.player.hitbox}`,
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
-      `juice ${this.fx.enabled ? 'on' : 'off'} [J]`,
+      `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]`,
     ];
     ctx.save();
     ctx.globalAlpha = 0.7;

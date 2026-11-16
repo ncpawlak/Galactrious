@@ -67,6 +67,22 @@ export class Effects {
     else this.numbers.push({ x, y, value, age: 0, core });
   }
 
+  /** A bullet hit a boss component: a tiny shake, no number. */
+  onComponentHit(): void {
+    if (!this.enabled) return;
+    this.addTrauma(0.03);
+  }
+
+  /** A component blew up: a punchy shake and a short hit stop, bigger for blasts. */
+  onComponentDestroy(blast: boolean): void {
+    if (!this.enabled) return;
+    this.addTrauma(blast ? 0.5 : 0.22);
+    if (this.stopCooldown <= 0) {
+      this.stop = blast ? 0.05 : 0.025;
+      this.stopCooldown = JUICE.hitStop.cooldown;
+    }
+  }
+
   onExplosion(): void {
     if (!this.enabled) return;
     this.addTrauma(JUICE.shake.explosion);

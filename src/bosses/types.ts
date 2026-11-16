@@ -1,6 +1,7 @@
 import type { BossSpec } from '../boss';
 import type { AttackStep } from '../attackSchedulers';
 import type { Movement } from '../movement';
+import type { ComponentSpec, CoreArmorSpec, PhaseComponents } from '../components';
 
 /**
  * When a phase begins. Evaluated while the PREVIOUS phase is running, so phases advance in list
@@ -39,6 +40,8 @@ export interface PhaseDefinition {
   attackDelay?: number;
   /** Marks this phase as an enrage phase (see EnrageCue). Overrides `attackDelay` with the breather. */
   enrage?: EnrageCue;
+  /** Enable/disable components and apply modifiers (e.g. turret interval x0.6) from this phase on. */
+  components?: PhaseComponents;
 }
 
 /**
@@ -55,6 +58,10 @@ export interface BossDefinition {
   spawn: { x: number; y: number };
   /** Flip the layout horizontally once at load (layers, rooms, core, anchors). Not live. */
   mirror?: boolean;
+  /** Turrets, explosive pieces, ... attached at `BossSpec.anchors` points (mirrored with the layout). */
+  components?: ComponentSpec[];
+  /** Core armor rules. Default: the old formula (TUNING.coreArmor.min, ramping with how much is dug). */
+  coreArmor?: CoreArmorSpec;
   /** At least one phase. */
   phases: PhaseDefinition[];
 }
