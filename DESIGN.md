@@ -31,8 +31,8 @@ TypeScript + Vite + Canvas 2D, 540x960 logical portrait resolution.
 
 ## Boss definition framework
 Bosses and mini-bosses are data with the same shape (`BossDefinition`, `src/bosses/types.ts`).
-One file per boss in `src/bosses/`, registered in `src/bosses/index.ts` (the first entry is the
-default; `[B]` in debug cycles them). `src/bossFight.ts` (`BossFight`) runs a definition.
+One file per boss in `src/bosses/`, registered in `src/bosses/index.ts` (`DEFAULT_BOSS_ID` picks the
+boss the game starts on, currently `bulwark-rooms`; `[B]` in debug cycles them in list order). `src/bossFight.ts` (`BossFight`) runs a definition.
 
 - **Definition**: `id`, `name`, `layout()` (builds the layered masks + core), `spawn` (anchor: centre x, top y) and `phases[]`.
 - **Phase**: `name`, `movement`, `attacks` (ordered `AttackStep`s, looped), optional `attackDelay`, and a `trigger` (required for every phase after the first).

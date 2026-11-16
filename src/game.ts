@@ -3,7 +3,7 @@ import { Sfx } from './audio';
 import type { Boss } from './boss';
 import { BossFight } from './bossFight';
 import { EnrageTint } from './enrage';
-import { BOSSES, type BossDefinition } from './bosses';
+import { BOSSES, DEFAULT_BOSS_ID, type BossDefinition } from './bosses';
 import { H, TUNING, W } from './config';
 import { DebugPanel, modifierMult } from './debugControls';
 import { Effects } from './effects';
@@ -70,7 +70,7 @@ export class Game {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly input: Input;
   private fight: BossFight;
-  private bossDefIndex = 0;
+  private bossDefIndex = Math.max(0, BOSSES.findIndex((b) => b.id === DEFAULT_BOSS_ID));
   private stats: ShipStats = { ...DEFAULT_STATS };
   private ship = { x: W / 2, y: H - 140 };
   private bullets: Bullet[] = [];
