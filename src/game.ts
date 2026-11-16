@@ -4,7 +4,7 @@ import type { Boss } from './boss';
 import { BossFight } from './bossFight';
 import { EnrageTint } from './enrage';
 import { BOSSES, DEFAULT_BOSS_ID, type BossDefinition } from './bosses';
-import { H, TUNING, W } from './config';
+import { BLAST, H, setBlastScale, TUNING, W } from './config';
 import { DebugPanel, modifierMult } from './debugControls';
 import { Effects } from './effects';
 import { Hud } from './hud';
@@ -127,6 +127,7 @@ export class Game {
         },
         resetAll: () => {
           this.godMode = false;
+          setBlastScale(1);
           this.resetStats();
         },
       },
@@ -173,6 +174,7 @@ export class Game {
         for (let t = 0; t < seconds; t += 1 / 60) this.update(1 / 60);
         return this.clearTimes();
       },
+      setBlastScale: (v: number) => setBlastScale(v),
       setSwept: (on: boolean) => (this.sweptBullets = on),
       setAuto: (m: 'off' | 'sweep' | 'focus') => (this.auto = m),
       setTestMode: (on: boolean) => this.setTestMode(on),
@@ -322,6 +324,10 @@ export class Game {
       case 'BracketRight':
         this.panel.scaleDamage(2);
         break;
+      case 'Minus':
+      case 'Equal':
+        this.panel.adjustBlast(code === 'Minus' ? -1 : 1, this.heldMult() > 1 ? 4 : 1);
+        break;
       case 'KeyG':
         this.godMode = !this.godMode;
         break;
@@ -452,8 +458,8 @@ export class Game {
           this.sfx.componentDamage(e.level);
           break;
         case 'destroy':
-          this.fx.onComponentDestroy(e.blast);
-          this.sfx.componentDestroy(e.blast);
+          this.fx.onComponentDestroy(e.radius);
+          this.sfx.componentDestroy(e.radius);
           break;
         case 'detach':
           this.sfx.componentDamage(1);
@@ -768,6 +774,7 @@ export class Game {
       `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${TUNING.player.maxHealth}  hitbox r=${TUNING.player.hitbox}`,
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component/room hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]  expose room [E]`,
+      `blast scale x${BLAST.scale.toFixed(2)} [-/=] (+Shift x4)  r: turret ${BLAST.defaults.turret.radius} expl ${BLAST.defaults.explosive.radius} room ${BLAST.defaults.room.radius}`,
     ];
     ctx.save();
     ctx.globalAlpha = 0.7;

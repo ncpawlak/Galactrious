@@ -29,6 +29,7 @@ Open the printed URL (use the `--host` address on a phone on the same network).
     Clicks on it never steer the ship.
   - Damage is clamped to 1 .. 1,000,000 and fire rate to 1 .. 200. Very high damage is safe: each bullet carves at most one
     fixed-size hole, so cost stays bounded; the core is never carved away, so a 100,000 bullet that reaches it kills it.
+- Blast size: `-` / `=` lower / raise **`BLAST.scale`** by 0.25 (`Shift` = x4 steps; 0.25 .. 4, default 1) and the debug panel's BLAST row does the same; RESET ALL sets it back to 1. It scales every component and room blast at once (per-type defaults are in `BLAST.defaults`, `src/config.ts`), shown in the overlay. `game.debug.setBlastScale(2)` for scripted runs.
 - Debug: `Y` toggles **test mode** (fast dig preset, `TUNING.testMode`; off by default), `P` cycles a scripted
   autopilot (off / steady sweep / aim at core). The overlay shows per-layer clear times (<=5% left);
   `game.debug.simulate(seconds, 'sweep' | 'focus')` runs the sim headless and returns them.

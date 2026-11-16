@@ -85,19 +85,21 @@ export class Sfx {
     this.tone(c, 500 - level * 80, 120, 0.18, 'sawtooth', JUICE.audio.volume * 0.7);
   }
 
-  /** A component was destroyed: a pop, or a boom for an explosive one. */
-  componentDestroy(blast: boolean): void {
+  /** A component was destroyed: louder, longer and deeper with the blast radius (px). */
+  componentDestroy(radius: number): void {
     const c = this.ready();
     if (!c || !this.noise) return;
+    const size = Math.min(2, Math.max(0.4, radius / 100));
+    const dur = 0.25 + 0.4 * size;
     const src = c.createBufferSource();
     src.buffer = this.noise;
     const f = c.createBiquadFilter();
     f.type = 'lowpass';
-    f.frequency.setValueAtTime(blast ? 1400 : 2600, c.currentTime);
-    f.frequency.exponentialRampToValueAtTime(100, c.currentTime + (blast ? 0.6 : 0.3));
-    this.envelope(c, src.connect(f), blast ? 0.6 : 0.3, JUICE.audio.volume * (blast ? 1.6 : 1.1));
+    f.frequency.setValueAtTime(2800 / Math.sqrt(size), c.currentTime);
+    f.frequency.exponentialRampToValueAtTime(100 / Math.sqrt(size), c.currentTime + dur);
+    this.envelope(c, src.connect(f), dur, JUICE.audio.volume * (0.8 + 0.7 * size));
     src.start(c.currentTime, Math.random() * 0.4, 0.7);
-    this.tone(c, blast ? 110 : 200, 40, blast ? 0.5 : 0.25, 'sine', JUICE.audio.volume * 1.4);
+    this.tone(c, 210 / size, 40, 0.2 + 0.3 * size, 'sine', JUICE.audio.volume * (1 + 0.4 * size));
   }
 
   /** A room's console was first exposed: a short two-beep warning. */

@@ -142,7 +142,6 @@ export const bulwarkTurret = (id: string, anchor: string, group: string, turretS
   group,
   enabled,
   turret: turretSpec,
-  crater: { radius: 20, energy: 2200 },
 });
 
 /**

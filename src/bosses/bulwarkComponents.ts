@@ -49,7 +49,6 @@ export const BULWARK_COMPONENTS: ComponentSpec[] = [
     mount: 'embedded',
     layer: 1,
     group: 'tank',
-    blast: { radius: 110, energy: 12000, damage: 500, coreDamage: 220, falloff: 1 },
   },
   {
     id: 'reactor-tank',
@@ -60,7 +59,7 @@ export const BULWARK_COMPONENTS: ComponentSpec[] = [
     mount: 'embedded',
     layer: 2,
     group: 'tank',
-    blast: { radius: 85, energy: 9000, damage: 400, coreDamage: 450, falloff: 1 },
+    blast: { radius: 100, coreDamage: 450 },
   },
   {
     id: 'fuel-pod',
@@ -70,7 +69,7 @@ export const BULWARK_COMPONENTS: ComponentSpec[] = [
     hp: 120,
     mount: 'surface',
     group: 'tank',
-    blast: { radius: 75, energy: 6000, damage: 450, coreDamage: 150, falloff: 1 },
+    blast: { radius: 90, coreDamage: 150 },
   },
 ];
 

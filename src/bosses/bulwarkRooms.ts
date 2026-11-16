@@ -74,7 +74,7 @@ export const BULWARK_ROOMS: RoomSpec[] = [
     function: 'Hangar fuel',
     consoles: [{ anchor: 'fuelA' }, { anchor: 'fuelB' }, { anchor: 'fuelC' }],
     onExposed: [{ kind: 'attack', pattern: aimedShot, count: 2, gap: 0.4 }],
-    explodeOnDisable: { radius: 95, energy: 9000, damage: 460, coreDamage: 200, falloff: 1 },
+    explodeOnDisable: { radius: 110 },
   },
 ];
 

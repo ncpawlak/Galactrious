@@ -79,12 +79,13 @@ export class Effects {
     this.addTrauma(0.3);
   }
 
-  /** A component blew up: a punchy shake and a short hit stop, bigger for blasts. */
-  onComponentDestroy(blast: boolean): void {
+  /** A component blew up: shake and hit stop grow with the blast radius (px). */
+  onComponentDestroy(radius: number): void {
     if (!this.enabled) return;
-    this.addTrauma(blast ? 0.5 : 0.22);
+    const { destroy } = JUICE;
+    this.addTrauma(Math.min(destroy.maxShake, destroy.shakeBase + radius * destroy.shakePerPx), destroy.maxTrauma);
     if (this.stopCooldown <= 0) {
-      this.stop = blast ? 0.05 : 0.025;
+      this.stop = Math.min(destroy.maxStop, destroy.stopBase + radius * destroy.stopPerPx);
       this.stopCooldown = JUICE.hitStop.cooldown;
     }
   }
@@ -100,8 +101,8 @@ export class Effects {
     this.trauma = 1;
   }
 
-  private addTrauma(a: number): void {
-    this.trauma = Math.min(1, Math.max(this.trauma, Math.min(JUICE.shake.maxTrauma, this.trauma + a)));
+  private addTrauma(a: number, cap = JUICE.shake.maxTrauma): void {
+    this.trauma = Math.min(1, Math.max(this.trauma, Math.min(cap, this.trauma + a)));
   }
 
   /** Call before drawing the world. Pair with `endShake`. */

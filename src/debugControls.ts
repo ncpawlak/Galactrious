@@ -3,6 +3,8 @@
  * and the pure helpers behind them. Kept out of game.ts so the game only wires it up.
  */
 
+import { BLAST, setBlastScale } from './config';
+
 export const DAMAGE_MIN = 1;
 /** Upper clamp. Bullet energy only feeds bounded loops (fixed carve tables), so this is about sanity, not safety. */
 export const DAMAGE_MAX = 1_000_000;
@@ -97,6 +99,11 @@ export class DebugPanel {
     s.fireRate = Math.min(RATE_MAX, Math.max(RATE_MIN, s.fireRate + dir * mult));
   }
 
+  /** Blast size scale (BLAST.scale), one step per press ([-] / [=]); `mult` 4 = coarse. */
+  adjustBlast(dir: 1 | -1, mult = 1): number {
+    return setBlastScale(BLAST.scale + dir * BLAST.step * mult);
+  }
+
   toggleOpen(): void {
     this.open = !this.open;
     this.layout();
@@ -109,7 +116,7 @@ export class DebugPanel {
   private layout(): void {
     const b: Button[] = [];
     const x0 = this.px;
-    const rows = this.open ? 6 : 1;
+    const rows = this.open ? 7 : 1;
     this.ph = rows * ROW + 6;
     this.py = this.H - this.ph - 8;
     const y = (r: number) => this.py + 4 + r * ROW;
@@ -140,16 +147,18 @@ export class DebugPanel {
       b.push({ label: 'x10', x: x0 + 124, y: y(3), w: 56, h: ROW - 4, on: () => this.scaleDamage(10) });
       b.push({ label: '-', x: x0 + 4, y: y(4), w: 34, h: ROW - 4, on: () => this.adjustRate(-1, m()) });
       b.push({ label: '+', x: x0 + PW - 38, y: y(4), w: 34, h: ROW - 4, on: () => this.adjustRate(1, m()) });
+      b.push({ label: '-', x: x0 + 4, y: y(5), w: 34, h: ROW - 4, on: () => this.adjustBlast(-1, m()) });
+      b.push({ label: '+', x: x0 + PW - 38, y: y(5), w: 34, h: ROW - 4, on: () => this.adjustBlast(1, m()) });
       b.push({
         label: 'GOD MODE',
         x: x0 + 4,
-        y: y(5),
+        y: y(6),
         w: 124,
         h: ROW - 4,
         on: () => (this.host.godMode = !this.host.godMode),
         active: () => this.host.godMode,
       });
-      b.push({ label: 'RESET ALL', x: x0 + 132, y: y(5), w: 126, h: ROW - 4, on: () => this.host.resetAll() });
+      b.push({ label: 'RESET ALL', x: x0 + 132, y: y(6), w: 126, h: ROW - 4, on: () => this.host.resetAll() });
     }
     this.buttons = b;
   }
@@ -199,6 +208,8 @@ export class DebugPanel {
       ctx.fillText(`DMG ${fmt(s.damage)}`, x0 + PW / 2, row(1) + 1);
       ctx.fillStyle = '#9ff6ff';
       ctx.fillText(`RATE ${s.fireRate}/s`, x0 + PW / 2, row(4) + 1);
+      ctx.fillStyle = '#ffb27a';
+      ctx.fillText(`BLAST x${BLAST.scale.toFixed(2)}`, x0 + PW / 2, row(5) + 1);
     }
     ctx.restore();
   }

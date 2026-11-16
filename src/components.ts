@@ -1,6 +1,7 @@
 import type { Boss } from './boss';
 import type { Point } from './hazards';
 import { driftSpin, driftVelocity, stepDrift } from './debris';
+import { BLAST } from './config';
 
 /**
  * Boss components (DESIGN.md "Boss anatomy: components"): objects attached to a boss at named anchor
@@ -26,6 +27,31 @@ export interface BlastSpec {
   coreDamage?: number;
   /** Falloff exponent on (1 - distance / radius): 1 = linear (default), <1 = flatter, >1 = sharper. */
   falloff?: number;
+}
+
+/** Blast kinds with a default size in `BLAST.defaults`. */
+export type BlastKind = keyof typeof BLAST.defaults;
+
+export interface ResolvedBlast extends Required<BlastSpec> {
+  /** How far the shock reaches other components and the core: grows only with scale^reachExp, so big scales do not chain the whole boss. */
+  reach: number;
+}
+
+/**
+ * The effective blast for a type: defaults, then `over`, with the global `BLAST.scale` applied
+ * (radius x scale^radiusExp, energy x scale^energyExp, damage and coreDamage x scale^damageExp).
+ */
+export function resolveBlast(kind: BlastKind, over?: Partial<BlastSpec>): ResolvedBlast {
+  const d = BLAST.defaults[kind];
+  const radius = over?.radius ?? d.radius;
+  const areaK = (radius / d.radius) ** 2;
+  const s = BLAST.scale;
+  const rK = s ** BLAST.radiusExp;
+  const eK = s ** BLAST.energyExp;
+  const dK = s ** BLAST.damageExp;
+  const energy = (over?.energy ?? d.energy * areaK) * eK;
+  const damage = (over?.damage ?? d.damage) * dK;
+  return { radius: radius * rK, reach: radius * s ** BLAST.reachExp, energy, damage, coreDamage: (over?.coreDamage ?? d.coreDamage) * dK, falloff: over?.falloff ?? d.falloff };
 }
 
 export interface TurretSpec {
@@ -56,7 +82,8 @@ export interface ComponentSpec {
   /** Start inert (turrets do not fire; still shootable). Phases can enable it. Default true. */
   enabled?: boolean;
   turret?: TurretSpec;
-  blast?: BlastSpec;
+  /** Overrides for this component's blast; missing fields come from `BLAST.defaults` for its type. Every turret, explosive and console blasts. */
+  blast?: Partial<BlastSpec>;
   /** Crater carved on destruction (defaults radius = spec radius, energy = radius^2 * 6). */
   crater?: { radius?: number; energy?: number };
   /** On destruction, disable these components (ids or groups). */
@@ -101,7 +128,7 @@ export interface SourceGate {
 export type ComponentEvent =
   | { kind: 'hit'; x: number; y: number }
   | { kind: 'state'; x: number; y: number; level: number }
-  | { kind: 'destroy'; x: number; y: number; blast: boolean; radius: number }
+  | { kind: 'destroy'; x: number; y: number; blast: boolean; radius: number; type: ComponentType | 'room' }
   | { kind: 'detach'; x: number; y: number }
   /** A room's first console just became visible: its reaction starts (telegraph, sound, shake). */
   | { kind: 'roomExposed'; x: number; y: number; name: string }
@@ -367,22 +394,21 @@ export class ComponentSystem implements SourceGate {
   private explode(c: BossComponent): void {
     const p = this.pos(c);
     c.state = 'destroyed';
-    const blast = c.spec.blast;
-    this.events.push({ kind: 'destroy', x: p.x, y: p.y, blast: !!blast, radius: blast?.radius ?? c.spec.radius });
+    const blast = resolveBlast(c.spec.type, c.spec.blast);
+    this.events.push({ kind: 'destroy', x: p.x, y: p.y, blast: true, radius: blast.radius, type: c.spec.type });
 
-    // Crater: a radial carve using the usual density rules.
+    // Own footprint first (explicit `crater` overrides the default hit-radius crater); the blast then carves wider.
     const cr = c.spec.crater;
     const cRad = cr?.radius ?? c.spec.radius;
     this.boss.carveRadial(c.lx, c.ly, cRad, cr?.energy ?? cRad * cRad * 6, 1);
 
-    this.destroyEffect(p.x, p.y, c);
-
-    if (blast) this.blastAt(c.lx, c.ly, p, blast, c);
+    this.destroyEffect(p.x, p.y, c, blast.radius);
+    this.blastAt(c.lx, c.ly, p, blast, c);
     for (const k of c.spec.disables ?? []) for (const o of this.items) if (o.matches(k)) o.enabled = false;
   }
 
   /** Carve, damage neighbours (chains) and hurt the core around layout point (lx, ly), screen position `p`. Never touches the player. */
-  private blastAt(lx: number, ly: number, p: Point, blast: BlastSpec, self: BossComponent | null): void {
+  private blastAt(lx: number, ly: number, p: Point, blast: ResolvedBlast, self: BossComponent | null): void {
     this.boss.carveRadial(lx, ly, blast.radius, blast.energy, blast.falloff ?? 1);
     const f = blast.falloff ?? 1;
     const dmg = blast.damage ?? blast.energy / 20;
@@ -411,13 +437,11 @@ export class ComponentSystem implements SourceGate {
   }
 
   /** A room blows up (explodeOnDisable): the same blast, crater and chain as an explosive piece, boss-only. */
-  roomBlast(lx: number, ly: number, blast: BlastSpec): void {
+  roomBlast(lx: number, ly: number, over?: Partial<BlastSpec>): void {
     const p = { x: this.boss.x + lx, y: this.boss.y + ly };
-    this.events.push({ kind: 'destroy', x: p.x, y: p.y, blast: true, radius: blast.radius });
-    this.particles.push({ x: p.x, y: p.y, vx: 0, vy: 0, life: 0.4, max: 0.4, size: 0, color: '255, 170, 60', kind: 'ring', r1: blast.radius });
-    this.particles.push({ x: p.x, y: p.y, vx: 0, vy: 0, life: 0.18, max: 0.18, size: 0, color: '255, 250, 220', kind: 'flash', r1: blast.radius * 0.6 });
-    this.spark(p.x, p.y, 24, '#ff9a3c');
-    this.smoke(p.x, p.y, 8);
+    const blast = resolveBlast('room', over);
+    this.events.push({ kind: 'destroy', x: p.x, y: p.y, blast: true, radius: blast.radius, type: 'room' });
+    this.blastEffect(p.x, p.y, blast.radius, '#ff9a3c', '#b8541f');
     this.blastAt(lx, ly, p, blast, null);
     this.flush();
   }
@@ -573,17 +597,17 @@ export class ComponentSystem implements SourceGate {
 
   // --- effects ------------------------------------------------------------------------------
 
-  private spark(x: number, y: number, n: number, color: string): void {
-    for (let i = 0; i < n && this.particles.length < 400; i++) {
+  private spark(x: number, y: number, n: number, color: string, speed = 1): void {
+    for (let i = 0; i < n && this.particles.length < 600; i++) {
       const a = Math.random() * Math.PI * 2;
-      const s = 60 + Math.random() * 140;
+      const s = (60 + Math.random() * 140) * speed;
       const life = 0.2 + Math.random() * 0.25;
       this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life, max: life, size: 2, color, kind: 'spark', r1: 0 });
     }
   }
 
   private smoke(x: number, y: number, n: number): void {
-    for (let i = 0; i < n && this.particles.length < 400; i++) {
+    for (let i = 0; i < n && this.particles.length < 600; i++) {
       const life = 0.7 + Math.random() * 0.5;
       this.particles.push({
         x: x + (Math.random() - 0.5) * 8,
@@ -600,18 +624,26 @@ export class ComponentSystem implements SourceGate {
     }
   }
 
-  private destroyEffect(x: number, y: number, c: BossComponent): void {
-    const big = !!c.spec.blast;
-    const R = big ? c.spec.blast!.radius : c.spec.radius * 2.2;
-    this.particles.push({ x, y, vx: 0, vy: 0, life: big ? 0.4 : 0.25, max: big ? 0.4 : 0.25, size: 0, color: big ? '255, 170, 60' : '255, 220, 140', kind: 'ring', r1: R });
-    this.particles.push({ x, y, vx: 0, vy: 0, life: 0.18, max: 0.18, size: 0, color: '255, 250, 220', kind: 'flash', r1: R * 0.6 });
-    this.spark(x, y, big ? 22 : 12, big ? '#ff9a3c' : '#ffe08a');
-    this.smoke(x, y, big ? 8 : 4);
-    // Shards drift outward: debris floats away, it does not fall.
-    for (let i = 0; i < (big ? 10 : 7) && this.particles.length < 400; i++) {
-      const v = driftVelocity({ x, y }, { x, y }, 0.8);
+  private destroyEffect(x: number, y: number, c: BossComponent, R: number): void {
+    const shard = c.spec.type === 'turret' ? '#59627a' : c.spec.type === 'console' ? '#3f8f9a' : '#b8541f';
+    this.blastEffect(x, y, R, c.spec.type === 'explosive' ? '#ff9a3c' : '#ffc468', shard);
+  }
+
+  /** Visuals for a blast of radius R: shock ring, flash, sparks, smoke and drifting shards, all growing with R. */
+  private blastEffect(x: number, y: number, R: number, sparkColor: string, shard: string): void {
+    const k = R / 100;
+    const ringLife = 0.25 + R / 330;
+    this.particles.push({ x, y, vx: 0, vy: 0, life: ringLife, max: ringLife, size: 0, color: '255, 170, 60', kind: 'ring', r1: R });
+    this.particles.push({ x, y, vx: 0, vy: 0, life: ringLife * 0.6, max: ringLife * 0.6, size: 0, color: '255, 235, 190', kind: 'ring', r1: R * 0.6 });
+    this.particles.push({ x, y, vx: 0, vy: 0, life: 0.14 + R / 900, max: 0.14 + R / 900, size: 0, color: '255, 250, 220', kind: 'flash', r1: R * 0.7 });
+    this.spark(x, y, Math.round(10 + R / 4), sparkColor, 1 + k * 0.6);
+    this.smoke(x, y, Math.round(3 + R / 12));
+    // Shards drift outward (debris floats away, it never falls): more, bigger and faster with the blast.
+    const n = Math.round(6 + R / 8);
+    for (let i = 0; i < n && this.particles.length < 600; i++) {
+      const v = driftVelocity({ x, y }, { x, y }, 0.8 + k * 0.7);
       const life = 1.2 + Math.random() * 1.0;
-      this.particles.push({ x, y, vx: v.vx, vy: v.vy, life, max: life, size: 2 + Math.random() * 3, color: c.spec.type === 'turret' ? '#59627a' : c.spec.type === 'console' ? '#3f8f9a' : '#b8541f', kind: 'shard', r1: 0 });
+      this.particles.push({ x, y, vx: v.vx, vy: v.vy, life, max: life, size: 2 + Math.random() * (2 + k * 2), color: shard, kind: 'shard', r1: 0 });
     }
   }
 
