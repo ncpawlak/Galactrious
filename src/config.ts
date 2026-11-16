@@ -4,12 +4,16 @@ export const H = 960;
 
 /** Tunables for milestone 1. Densities: energy spent per pixel carved. */
 export const TUNING = {
-  densities: { hull: 0.5, frame: 4.0, rooms: 3.0 },
+  densities: { hull: 0.05, frame: 0.8, rooms: 1.5 },
   /** Starting ship stats (live-adjustable with the debug keys). */
-  ship: { damage: 450, fireRate: 30 },
-  coreHp: 4000,
+  ship: { damage: 90, fireRate: 12 },
+  /** Debug test-mode preset (toggle with [Y]): the fast values from PR #21, for quick iteration. */
+  testMode: { damage: 450, fireRate: 30 },
+  coreHp: 8000,
+  /** Core takes only this fraction of damage while fully walled in; ramps to 100% as the layers are dug away. */
+  coreArmor: { min: 0.1 },
   /** Carve shape: higher lateralPenalty = narrower, deeper tunnels. reach = max depth in px. */
-  carve: { lateralPenalty: 1.7, backPenalty: 2.5, reach: 80 },
+  carve: { lateralPenalty: 1.7, backPenalty: 2.5, reach: 110 },
   bulletSpeed: 1500,
   sway: { amplitude: 55, period: 8 },
   boss: { x: W / 2, y: 40 },
