@@ -1,4 +1,5 @@
 import { H, TUNING, W } from './config';
+import { DebugScheduler, type AttackScheduler } from './attackSchedulers';
 import { drawBullet, dimBoss, type StyleName } from './attackStyles';
 import { drawHazard, hazardPhase, shapeHits, type Hazard, type Point } from './hazards';
 
@@ -39,7 +40,7 @@ export interface AttackPattern {
   fire(ctx: AttackContext): void;
 }
 
-const aimedShot: AttackPattern = {
+export const aimedShot: AttackPattern = {
   name: 'aimed',
   interval: TUNING.attacks.aimed.interval,
   style: 'aimed',
@@ -53,7 +54,7 @@ const aimedShot: AttackPattern = {
   },
 };
 
-const directVolley: AttackPattern = {
+export const directVolley: AttackPattern = {
   name: 'direct',
   interval: TUNING.attacks.direct.interval,
   style: 'direct',
@@ -66,7 +67,7 @@ const directVolley: AttackPattern = {
 
 const RAD = Math.PI / 180;
 
-const lineSweep: AttackPattern = {
+export const lineSweep: AttackPattern = {
   name: 'sweep',
   interval: TUNING.attacks.sweep.interval,
   fire({ origin, spawnHazard }) {
@@ -90,7 +91,7 @@ const lineSweep: AttackPattern = {
   },
 };
 
-const bomb: AttackPattern = {
+export const bomb: AttackPattern = {
   name: 'bomb',
   interval: TUNING.attacks.bomb.interval,
   fire({ origin, target, spawnHazard }) {
@@ -109,24 +110,30 @@ const bomb: AttackPattern = {
 
 export const PATTERNS: AttackPattern[] = [aimedShot, directVolley, lineSweep, bomb];
 
-export type ScheduleMode = 'cycle' | 'random';
+/** 'phase' = the current boss phase's scripted attack set; 'cycle' / 'random' = debug schedulers over every pattern. */
+export type ScheduleMode = 'phase' | 'cycle' | 'random';
 
-/** Owns enemy bullets, hazards and the (debug) scheduler. Knows nothing about the player's health. */
+/** Owns enemy bullets, hazards and the active scheduler. Knows nothing about the player's health. */
 export class Attacks {
   enabled = true;
-  mode: ScheduleMode = 'cycle';
+  mode: ScheduleMode = 'phase';
   /** Debug: pattern index used by `fireSelected`. */
   selected = 0;
   bullets: EnemyBullet[] = [];
   hazards: Hazard[] = [];
-  private next = 0;
-  private timer = 1;
+  private readonly debugScheduler = new DebugScheduler(PATTERNS);
+  private script: AttackScheduler | null = null;
   private clock = 0;
+
+  /** Set the scripted scheduler (the boss phase's attack set). Called on fight start and on each phase change. */
+  setScript(s: AttackScheduler): void {
+    this.script = s;
+  }
 
   reset(): void {
     this.clear();
-    this.next = 0;
-    this.timer = 1;
+    this.debugScheduler.reset();
+    this.script?.reset();
   }
 
   clear(): void {
@@ -134,13 +141,23 @@ export class Attacks {
     this.hazards = [];
   }
 
+  /** Debug [N]: phase script -> cycle all -> random all -> phase script. */
   toggleMode(): void {
-    this.mode = this.mode === 'cycle' ? 'random' : 'cycle';
+    this.mode = this.mode === 'phase' ? 'cycle' : this.mode === 'cycle' ? 'random' : 'phase';
+    this.debugScheduler.mode = this.mode === 'random' ? 'random' : 'cycle';
+    this.debugScheduler.reset();
   }
 
-  /** Fire pattern `i` now, regardless of the schedule. */
+  private get scheduler(): AttackScheduler | null {
+    return this.mode === 'phase' ? this.script : this.debugScheduler;
+  }
+
+  /** Fire pattern `i` of PATTERNS now, regardless of the schedule. */
   fire(i: number, origin: () => Point, target: Point): void {
-    const p = PATTERNS[i];
+    this.firePattern(PATTERNS[i], origin, target);
+  }
+
+  firePattern(p: AttackPattern, origin: () => Point, target: Point): void {
     p.fire({
       origin,
       target,
@@ -155,13 +172,8 @@ export class Attacks {
 
   update(dt: number, origin: () => Point, target: Point, firing: boolean): void {
     if (this.enabled && firing) {
-      this.timer -= dt;
-      if (this.timer <= 0) {
-        const i = this.mode === 'random' ? Math.floor(Math.random() * PATTERNS.length) : this.next;
-        this.next = (i + 1) % PATTERNS.length;
-        this.timer = PATTERNS[i].interval;
-        this.fire(i, origin, target);
-      }
+      const p = this.scheduler?.update(dt);
+      if (p) this.firePattern(p, origin, target);
     }
     for (const b of this.bullets) {
       b.x += b.vx * dt;

@@ -203,8 +203,9 @@ export class Boss {
   x: number;
   y: number;
   baseX: number;
-  swayEnabled = true;
-  private time = 0;
+  baseY: number;
+  private offsetX = 0;
+  private offsetY = 0;
   private coreFlash = 0;
   private fragments: Fragment[] = [];
   private checkTimer = 0;
@@ -226,19 +227,23 @@ export class Boss {
     this.baseX = centerX - spec.width / 2;
     this.x = this.baseX;
     this.y = topY;
+    this.baseY = topY;
   }
 
   get defeated(): boolean {
     return this.core.hp <= 0;
   }
 
-  update(dt: number, sway: { amplitude: number; period: number }): void {
-    this.time += dt;
+  /** Where the boss sits relative to its anchor; set each frame by the BossFight from the phase's movement. */
+  setOffset(dx: number, dy: number): void {
+    this.offsetX = dx;
+    this.offsetY = dy;
+  }
+
+  update(dt: number): void {
     this.coreFlash = Math.max(0, this.coreFlash - dt);
-    this.x = this.baseX;
-    if (this.swayEnabled) {
-      this.x += Math.sin((this.time / sway.period) * Math.PI * 2) * sway.amplitude;
-    }
+    this.x = this.baseX + this.offsetX;
+    this.y = this.baseY + this.offsetY;
 
     this.checkTimer -= dt;
     if (this.checkTimer <= 0 && this.layers.some((l) => l.needsCheck)) {

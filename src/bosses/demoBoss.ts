@@ -1,5 +1,8 @@
-import type { BossSpec } from './boss';
-import { TUNING } from './config';
+import type { BossSpec } from '../boss';
+import { TUNING } from '../config';
+import { aimedShot, bomb, directVolley, lineSweep } from '../attacks';
+import { still, sway } from '../movement';
+import type { BossDefinition } from './types';
 
 /**
  * Demo boss built from rectangles that mirror the design mockups. The result is the same shape a
@@ -104,3 +107,48 @@ export function createDemoBoss(): BossSpec {
     core: { x: 189, y: 71, radius: 16, hp: TUNING.coreHp },
   };
 }
+
+/**
+ * The default boss: one phase reproducing the original fight (sway from TUNING.sway, all four
+ * attack patterns cycled with their own intervals).
+ */
+export const demoBoss: BossDefinition = {
+  id: 'demo',
+  name: 'Demo boss',
+  layout: createDemoBoss,
+  spawn: TUNING.boss,
+  phases: [
+    {
+      name: 'Phase 1',
+      movement: sway(TUNING.sway.amplitude, TUNING.sway.period),
+      attacks: [aimedShot, directVolley, lineSweep, bomb].map((pattern) => ({ pattern })),
+    },
+  ],
+};
+
+/**
+ * Example of a multi-phase definition, selectable in-game with [B]. Phase 2 starts when 15% of the
+ * boss pixels are gone (damage trigger), phase 3 after 12 s in phase 2 (timer trigger).
+ */
+export const demoBossPhased: BossDefinition = {
+  id: 'demo-phased',
+  name: 'Demo boss (3 phases)',
+  layout: createDemoBoss,
+  spawn: TUNING.boss,
+  phases: [
+    demoBoss.phases[0],
+    {
+      name: 'Phase 2: faster',
+      trigger: { kind: 'damage', percent: 15 },
+      movement: sway(TUNING.sway.amplitude * 1.6, TUNING.sway.period * 0.5),
+      attacks: [directVolley, aimedShot, bomb].map((pattern) => ({ pattern, interval: pattern.interval * 0.7 })),
+      attackDelay: 1.5,
+    },
+    {
+      name: 'Phase 3: still',
+      trigger: { kind: 'phaseTime', seconds: 12 },
+      movement: still,
+      attacks: [lineSweep, bomb].map((pattern) => ({ pattern })),
+    },
+  ],
+};
