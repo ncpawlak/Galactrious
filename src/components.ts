@@ -1,5 +1,6 @@
 import type { Boss } from './boss';
 import type { Point } from './hazards';
+import { driftSpin, driftVelocity, stepDrift } from './debris';
 
 /**
  * Boss components (DESIGN.md "Boss anatomy: components"): objects attached to a boss at named anchor
@@ -106,7 +107,6 @@ const RAD = Math.PI / 180;
 const HIT_FLASH = 0.09;
 const CHAIN_DELAY = 0.07;
 const DRIFT_LIFE = 2.4;
-const DRIFT_SPEED = 55;
 const DEFAULT_TELEGRAPH = 0.5;
 
 interface Crack {
@@ -409,14 +409,10 @@ export class ComponentSystem implements SourceGate {
     const p = this.pos(c);
     const cx = this.boss.x + this.boss.core.x;
     const cy = this.boss.y + this.boss.core.y;
-    let dx = p.x - cx;
-    let dy = p.y - cy;
-    const len = Math.hypot(dx, dy) || 1;
-    dx /= len;
-    dy /= len;
+    const v = driftVelocity(p, { x: cx, y: cy });
     this.queue = this.queue.filter((q) => q.c !== c);
     c.state = 'detached';
-    c.drift = { x: p.x, y: p.y, vx: dx * DRIFT_SPEED, vy: dy * DRIFT_SPEED - 8, rot: 0, spin: (dx >= 0 ? 1 : -1) * (0.8 + Math.random()), age: 0 };
+    c.drift = { x: p.x, y: p.y, vx: v.vx, vy: v.vy, rot: 0, spin: driftSpin(v.vx), age: 0 };
     this.events.push({ kind: 'detach', x: p.x, y: p.y });
   }
 
@@ -446,9 +442,7 @@ export class ComponentSystem implements SourceGate {
       if (c.state === 'detached') {
         const d = c.drift;
         d.age += dt;
-        d.x += d.vx * dt;
-        d.y += d.vy * dt;
-        d.rot += d.spin * dt;
+        stepDrift(d, dt);
         continue;
       }
       if (c.state !== 'active') continue;
@@ -538,10 +532,9 @@ export class ComponentSystem implements SourceGate {
     this.smoke(x, y, big ? 8 : 4);
     // Shards drift outward: debris floats away, it does not fall.
     for (let i = 0; i < (big ? 10 : 7) && this.particles.length < 400; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = 40 + Math.random() * 90;
+      const v = driftVelocity({ x, y }, { x, y }, 0.8);
       const life = 1.2 + Math.random() * 1.0;
-      this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life, max: life, size: 2 + Math.random() * 3, color: c.spec.type === 'turret' ? '#59627a' : '#b8541f', kind: 'shard', r1: 0 });
+      this.particles.push({ x, y, vx: v.vx, vy: v.vy, life, max: life, size: 2 + Math.random() * 3, color: c.spec.type === 'turret' ? '#59627a' : '#b8541f', kind: 'shard', r1: 0 });
     }
   }
 
