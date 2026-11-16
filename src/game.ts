@@ -4,6 +4,7 @@ import { H, TUNING, W } from './config';
 import { createDemoBoss } from './demoBoss';
 import { Effects } from './effects';
 import { Input } from './input';
+import { Dodge } from './player';
 
 export interface ShipStats {
   /** Energy per bullet. */
@@ -68,6 +69,7 @@ export class Game {
   private bullets: Bullet[] = [];
   private particles: Particle[] = [];
   private readonly stars: Star[] = [];
+  private readonly dodge = new Dodge();
   private fireTimer = 0;
   private state: State = 'playing';
   private elapsed = 0;
@@ -93,6 +95,7 @@ export class Game {
     }
 
     this.input.onPress = (code) => this.onKey(code);
+    this.input.onDodge = () => this.tryDodge();
     this.input.onPointerDown = () => {
       this.sfx.resume();
       if (this.state === 'won' && this.elapsed - this.wonAt > 1) this.reset();
@@ -106,7 +109,7 @@ export class Game {
 
   /** Exposed on `window` for console/automated testing. */
   get debug() {
-    return { boss: this.boss, stats: this.stats, ship: this.ship, bullets: this.bullets };
+    return { boss: this.boss, stats: this.stats, ship: this.ship, bullets: this.bullets, dodge: this.dodge };
   }
 
   private makeBoss(): Boss {
@@ -119,6 +122,7 @@ export class Game {
     this.boss.swayEnabled = sway;
     this.bullets = [];
     this.particles = [];
+    this.dodge.reset();
     this.state = 'playing';
     this.elapsed = 0;
     this.fx.reset();
@@ -128,6 +132,11 @@ export class Game {
     this.sfx.resume();
     const s = this.stats;
     switch (code) {
+      case 'ShiftLeft':
+      case 'ShiftRight':
+      case 'KeyX':
+        this.tryDodge();
+        break;
       case 'KeyR':
         this.reset();
         break;
@@ -168,6 +177,16 @@ export class Game {
         Object.assign(this.stats, DEFAULT_STATS);
         break;
     }
+  }
+
+  private tryDodge(): void {
+    if (this.state !== 'playing') return;
+    let { x, y } = this.input.axis();
+    if (x === 0 && y === 0) {
+      // Pointer steering: dash toward the finger; otherwise default to a sideways dash.
+      x = this.input.pointerDown ? Math.sign(this.input.px - this.ship.x) : this.ship.x < W / 2 ? 1 : -1;
+    }
+    this.dodge.trigger(x, y);
   }
 
   private frame(now: number): void {
@@ -211,7 +230,11 @@ export class Game {
 
   private moveShip(dt: number): void {
     const ship = this.ship;
-    if (this.input.pointerDown) {
+    const dash = this.dodge.update(dt);
+    if (this.dodge.invulnerable || dash.x !== 0 || dash.y !== 0) {
+      ship.x += dash.x;
+      ship.y += dash.y;
+    } else if (this.input.pointerDown) {
       // Offset above the finger so the ship stays visible.
       const tx = this.input.px;
       const ty = this.input.py - 90;
@@ -365,9 +388,13 @@ export class Game {
     if (!this.boss.defeated || this.elapsed - this.wonAt < 1.2) this.boss.render(ctx);
     this.drawBullets();
     this.drawParticles();
-    if (this.state === 'playing') this.drawShip();
+    if (this.state === 'playing') {
+      this.drawShip();
+      this.dodge.drawShipFx(ctx, this.ship.x, this.ship.y);
+    }
     this.fx.drawNumbers(ctx);
     this.fx.endShake(ctx);
+    if (this.state === 'playing') this.dodge.drawButton(ctx);
     if (this.showDebug) this.drawDebug();
     if (this.state === 'won') this.drawWin();
   }
@@ -420,6 +447,7 @@ export class Game {
       `core ${Math.ceil(this.boss.core.hp)} / ${TUNING.coreHp}`,
       `dmg ${s.damage} [1/2]  rate ${s.fireRate} [3/4]`,
       `shots ${s.projectiles} [5/6]  pierce ${s.pierce} [7/8]  reset stats [0]`,
+      `dodge [Shift/X] ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}${this.dodge.invulnerable ? ' INVULN' : ''}`,
       `sway ${this.boss.swayEnabled ? 'on' : 'off'} [T]  restart [R]  debug [\`]`,
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]`,
     ];
