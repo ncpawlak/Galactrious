@@ -75,8 +75,11 @@ export class Game {
   private state: State = 'playing';
   private elapsed = 0;
   private wonAt = 0;
-  /** Debug: elapsed time when the hull dropped to <=5% remaining (null until then). */
-  private hullClearAt: number | null = null;
+  /** Debug: elapsed time when each layer dropped to <=5% remaining, plus the core at the end (null until then). */
+  private clearAt: (number | null)[] = [];
+  /** Debug: scripted ship control for measuring clear times. 'sweep' = steady side-to-side, 'focus' = aim at the core. */
+  private auto: 'off' | 'sweep' | 'focus' = 'off';
+  private testMode = false;
   private readonly fx = new Effects();
   private readonly sfx = new Sfx();
   private showDebug = true;
@@ -112,7 +115,35 @@ export class Game {
 
   /** Exposed on `window` for console/automated testing. */
   get debug() {
-    return { boss: this.boss, stats: this.stats, ship: this.ship, bullets: this.bullets, dodge: this.dodge };
+    return {
+      boss: this.boss,
+      stats: this.stats,
+      ship: this.ship,
+      bullets: this.bullets,
+      dodge: this.dodge,
+      /** Advance the sim `seconds` of game time without rendering (for scripted measurements). */
+      simulate: (seconds: number, mode: 'off' | 'sweep' | 'focus' = this.auto) => {
+        this.auto = mode;
+        for (let t = 0; t < seconds; t += 1 / 60) this.update(1 / 60);
+        return this.clearTimes();
+      },
+      setAuto: (m: 'off' | 'sweep' | 'focus') => (this.auto = m),
+      setTestMode: (on: boolean) => this.setTestMode(on),
+      reset: () => this.reset(),
+      clearTimes: () => this.clearTimes(),
+    };
+  }
+
+  private clearTimes() {
+    const names = [...this.boss.layers.map((l) => l.name.toLowerCase()), 'core'];
+    return Object.fromEntries(names.map((n, i) => [n, this.clearAt[i] === null || this.clearAt[i] === undefined ? null : +this.clearAt[i]!.toFixed(1)]));
+  }
+
+  private setTestMode(on: boolean): void {
+    this.testMode = on;
+    const p = on ? TUNING.testMode : TUNING.ship;
+    this.stats.damage = p.damage;
+    this.stats.fireRate = p.fireRate;
   }
 
   private readonly hud = new Hud();
@@ -130,7 +161,7 @@ export class Game {
     this.dodge.reset();
     this.state = 'playing';
     this.elapsed = 0;
-    this.hullClearAt = null;
+    this.clearAt = [];
     this.fx.reset();
   }
 
@@ -151,6 +182,12 @@ export class Game {
         break;
       case 'KeyJ':
         this.fx.enabled = this.sfx.enabled = !this.fx.enabled;
+        break;
+      case 'KeyY':
+        this.setTestMode(!this.testMode);
+        break;
+      case 'KeyP':
+        this.auto = this.auto === 'off' ? 'sweep' : this.auto === 'sweep' ? 'focus' : 'off';
         break;
       case 'Backquote':
         this.showDebug = !this.showDebug;
@@ -181,6 +218,7 @@ export class Game {
         break;
       case 'Digit0':
         Object.assign(this.stats, DEFAULT_STATS);
+        this.setTestMode(this.testMode);
         break;
     }
   }
@@ -224,7 +262,7 @@ export class Game {
     }
     this.updateBullets(dt);
     this.updateParticles(dt);
-    if (this.hullClearAt === null && this.boss.layerRemaining(0) <= 0.05) this.hullClearAt = this.elapsed;
+    this.trackClears();
 
     if (this.state === 'playing' && this.boss.defeated) {
       this.state = 'won';
@@ -235,8 +273,41 @@ export class Game {
     }
   }
 
+  /** 0..1 multiplier on core damage: TUNING.coreArmor.min when fully walled in, 1 when all layers are gone. */
+  private coreVulnerability(): number {
+    const ls = this.boss.layers;
+    let dug = 0;
+    for (let i = 0; i < ls.length; i++) dug += 1 - Math.min(1, this.boss.layerRemaining(i) / 0.95);
+    dug = Math.max(0, Math.min(1, dug / ls.length));
+    const min = TUNING.coreArmor.min;
+    return min + (1 - min) * dug;
+  }
+
+  private trackClears(): void {
+    const n = this.boss.layers.length;
+    for (let i = 0; i <= n; i++) {
+      if (this.clearAt[i] != null) continue;
+      const done = i < n ? this.boss.layerRemaining(i) <= 0.05 : this.boss.defeated;
+      if (done) this.clearAt[i] = this.elapsed;
+    }
+  }
+
+  private autoTarget(): number {
+    const b = this.boss;
+    if (this.auto === 'focus') return b.x + b.core.x;
+    // Steady triangle-wave sweep across the boss at 150 px/s.
+    const span = b.width - 40;
+    const phase = (this.elapsed * 150) % (2 * span);
+    return b.x + 20 + (phase < span ? phase : 2 * span - phase);
+  }
+
   private moveShip(dt: number): void {
     const ship = this.ship;
+    if (this.auto !== 'off') {
+      ship.x = this.autoTarget();
+      ship.y = H - 140;
+      return;
+    }
     const dash = this.dodge.update(dt);
     if (this.dodge.invulnerable || dash.x !== 0 || dash.y !== 0) {
       ship.x += dash.x;
@@ -305,8 +376,14 @@ export class Game {
 
   private resolveImpact(b: Bullet): void {
     const budget = b.energy * (1 - b.pierce);
+    const hpBefore = this.boss.core.hp;
     const res = this.boss.hit(b.x, b.y, budget);
     if (!res) return;
+    if (res.core) {
+      // Core armor: a bullet tunnelled straight in only scratches the core until the outer layers are dug away.
+      const dealt = hpBefore - this.boss.core.hp;
+      this.boss.core.hp = hpBefore - dealt * this.coreVulnerability();
+    }
 
     this.fx.onHit(b.x, b.y, res.carved, res.spent, res.core);
     if (res.core) this.sfx.coreHit();
@@ -452,9 +529,12 @@ export class Game {
         (l, i) =>
           `${l.name.padEnd(5)} ${(this.boss.layerRemaining(i) * 100).toFixed(1).padStart(5)}%  d=${l.density}`,
       ),
-      `hull cleared (<=5%): ${this.hullClearAt === null ? '--' : this.hullClearAt.toFixed(1) + 's'}`,
-      `core ${Math.ceil(this.boss.core.hp)} / ${TUNING.coreHp}`,
+      `cleared <=5%: ${[...this.boss.layers.map((l) => l.name.toLowerCase()), 'core']
+        .map((n, i) => `${n} ${this.clearAt[i] == null ? '--' : this.clearAt[i]!.toFixed(1) + 's'}`)
+        .join('  ')}`,
+      `core ${Math.ceil(this.boss.core.hp)} / ${TUNING.coreHp}  dmg taken x${this.coreVulnerability().toFixed(2)}`,
       `dmg ${s.damage} [1/2]  rate ${s.fireRate} [3/4]`,
+      `TEST MODE (fast dig) ${this.testMode ? 'ON' : 'off'} [Y]  autopilot ${this.auto} [P]`,
       `shots ${s.projectiles} [5/6]  pierce ${s.pierce} [7/8]  reset stats [0]`,
       `dodge [Shift/X] ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}${this.dodge.invulnerable ? ' INVULN' : ''}`,
       `sway ${this.boss.swayEnabled ? 'on' : 'off'} [T]  restart [R]  debug [\`]`,
@@ -463,7 +543,7 @@ export class Game {
     ctx.save();
     ctx.globalAlpha = 0.7;
     ctx.fillStyle = '#000';
-    ctx.fillRect(6, 6, 330, lines.length * 15 + 8);
+    ctx.fillRect(6, 6, 400, lines.length * 15 + 8);
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#b9f5c0';
     ctx.font = '12px monospace';

@@ -18,8 +18,11 @@ Open the printed URL (use the `--host` address on a phone on the same network).
 - The ship auto-fires.
 - Tuning keys: `1/2` damage, `3/4` fire rate, `5/6` projectiles, `7/8` pierce, `0` reset stats,
   `T` toggle boss sway, `R` restart, `` ` `` toggle debug overlay.
+- Debug: `Y` toggles **test mode** (fast dig preset, `TUNING.testMode`; off by default), `P` cycles a scripted
+  autopilot (off / steady sweep / aim at core). The overlay shows per-layer clear times (<=5% left);
+  `game.debug.simulate(seconds, 'sweep' | 'focus')` runs the sim headless and returns them.
 
 ## Tuning
 
-Numbers live in `src/config.ts` (densities, core HP, sway, carve shape). The demo boss is built
+Numbers live in `src/config.ts` (densities, core HP, core armor, sway, carve shape). The demo boss is built
 from rectangles in `src/demoBoss.ts`; it produces the same per-layer masks a PNG loader would.
