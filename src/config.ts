@@ -37,6 +37,23 @@ export const TUNING = {
   player: { maxHealth: 5, hitbox: 5, hitInvuln: 1.0, defeatTime: 1.8 },
 };
 
+/** Blown-off boss parts float in space: slow push away from the break point, drag, slow spin, fade. No gravity. */
+export const DEBRIS = {
+  /** Initial drift speed range, px/s. */
+  speedMin: 28,
+  speedMax: 60,
+  /** Max random deviation from straight-outward, radians. */
+  angleJitter: 0.45,
+  /** Velocity decay per second (drift eases out; 0 = constant velocity). */
+  drag: 0.35,
+  /** Spin range, rad/s. */
+  spinMin: 0.2,
+  spinMax: 0.7,
+  /** Seconds a fragment lives; it fades over the last `fade` seconds. */
+  life: 2.4,
+  fade: 0.8,
+};
+
 /** Game-feel ("juice") tunables. Everything is subtle by default; toggle live with [J]. */
 export const JUICE = {
   /** Hit stop: freeze gameplay briefly on heavy carves. Seconds. */
