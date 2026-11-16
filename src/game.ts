@@ -1,4 +1,4 @@
-import { Attacks } from './attacks';
+import { Attacks, PATTERNS } from './attacks';
 import { Sfx } from './audio';
 import { Boss } from './boss';
 import { H, TUNING, W } from './config';
@@ -194,7 +194,16 @@ export class Game {
         break;
       case 'KeyK':
         this.attacks.enabled = !this.attacks.enabled;
-        if (!this.attacks.enabled) this.attacks.bullets = [];
+        if (!this.attacks.enabled) this.attacks.clear();
+        break;
+      case 'KeyN':
+        this.attacks.toggleMode();
+        break;
+      case 'KeyV':
+        this.attacks.selected = (this.attacks.selected + 1) % PATTERNS.length;
+        break;
+      case 'KeyF':
+        if (this.state === 'playing') this.attacks.fireSelected(this.bossOrigin, this.ship);
         break;
       case 'KeyY':
         this.setTestMode(!this.testMode);
@@ -287,17 +296,22 @@ export class Game {
     }
   }
 
+  /** Attack origin, read live each frame so attacks follow a moving boss. */
+  private readonly bossOrigin = () => ({ x: this.boss.x + this.boss.core.x, y: this.boss.y + this.boss.height });
+
   /** Boss fire, player damage and the defeat/reset flow. */
   private updateThreat(dt: number): void {
     const b = this.boss;
     const playing = this.state === 'playing';
-    this.attacks.update(dt, { x: b.x + b.core.x, y: b.y + b.height }, this.ship, playing && !b.defeated);
+    this.attacks.update(dt, this.bossOrigin, this.ship, playing && !b.defeated);
     if (!playing) {
       if (this.state === 'lost' && this.elapsed - this.lostAt > TUNING.player.defeatTime) this.reset();
       return;
     }
     this.health.update(dt);
-    const dmg = this.attacks.collect(this.ship.x, this.ship.y, TUNING.player.hitbox);
+    const dmg =
+      this.attacks.collect(this.ship.x, this.ship.y, TUNING.player.hitbox) +
+      this.attacks.collectHazards(this.ship.x, this.ship.y, TUNING.player.hitbox);
     if (dmg > 0 && this.health.hit(dmg, this.dodge.invulnerable)) {
       if (this.health.dead) {
         this.state = 'lost';
@@ -581,6 +595,7 @@ export class Game {
       `dodge [Shift/X] ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}${this.dodge.invulnerable ? ' INVULN' : ''}`,
       `sway ${this.boss.swayEnabled ? 'on' : 'off'} [T]  restart [R]  debug [\`]`,
       `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${TUNING.player.maxHealth}  hitbox r=${TUNING.player.hitbox}`,
+      `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]`,
     ];
     ctx.save();

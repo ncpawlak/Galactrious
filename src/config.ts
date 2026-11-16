@@ -22,6 +22,13 @@ export const TUNING = {
   /** Boss attacks. Speeds px/s, intervals s. */
   attacks: {
     aimed: { interval: 1.4, speed: 260, damage: 1 },
+    /** Each pattern's `interval` = pause (s) after it fires before the scheduler picks the next. */
+    /** Straight-down volley: `count` bullets `spacing` px apart. */
+    direct: { interval: 1.6, count: 3, spacing: 26, speed: 300, damage: 1 },
+    /** Beam sweep, angles in degrees (90 = straight down). Sweeps `arc` degrees centred on `centerAngle`, left to right unless `leftToRight` is false. */
+    sweep: { interval: 1.5, telegraph: 0.9, active: 1.3, damage: 2, centerAngle: 90, arc: 45, leftToRight: true, length: 1300, beamWidth: 70 },
+    /** Bomb lobbed at the player's position at fire time; only the blast hurts. */
+    bomb: { interval: 1.5, telegraph: 0.9, active: 0.25, radius: 75, damage: 2, lobHeight: 120 },
     bulletRadius: 6,
   },
   /** Hazard looks (telegraph vs live zone). `bossDim` darkens the boss while hazards are active (0 = off). */
