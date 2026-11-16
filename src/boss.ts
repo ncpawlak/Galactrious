@@ -52,6 +52,8 @@ export class Layer {
   /** Offset silhouette of this layer, drawn beneath it to cast a depth shadow onto lower layers. */
   readonly shadow: HTMLCanvasElement;
   private readonly shadowCtx: CanvasRenderingContext2D;
+  /** Set when pixels were carved since the last connectivity pass. */
+  needsCheck = false;
 
   constructor(
     readonly name: string,
@@ -137,6 +139,25 @@ function buildTable(): Offset[] {
 
 const TABLES: Offset[][] = Array.from({ length: TABLE_COUNT }, buildTable);
 
+/** A chunk cut off from its layer's main mass; it tumbles away and fades out. */
+interface Fragment {
+  canvas: HTMLCanvasElement;
+  /** Screen-space center of the chunk (the boss's own sway is not applied to it). */
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rot: number;
+  spin: number;
+  age: number;
+}
+
+/** Orphans at or below this many pixels are simply dusted away instead of becoming fragments. */
+const SPECK_PIXELS = 14;
+const FRAGMENT_GRAVITY = 520;
+const FRAGMENT_LIFE = 2.4;
+const CONNECTIVITY_INTERVAL = 0.08;
+
 export class Boss {
   readonly width: number;
   readonly height: number;
@@ -149,6 +170,10 @@ export class Boss {
   swayEnabled = true;
   private time = 0;
   private coreFlash = 0;
+  private fragments: Fragment[] = [];
+  private checkTimer = 0;
+  /** Dust from vanished specks and break-aways, in screen space; the game may drain this for particles. */
+  readonly dustEvents: { x: number; y: number; r: number; g: number; b: number }[] = [];
 
   constructor(
     spec: BossSpec,
@@ -174,6 +199,163 @@ export class Boss {
     this.x = this.baseX;
     if (this.swayEnabled) {
       this.x += Math.sin((this.time / sway.period) * Math.PI * 2) * sway.amplitude;
+    }
+
+    this.checkTimer -= dt;
+    if (this.checkTimer <= 0 && this.layers.some((l) => l.needsCheck)) {
+      this.checkTimer = CONNECTIVITY_INTERVAL;
+      for (let i = 0; i < this.layers.length; i++) {
+        if (this.layers[i].needsCheck) this.detachOrphans(i);
+      }
+    }
+
+    for (const f of this.fragments) {
+      f.age += dt;
+      f.vy += FRAGMENT_GRAVITY * dt;
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+      f.rot += f.spin * dt;
+    }
+    this.fragments = this.fragments.filter((f) => f.age < FRAGMENT_LIFE);
+  }
+
+  /**
+   * Anchoring rule: a pixel is attached if it is 8-connected to its layer's main mass. The main mass
+   * is the component holding the core (innermost layer, when the core is still buried in it) or else
+   * the largest component. Everything else is cut loose: specks vanish, bigger chunks break away.
+   */
+  private detachOrphans(li: number): void {
+    const layer = this.layers[li];
+    layer.needsCheck = false;
+    const w = this.width;
+    const h = this.height;
+    const mask = layer.mask;
+    const label = new Int32Array(w * h);
+    const sizes: number[] = [0];
+    const stack: number[] = [];
+    let count = 0;
+
+    for (let start = 0; start < w * h; start++) {
+      if (!mask[start] || label[start]) continue;
+      count++;
+      let size = 0;
+      label[start] = count;
+      stack.push(start);
+      while (stack.length) {
+        const p = stack.pop()!;
+        size++;
+        const px = p % w;
+        const py = (p / w) | 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          const ny = py + dy;
+          if (ny < 0 || ny >= h) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = px + dx;
+            if (nx < 0 || nx >= w) continue;
+            const q = ny * w + nx;
+            if (mask[q] && !label[q]) {
+              label[q] = count;
+              stack.push(q);
+            }
+          }
+        }
+      }
+      sizes.push(size);
+    }
+    if (count <= 1) return;
+
+    let anchor = 1;
+    for (let c = 2; c <= count; c++) if (sizes[c] > sizes[anchor]) anchor = c;
+    if (li === this.layers.length - 1 && this.core.hp > 0) {
+      const cx = Math.round(this.core.x);
+      const cy = Math.round(this.core.y);
+      let best = 0;
+      for (let dy = -2; dy <= 2 && !best; dy++) {
+        for (let dx = -2; dx <= 2 && !best; dx++) {
+          const x = cx + dx;
+          const y = cy + dy;
+          if (x >= 0 && y >= 0 && x < w && y < h) best = label[y * w + x];
+        }
+      }
+      if (best) anchor = best;
+    }
+
+    // Bounding box per orphan component.
+    const minX = new Int32Array(count + 1).fill(w);
+    const minY = new Int32Array(count + 1).fill(h);
+    const maxX = new Int32Array(count + 1).fill(-1);
+    const maxY = new Int32Array(count + 1).fill(-1);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const c = label[y * w + x];
+        if (!c || c === anchor) continue;
+        if (x < minX[c]) minX[c] = x;
+        if (x > maxX[c]) maxX[c] = x;
+        if (y < minY[c]) minY[c] = y;
+        if (y > maxY[c]) maxY[c] = y;
+      }
+    }
+
+    const data = layer.img.data;
+    let removed = 0;
+    for (let c = 1; c <= count; c++) {
+      if (c === anchor) continue;
+      const bw = maxX[c] - minX[c] + 1;
+      const bh = maxY[c] - minY[c] + 1;
+      const speck = sizes[c] <= SPECK_PIXELS;
+      let cv: HTMLCanvasElement | null = null;
+      let fd: ImageData | null = null;
+      if (!speck) {
+        cv = document.createElement('canvas');
+        cv.width = bw;
+        cv.height = bh;
+        fd = cv.getContext('2d')!.createImageData(bw, bh);
+      }
+      let sr = 0;
+      let sg = 0;
+      let sb = 0;
+      for (let y = minY[c]; y <= maxY[c]; y++) {
+        for (let x = minX[c]; x <= maxX[c]; x++) {
+          const i = y * w + x;
+          if (label[i] !== c) continue;
+          if (fd) {
+            const o = ((y - minY[c]) * bw + (x - minX[c])) * 4;
+            fd.data[o] = data[i * 4];
+            fd.data[o + 1] = data[i * 4 + 1];
+            fd.data[o + 2] = data[i * 4 + 2];
+            fd.data[o + 3] = data[i * 4 + 3];
+          }
+          sr = data[i * 4];
+          sg = data[i * 4 + 1];
+          sb = data[i * 4 + 2];
+          mask[i] = 0;
+          data[i * 4 + 3] = 0;
+          removed++;
+        }
+      }
+      const wx = this.x + minX[c] + bw / 2;
+      const wy = this.y + minY[c] + bh / 2;
+      if (cv && fd) {
+        cv.getContext('2d')!.putImageData(fd, 0, 0);
+        const dir = wx < this.x + this.core.x ? -1 : 1;
+        this.fragments.push({
+          canvas: cv,
+          x: wx,
+          y: wy,
+          vx: dir * (20 + Math.random() * 50),
+          vy: -30 + Math.random() * 40,
+          rot: 0,
+          spin: dir * (0.6 + Math.random() * 1.6),
+          age: 0,
+        });
+      }
+      if (this.dustEvents.length < 200) this.dustEvents.push({ x: wx, y: wy, r: sr, g: sg, b: sb });
+    }
+    if (removed > 0) {
+      layer.remaining -= removed;
+      layer.dirty = true;
+      // Removing an outer chunk can expose inner-layer pixels, but those are already connected
+      // by definition of their own layer; deeper layers get their own pass when carved.
     }
   }
 
@@ -274,6 +456,7 @@ export class Boss {
         data[idx * 4 + 2] *= 0.72;
       }
       layer.dirty = true;
+      layer.needsCheck = true;
     }
     return { carved, spent: energy - e };
   }
@@ -290,6 +473,15 @@ export class Boss {
     for (let i = last - 1; i >= 0; i--) {
       ctx.drawImage(this.layers[i].shadow, ox, oy);
       ctx.drawImage(this.layers[i].canvas, ox, oy);
+    }
+
+    for (const f of this.fragments) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (FRAGMENT_LIFE - f.age) / 0.8);
+      ctx.translate(Math.round(f.x), Math.round(f.y));
+      ctx.rotate(f.rot);
+      ctx.drawImage(f.canvas, -f.canvas.width / 2, -f.canvas.height / 2);
+      ctx.restore();
     }
   }
 

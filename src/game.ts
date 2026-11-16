@@ -1,6 +1,8 @@
+import { Sfx } from './audio';
 import { Boss } from './boss';
 import { H, TUNING, W } from './config';
 import { createDemoBoss } from './demoBoss';
+import { Effects } from './effects';
 import { Hud } from './hud';
 import { Input } from './input';
 
@@ -71,6 +73,8 @@ export class Game {
   private state: State = 'playing';
   private elapsed = 0;
   private wonAt = 0;
+  private readonly fx = new Effects();
+  private readonly sfx = new Sfx();
   private showDebug = true;
   private fps = 60;
   private last = 0;
@@ -91,6 +95,7 @@ export class Game {
 
     this.input.onPress = (code) => this.onKey(code);
     this.input.onPointerDown = () => {
+      this.sfx.resume();
       if (this.state === 'won' && this.elapsed - this.wonAt > 1) this.reset();
     };
   }
@@ -119,9 +124,11 @@ export class Game {
     this.particles = [];
     this.state = 'playing';
     this.elapsed = 0;
+    this.fx.reset();
   }
 
   private onKey(code: string): void {
+    this.sfx.resume();
     const s = this.stats;
     switch (code) {
       case 'KeyR':
@@ -129,6 +136,9 @@ export class Game {
         break;
       case 'KeyT':
         this.boss.swayEnabled = !this.boss.swayEnabled;
+        break;
+      case 'KeyJ':
+        this.fx.enabled = this.sfx.enabled = !this.fx.enabled;
         break;
       case 'Backquote':
         this.showDebug = !this.showDebug;
@@ -167,7 +177,7 @@ export class Game {
     const dt = Math.min(0.033, (now - this.last) / 1000);
     this.last = now;
     if (dt > 0) this.fps += (1 / dt - this.fps) * 0.05;
-    this.update(dt);
+    this.update(this.fx.step(dt));
     this.render();
     requestAnimationFrame((t) => this.frame(t));
   }
@@ -184,6 +194,7 @@ export class Game {
       }
     }
     this.boss.update(dt, TUNING.sway);
+    for (const d of this.boss.dustEvents.splice(0)) this.spawnDebris(d.x, d.y, 24, false, d.r, d.g, d.b);
 
     if (this.state === 'playing') {
       this.moveShip(dt);
@@ -196,6 +207,8 @@ export class Game {
       this.state = 'won';
       this.wonAt = this.elapsed;
       this.explode();
+      this.fx.onExplosion();
+      this.sfx.explosion();
     }
   }
 
@@ -268,6 +281,9 @@ export class Game {
     const res = this.boss.hit(b.x, b.y, budget);
     if (!res) return;
 
+    this.fx.onHit(b.x, b.y, res.carved, res.spent, res.core);
+    if (res.core) this.sfx.coreHit();
+    else this.sfx.carve(res.carved);
     this.spawnDebris(b.x, b.y, res.carved, res.core, res.r, res.g, res.b);
     if (res.core || res.carved === 0) {
       b.alive = false;
@@ -344,6 +360,7 @@ export class Game {
     const ctx = this.ctx;
     ctx.fillStyle = '#05060d';
     ctx.fillRect(0, 0, W, H);
+    this.fx.beginShake(ctx);
 
     ctx.fillStyle = '#8fa0c8';
     for (const s of this.stars) ctx.fillRect(s.x, s.y, s.size, s.size);
@@ -353,6 +370,8 @@ export class Game {
     this.drawParticles();
     this.hud.draw(ctx, this.boss);
     if (this.state === 'playing') this.drawShip();
+    this.fx.drawNumbers(ctx);
+    this.fx.endShake(ctx);
     if (this.showDebug) this.drawDebug();
     if (this.state === 'won') this.drawWin();
   }
@@ -406,6 +425,7 @@ export class Game {
       `dmg ${s.damage} [1/2]  rate ${s.fireRate} [3/4]`,
       `shots ${s.projectiles} [5/6]  pierce ${s.pierce} [7/8]  reset stats [0]`,
       `sway ${this.boss.swayEnabled ? 'on' : 'off'} [T]  restart [R]  debug [\`]`,
+      `juice ${this.fx.enabled ? 'on' : 'off'} [J]`,
     ];
     ctx.save();
     ctx.globalAlpha = 0.7;
