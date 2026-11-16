@@ -1,4 +1,5 @@
 import { H, TUNING, W } from './config';
+import { drawBullet, dimBoss, drawDamageZone, drawTelegraph, type HazardShape, type StyleName } from './attackStyles';
 
 /** A boss projectile. Velocity in px/s. */
 export interface EnemyBullet {
@@ -7,6 +8,8 @@ export interface EnemyBullet {
   vx: number;
   vy: number;
   damage: number;
+  /** Look; defaults to the pattern's style, then 'aimed'. */
+  style?: StyleName;
   alive: boolean;
 }
 
@@ -27,12 +30,15 @@ export interface AttackContext {
 export interface AttackPattern {
   name: string;
   interval: number;
+  /** Default bullet style for this pattern's spawns. */
+  style?: StyleName;
   fire(ctx: AttackContext): void;
 }
 
 const aimedShot: AttackPattern = {
   name: 'aimed',
   interval: TUNING.attacks.aimed.interval,
+  style: 'aimed',
   fire({ origin, target, spawn }) {
     const { speed, damage } = TUNING.attacks.aimed;
     const dx = target.x - origin.x;
@@ -57,8 +63,8 @@ export class Attacks {
 
   update(dt: number, origin: { x: number; y: number }, target: { x: number; y: number }, firing: boolean): void {
     if (this.enabled && firing) {
-      const ctx: AttackContext = { origin, target, spawn: (b) => this.bullets.push({ ...b, alive: true }) };
       PATTERNS.forEach((p, i) => {
+        const ctx: AttackContext = { origin, target, spawn: (b) => this.bullets.push({ style: p.style, ...b, alive: true }) };
         this.timers[i] -= dt;
         if (this.timers[i] <= 0) {
           this.timers[i] += p.interval;
@@ -87,23 +93,23 @@ export class Attacks {
     return dmg;
   }
 
-  /** Bright, outlined and glowing so they read against the boss (issue #7 refines this). */
+  /** Live hazards for rendering (filled by #25's patterns). Telegraphs warn; zones damage. */
+  hazards: { shape: HazardShape; live: boolean }[] = [];
+  private clock = 0;
+
+  /** Dim the boss slightly while any hazard is active. Call right after drawing the boss. */
+  drawBossDim(ctx: CanvasRenderingContext2D): void {
+    if (this.hazards.length > 0) dimBoss(ctx, W, H, TUNING.hazards.bossDim);
+  }
+
   draw(ctx: CanvasRenderingContext2D): void {
-    const r = TUNING.attacks.bulletRadius;
+    this.clock += 1 / 60;
     ctx.save();
-    for (const b of this.bullets) {
-      ctx.fillStyle = 'rgba(255, 40, 120, 0.35)';
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, r + 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ff2d7a';
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+    for (const h of this.hazards) {
+      if (h.live) drawDamageZone(ctx, h.shape);
+      else drawTelegraph(ctx, h.shape, this.clock);
     }
+    for (const b of this.bullets) drawBullet(ctx, b.x, b.y, b.style);
     ctx.restore();
   }
 }

@@ -24,6 +24,8 @@ export const TUNING = {
     aimed: { interval: 1.4, speed: 260, damage: 1 },
     bulletRadius: 6,
   },
+  /** Hazard looks (telegraph vs live zone). `bossDim` darkens the boss while hazards are active (0 = off). */
+  hazards: { bossDim: 0.3, pulseRate: 2, telegraphColor: '#ffd23a', zoneFill: '#ff1a1a', zoneRim: '#ffffff' },
   /** Player health: `hitbox` is the collision circle radius (small, forgiving); `hitInvuln` = i-frames after a hit. */
   player: { maxHealth: 5, hitbox: 5, hitInvuln: 1.0, defeatTime: 1.8 },
 };
