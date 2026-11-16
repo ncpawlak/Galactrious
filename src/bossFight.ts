@@ -1,6 +1,7 @@
 import { Boss, mirrorSpec } from './boss';
 import { ScriptedScheduler, type AttackStep } from './attackSchedulers';
 import { ComponentSystem } from './components';
+import { consoleSpecs, RoomSystem } from './rooms';
 import { TUNING } from './config';
 import type { BossDefinition, PhaseDefinition, PhaseTrigger } from './bosses/types';
 import type { Movement, Offset2 } from './movement';
@@ -19,6 +20,7 @@ export const ENRAGE_FLASH = 0.45;
 export class BossFight {
   readonly boss: Boss;
   readonly components: ComponentSystem;
+  readonly rooms: RoomSystem;
   phaseIndex = 0;
   /** Seconds since the fight started / since the current phase started. */
   fightTime = 0;
@@ -41,7 +43,10 @@ export class BossFight {
   constructor(readonly def: BossDefinition) {
     this.boss = new Boss(def.mirror ? mirrorSpec(def.layout()) : def.layout(), def.spawn.x, def.spawn.y);
     this.maxCoreHp = this.boss.core.hp;
-    this.components = new ComponentSystem(this.boss, def.components ?? [], !!def.mirror);
+    const rooms = def.rooms ?? [];
+    const specs = [...(def.components ?? []), ...consoleSpecs(rooms, this.boss.layers.length - 1)];
+    this.components = new ComponentSystem(this.boss, specs, !!def.mirror);
+    this.rooms = new RoomSystem(this.components, rooms);
     this.components.vulnerability = () => this.coreVulnerability();
     this.components.applyPhase(this.phase.components);
   }
@@ -59,8 +64,12 @@ export class BossFight {
     const min = ca?.min ?? TUNING.coreArmor.min;
     let v = min + (1 - min) * dug * (ca?.digWeight ?? 1);
     if (ca?.requires?.length) {
-      const per = ca.perComponent ?? (1 - min) / Math.max(1, this.components.totalCount(ca.requires));
-      v += per * this.components.destroyedCount(ca.requires);
+      // `room:<id>` keys count rooms taken offline; every other key counts destroyed components.
+      const roomKeys = ca.requires.filter((k) => k.startsWith('room:'));
+      const compKeys = ca.requires.filter((k) => !k.startsWith('room:'));
+      const total = this.components.totalCount(compKeys) + this.rooms.totalCount(roomKeys);
+      const per = ca.perComponent ?? (1 - min) / Math.max(1, total);
+      v += per * (this.components.destroyedCount(compKeys) + this.rooms.offlineCount(roomKeys));
     }
     return Math.max(0, Math.min(1, v));
   }
@@ -181,5 +190,6 @@ export class BossFight {
     this.boss.setOffset(off.x, off.y);
     this.boss.update(dt);
     this.components.update(dt);
+    this.rooms.update(dt);
   }
 }

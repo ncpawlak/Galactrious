@@ -73,6 +73,12 @@ export class Effects {
     this.addTrauma(0.03);
   }
 
+  /** A room's first console showed: a short jolt. */
+  onRoomExposed(): void {
+    if (!this.enabled) return;
+    this.addTrauma(0.3);
+  }
+
   /** A component blew up: a punchy shake and a short hit stop, bigger for blasts. */
   onComponentDestroy(blast: boolean): void {
     if (!this.enabled) return;

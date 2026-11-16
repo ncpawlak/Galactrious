@@ -36,6 +36,7 @@ export function hazardPhase(h: Hazard): { phase: 'telegraph' | 'live'; p: number
 /** Does a circle (x, y, r) overlap the shape? Lines are wedges widening from the vertex. */
 export function shapeHits(s: HazardShape, x: number, y: number, r: number): boolean {
   if (s.kind === 'circle') return Math.hypot(x - s.x, y - s.y) <= s.r + r;
+  if (s.kind === 'ring') return Math.abs(Math.hypot(x - s.x, y - s.y) - s.r) <= s.width / 2 + r;
   const dx = Math.cos(s.angle);
   const dy = Math.sin(s.angle);
   const rx = x - s.x;

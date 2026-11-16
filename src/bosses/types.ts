@@ -1,6 +1,7 @@
 import type { BossSpec } from '../boss';
 import type { AttackStep } from '../attackSchedulers';
 import type { Movement } from '../movement';
+import type { RoomSpec } from '../rooms';
 import type { ComponentSpec, CoreArmorSpec, PhaseComponents } from '../components';
 
 /**
@@ -60,6 +61,8 @@ export interface BossDefinition {
   mirror?: boolean;
   /** Turrets, explosive pieces, ... attached at `BossSpec.anchors` points (mirrored with the layout). */
   components?: ComponentSpec[];
+  /** Rooms with consoles (milestone 3): consoles are components, anchored like the rest. See `src/rooms.ts`. */
+  rooms?: RoomSpec[];
   /** Core armor rules. Default: the old formula (TUNING.coreArmor.min, ramping with how much is dug). */
   coreArmor?: CoreArmorSpec;
   /** At least one phase. */

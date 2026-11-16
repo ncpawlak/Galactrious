@@ -6,7 +6,7 @@ whose layers are carved away by projectiles.
 ## Boss data
 - Three layer masks (hull, frame, rooms), each with a density value.
 - Layers are 2D bitmaps stacked in depth; a pixel is hit on the topmost layer that is solid there.
-- Rooms (later): rectangles with consoles, a name, and the function they power.
+- Rooms: named groups of consoles with a function they power (built, see "Rooms and consoles").
 - Core: one marker with its own HP. Destroying it wins.
 
 ## Damage model
@@ -20,7 +20,7 @@ whose layers are carved away by projectiles.
 ## Milestones
 1. Carve test: ship, bullets, 3-layer boss from masks, density-based carving, core win. (current)
 2. Boss motion (sway) and heat-armor shield.
-3. Rooms and consoles, room-disable, core win flow.
+3. Rooms and consoles, room-disable, core win flow. (rooms, consoles, exposure reactions, room-disable built in issue #10; the core win flow is the existing core)
 4. Attack patterns tied to rooms, player damage, death reset.
 5. Action report and mission flow.
 6. Upgrades and currency.
@@ -90,7 +90,7 @@ Status: **framework, turrets and explosive pieces built** (issue #34); consoles,
 
 **Build order.**
 1. Component framework, plus two types: turret and explosive piece. Includes craters, chain reactions, damage states, source-bound turret attacks, `coreArmor` in the definition, floating debris, and a demo boss using them.
-2. Rooms and consoles (milestone 3, #10): consoles as a component type, room-disable via `group`.
+2. Rooms and consoles (milestone 3, #10): consoles as a component type, room-disable via `group`. **Built**, see "Rooms and consoles".
 3. Generators and core-armor progression, regrowth nodes (#15), conduits, spawners, shutters, weak points.
 
 **Deferred decisions.** Damage multiplier for weak points; whether blasts can ever hurt the player; spawner enemy types; rectangular hit areas; how components are authored (a layout-time painter versus coordinates in the definition).
@@ -106,3 +106,18 @@ Code: `src/components.ts` (specs, `ComponentSystem`, drawing), hooks in `src/bos
 - **Core armor**: `BossFight.coreVulnerability()` replaces `Game.coreVulnerability`. `min` (default `TUNING.coreArmor.min`) + (1 - min) * dug * `digWeight`, plus `perComponent` (default (1 - min) / number required) for each destroyed `requires` component, clamped to 1. Without `coreArmor` it is the old formula exactly.
 - **Debris**: a detached component and the shards of a destroyed one drift away using the shared helper in `src/debris.ts` (issue #35): a slow push from the break point, drag, spin, fade, no gravity.
 - **Deviations / not done**: no `onDestroy` effect list, only `blast`, `crater` and `disables` (spawn effects wait for spawners). Hit areas are circles only. A pierce bullet does not pass through a component. Components are not enabled/disabled by debug phase jumps going backwards. Blast and turret numbers in the demo boss are a first guess and need a playtest. Because the nose guns sit directly above the frame tank, the demo's first dig often reaches the tank by accident; positions can move.
+
+## Rooms and consoles
+Status: **built** (issue #10, milestone 3). Code: `src/rooms.ts`, console type and `powered` in `src/components.ts`, `BossDefinition.rooms`, HUD in `src/hud.ts`, demo `src/bosses/bulwarkRooms.ts` (`[B]`: "Bulwark (rooms + consoles)" and a mirrored variant).
+
+- **Authoring.** `BossDefinition.rooms: RoomSpec[]`: `id`, `name`, `function` (HUD label, e.g. "Wing guns"), `powers` (component ids or groups that go offline), `consoles: [{ anchor, radius?, hp? }]`, `onExposed` (effects) and `explodeOnDisable` (`true` or a `BlastSpec`). Console `anchor`s come from `BossSpec.anchors`, so `mirror: true` flips rooms for free. Each console is expanded into a normal component (`type: 'console'`, embedded in the last (rooms) layer, group `room:<id>`, default radius 9, hp 90), so it has hidden hp, damage states (cracks, sparks, smoke, flicker), hit flash and sound like the rest. No bars, no numbers.
+- **Exposed** = you can see the console: the embedded-component rule (every layer above is empty over its centre). The first time any console of a room is exposed (or destroyed, or torn off) the room's reaction starts, once per room per fight.
+- **Reaction.** Telegraph first: the consoles pulse red with a glow, a ring pings, two warning beeps, a jolt of shake and a HUD banner "WARNING: <FUNCTION> DEFENCES" (2 s). The effects follow after their `delay` (default 0.6 s). Effects (`RoomEffect`, a union, add a kind and a case in `RoomSystem.run`):
+  - `attack`: fire any existing `AttackPattern` from the room position (centre of its consoles, live), `count` times `gap` s apart.
+  - `pulse`: a shield-burst. A ring hazard (new `ring` HazardShape in `src/attackStyles.ts`/`src/hazards.ts`) that outlines its final radius, then expands from the room and hurts the player on contact.
+  - **Drones are a later effect (not built).** A spawner effect needs enemy entities; the list is meant to take it.
+- **Disabled.** When every console is destroyed or torn off, the room goes offline: components in `powers` get `powered = false` (turrets stop firing and tracking, are drawn dark; phases cannot switch them back on; they stay shootable), the HUD marks the room OFFLINE, and a power-down sound plays. Rooms can also feed core armor: `coreArmor.requires: ['room:<id>']` counts rooms taken offline (the demo's shield projector).
+- **`explodeOnDisable`.** On going offline the room blows up with the shared blast (`ComponentSystem.roomBlast`): crater, damage to neighbouring components with the usual chain reaction, damage to the core scaled by its armor. Boss-only like every blast, it never hurts the player. In the demo the fuel store's blast reaches the reactor tank, which chains into the reactor consoles.
+- **HUD.** A list above the layer panel: each room's function and ONLINE / EXPOSED / OFFLINE. The old flood-filled room pips stay.
+- **Debug.** `[H]` also draws rooms (dashed circle, state, live consoles, what it powers) and rings the consoles you can see right now in cyan. `[E]` force-exposes the next room (its reaction fires, once); `game.debug.rooms.forceExpose(id)`.
+- **Deviations / not done.** Room geometry is the console centroid, not a rectangle painted in the rooms layer, and the layer's flood-filled "rooms" in the HUD are not tied to the named rooms. A phase cannot yet re-enable a room. `onExposed` does not repeat. Effect numbers in the demo are a first guess and need a playtest. Drone/spawner effects are deferred.

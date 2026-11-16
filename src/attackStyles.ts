@@ -64,12 +64,22 @@ export function drawBullet(ctx: CanvasRenderingContext2D, x: number, y: number, 
 /** A circle, or a wedge/line from (x, y) along `angle` (radians) for `length`, `width` wide at the far end. */
 export type HazardShape =
   | { kind: 'circle'; x: number; y: number; r: number }
+  /** A hollow ring: centre line at radius `r`, `width` thick (a shock wave). */
+  | { kind: 'ring'; x: number; y: number; r: number; width: number }
   | { kind: 'line'; x: number; y: number; angle: number; length: number; width: number };
 
 function shapePath(ctx: CanvasRenderingContext2D, s: HazardShape): void {
   ctx.beginPath();
   if (s.kind === 'circle') {
     ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    return;
+  }
+  if (s.kind === 'ring') {
+    const o = s.r + s.width / 2;
+    const i = Math.max(0, s.r - s.width / 2);
+    ctx.arc(s.x, s.y, o, 0, Math.PI * 2);
+    ctx.moveTo(s.x + i, s.y);
+    ctx.arc(s.x, s.y, i, 0, Math.PI * 2, true);
     return;
   }
   const dx = Math.cos(s.angle);

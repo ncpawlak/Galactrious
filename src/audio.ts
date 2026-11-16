@@ -100,6 +100,21 @@ export class Sfx {
     this.tone(c, blast ? 110 : 200, 40, blast ? 0.5 : 0.25, 'sine', JUICE.audio.volume * 1.4);
   }
 
+  /** A room's console was first exposed: a short two-beep warning. */
+  roomExposed(): void {
+    const c = this.ready();
+    if (!c) return;
+    this.tone(c, 760, 760, 0.1, 'square', JUICE.audio.volume * 0.8);
+    setTimeout(() => this.tone(c, 560, 560, 0.14, 'square', JUICE.audio.volume * 0.8), 130);
+  }
+
+  /** A room went offline: a falling power-down sweep. */
+  roomOffline(): void {
+    const c = this.ready();
+    if (!c) return;
+    this.tone(c, 520, 70, 0.5, 'triangle', JUICE.audio.volume * 1.1);
+  }
+
   /** Enrage cue: a low falling growl under a rising alarm sweep. */
   enrage(): void {
     const c = this.ready();

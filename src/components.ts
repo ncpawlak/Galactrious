@@ -9,7 +9,8 @@ import { driftSpin, driftVelocity, stepDrift } from './debris';
  * EXPLOSIVE (a blast on destruction). Rooms/consoles and the rest reuse this system later.
  */
 
-export type ComponentType = 'turret' | 'explosive';
+/** `console` is created from a room's `consoles` (see rooms.ts): it powers its room, and is embedded in the rooms layer. */
+export type ComponentType = 'turret' | 'explosive' | 'console';
 /** surface: always targetable, drawn over the hull. embedded: sits in `layer`, targetable once every layer above is empty over its centre. */
 export type MountType = 'surface' | 'embedded';
 export type TurretAim = 'fixed' | 'tracking' | 'rotating';
@@ -99,7 +100,11 @@ export type ComponentEvent =
   | { kind: 'hit'; x: number; y: number }
   | { kind: 'state'; x: number; y: number; level: number }
   | { kind: 'destroy'; x: number; y: number; blast: boolean; radius: number }
-  | { kind: 'detach'; x: number; y: number };
+  | { kind: 'detach'; x: number; y: number }
+  /** A room's first console just became visible: its reaction starts (telegraph, sound, shake). */
+  | { kind: 'roomExposed'; x: number; y: number; name: string }
+  /** Every console of a room is gone: its function went offline. `blast` when the room also blew up. */
+  | { kind: 'roomOffline'; x: number; y: number; name: string; blast: boolean };
 
 type State = 'active' | 'dying' | 'destroyed' | 'detached';
 
@@ -120,6 +125,10 @@ export class BossComponent {
   readonly maxHp: number;
   state: State = 'active';
   enabled: boolean;
+  /** False while a room that powers this component is offline: no fire, drawn dark. Phases cannot turn it back on. */
+  powered = true;
+  /** Room alert (s): a console glows while its room's reaction is telegraphed. */
+  alert = 0;
   /** Layout position (boss-local px, already mirrored). */
   readonly lx: number;
   readonly ly: number;
@@ -189,6 +198,8 @@ export class ComponentSystem implements SourceGate {
   target: Point = { x: 270, y: 800 };
   /** Debug: draw hit areas and ids. */
   debug = false;
+  /** Extra debug drawing (the room system adds room and exposure info). */
+  extraDebug: ((ctx: CanvasRenderingContext2D) => void) | null = null;
   /** Core vulnerability, 0..1 (set by BossFight): blast damage to the core is scaled by it. */
   vulnerability: () => number = () => 1;
   private particles: Particle[] = [];
@@ -197,7 +208,7 @@ export class ComponentSystem implements SourceGate {
   private seenVersion = -1;
 
   constructor(
-    private readonly boss: Boss,
+    readonly boss: Boss,
     private readonly specs: ComponentSpec[],
     private readonly mirrored: boolean,
   ) {
@@ -225,13 +236,13 @@ export class ComponentSystem implements SourceGate {
     return c.state === 'detached' ? { x: c.drift.x, y: c.drift.y } : { x: this.boss.x + c.lx, y: this.boss.y + c.ly };
   }
 
-  /** Boss layers above the component's own are empty over its centre. */
-  private exposed(c: BossComponent): boolean {
+  /** Boss layers above the component's own are empty over its centre (you can see it). */
+  isExposed(c: BossComponent): boolean {
     return this.boss.isExposed(c.layer, Math.floor(c.lx), Math.floor(c.ly));
   }
 
   targetable(c: BossComponent): boolean {
-    return c.state === 'active' && (c.spec.mount === 'surface' || this.exposed(c));
+    return c.state === 'active' && (c.spec.mount === 'surface' || this.isExposed(c));
   }
 
   /** Number of destroyed components matching any of `keys` (ids or groups). */
@@ -246,7 +257,7 @@ export class ComponentSystem implements SourceGate {
   // --- turret sources -----------------------------------------------------------------------
 
   private firing(source: string): BossComponent[] {
-    return this.items.filter((c) => c.spec.type === 'turret' && c.matches(source) && c.state === 'active' && c.enabled);
+    return this.items.filter((c) => c.spec.type === 'turret' && c.matches(source) && c.state === 'active' && c.enabled && c.powered);
   }
 
   usable(source: string): boolean {
@@ -343,34 +354,61 @@ export class ComponentSystem implements SourceGate {
 
     this.destroyEffect(p.x, p.y, c);
 
-    if (blast) {
-      this.boss.carveRadial(c.lx, c.ly, blast.radius, blast.energy, blast.falloff ?? 1);
-      const f = blast.falloff ?? 1;
-      const dmg = blast.damage ?? blast.energy / 20;
-      for (const o of this.items) {
-        if (o === c || o.state !== 'active') continue;
-        const op = this.pos(o);
-        const d = Math.hypot(op.x - p.x, op.y - p.y);
-        if (d > blast.radius) continue;
-        const w = Math.pow(1 - d / blast.radius, f);
-        o.flash = HIT_FLASH;
-        this.damage(o, dmg * w);
-        if ((o.state as State) === 'dying') {
-          // Chain: queue with a short delay so the reaction reads as a ripple.
-          const q = this.queue.find((e) => e.c === o);
-          if (q) q.t = CHAIN_DELAY + d / 900;
-        }
-      }
-      // The core takes damage scaled by its current armor. Blasts never touch the player.
-      const cx = this.boss.x + this.boss.core.x;
-      const cy = this.boss.y + this.boss.core.y;
-      const dc = Math.max(0, Math.hypot(cx - p.x, cy - p.y) - this.boss.core.radius);
-      if (dc < blast.radius && this.boss.core.hp > 0) {
-        const w = Math.pow(1 - dc / blast.radius, f);
-        this.boss.damageCore((blast.coreDamage ?? dmg) * w * this.vulnerability());
+    if (blast) this.blastAt(c.lx, c.ly, p, blast, c);
+    for (const k of c.spec.disables ?? []) for (const o of this.items) if (o.matches(k)) o.enabled = false;
+  }
+
+  /** Carve, damage neighbours (chains) and hurt the core around layout point (lx, ly), screen position `p`. Never touches the player. */
+  private blastAt(lx: number, ly: number, p: Point, blast: BlastSpec, self: BossComponent | null): void {
+    this.boss.carveRadial(lx, ly, blast.radius, blast.energy, blast.falloff ?? 1);
+    const f = blast.falloff ?? 1;
+    const dmg = blast.damage ?? blast.energy / 20;
+    for (const o of this.items) {
+      if (o === self || o.state !== 'active') continue;
+      const op = this.pos(o);
+      const d = Math.hypot(op.x - p.x, op.y - p.y);
+      if (d > blast.radius) continue;
+      const w = Math.pow(1 - d / blast.radius, f);
+      o.flash = HIT_FLASH;
+      this.damage(o, dmg * w);
+      if ((o.state as State) === 'dying') {
+        // Chain: queue with a short delay so the reaction reads as a ripple.
+        const q = this.queue.find((e) => e.c === o);
+        if (q) q.t = CHAIN_DELAY + d / 900;
       }
     }
-    for (const k of c.spec.disables ?? []) for (const o of this.items) if (o.matches(k)) o.enabled = false;
+    // The core takes damage scaled by its current armor.
+    const cx = this.boss.x + this.boss.core.x;
+    const cy = this.boss.y + this.boss.core.y;
+    const dc = Math.max(0, Math.hypot(cx - p.x, cy - p.y) - this.boss.core.radius);
+    if (dc < blast.radius && this.boss.core.hp > 0) {
+      const w = Math.pow(1 - dc / blast.radius, f);
+      this.boss.damageCore((blast.coreDamage ?? dmg) * w * this.vulnerability());
+    }
+  }
+
+  /** A room blows up (explodeOnDisable): the same blast, crater and chain as an explosive piece, boss-only. */
+  roomBlast(lx: number, ly: number, blast: BlastSpec): void {
+    const p = { x: this.boss.x + lx, y: this.boss.y + ly };
+    this.events.push({ kind: 'destroy', x: p.x, y: p.y, blast: true, radius: blast.radius });
+    this.particles.push({ x: p.x, y: p.y, vx: 0, vy: 0, life: 0.4, max: 0.4, size: 0, color: '255, 170, 60', kind: 'ring', r1: blast.radius });
+    this.particles.push({ x: p.x, y: p.y, vx: 0, vy: 0, life: 0.18, max: 0.18, size: 0, color: '255, 250, 220', kind: 'flash', r1: blast.radius * 0.6 });
+    this.spark(p.x, p.y, 24, '#ff9a3c');
+    this.smoke(p.x, p.y, 8);
+    this.blastAt(lx, ly, p, blast, null);
+    this.flush();
+  }
+
+  /** Telegraph glow on a room's consoles (they pulse for `seconds`). */
+  alertConsoles(cs: BossComponent[], seconds: number): void {
+    for (const c of cs) c.alert = Math.max(c.alert, seconds);
+  }
+
+  /** A little ring and sparks at a room, for the telegraph moment. */
+  pingAt(lx: number, ly: number, radius: number): void {
+    const p = { x: this.boss.x + lx, y: this.boss.y + ly };
+    this.particles.push({ x: p.x, y: p.y, vx: 0, vy: 0, life: 0.5, max: 0.5, size: 0, color: '255, 70, 70', kind: 'ring', r1: radius });
+    this.spark(p.x, p.y, 10, '#ff6a6a');
   }
 
   // --- anchoring ----------------------------------------------------------------------------
@@ -438,6 +476,7 @@ export class ComponentSystem implements SourceGate {
       c.flash = Math.max(0, c.flash - dt);
       c.muzzle = Math.max(0, c.muzzle - dt);
       c.glow = Math.max(0, c.glow - dt * 3);
+      c.alert = Math.max(0, c.alert - dt);
       if (c.state === 'dying') c.dyingFor += dt;
       if (c.state === 'detached') {
         const d = c.drift;
@@ -480,7 +519,7 @@ export class ComponentSystem implements SourceGate {
 
   private updateTurret(c: BossComponent, dt: number): void {
     const t = c.spec.turret;
-    if (!t || !c.enabled) return;
+    if (!t || !c.enabled || !c.powered) return;
     const m = this.mirrored ? -1 : 1;
     if (t.aim === 'rotating') {
       c.angle += (t.spin ?? 70) * RAD * dt * m;
@@ -534,7 +573,7 @@ export class ComponentSystem implements SourceGate {
     for (let i = 0; i < (big ? 10 : 7) && this.particles.length < 400; i++) {
       const v = driftVelocity({ x, y }, { x, y }, 0.8);
       const life = 1.2 + Math.random() * 1.0;
-      this.particles.push({ x, y, vx: v.vx, vy: v.vy, life, max: life, size: 2 + Math.random() * 3, color: c.spec.type === 'turret' ? '#59627a' : '#b8541f', kind: 'shard', r1: 0 });
+      this.particles.push({ x, y, vx: v.vx, vy: v.vy, life, max: life, size: 2 + Math.random() * 3, color: c.spec.type === 'turret' ? '#59627a' : c.spec.type === 'console' ? '#3f8f9a' : '#b8541f', kind: 'shard', r1: 0 });
     }
   }
 
@@ -581,7 +620,7 @@ export class ComponentSystem implements SourceGate {
     if (c.state === 'active' && c.level >= 3 && Math.sin(this.time * 47) > 0.55) return;
     ctx.save();
     ctx.translate(Math.round(x), Math.round(y));
-    const dim = c.state === 'active' && !c.enabled ? 0.55 : 1;
+    const dim = c.state === 'active' && !c.powered ? 0.4 : c.state === 'active' && !c.enabled ? 0.55 : 1;
     ctx.globalAlpha *= dim;
 
     if (c.spec.type === 'turret') {
@@ -610,6 +649,25 @@ export class ComponentSystem implements SourceGate {
       }
       ctx.restore();
       if (c.glow > 0) this.glowAt(ctx, r * (1.1 + 0.5 * c.glow), c.glow);
+    } else if (c.spec.type === 'console') {
+      // Console: a dark panel with a screen and a status lamp; the lamp goes red and pulses during the room alert.
+      const alertK = c.alert > 0 ? 0.5 + 0.5 * Math.sin(this.time * 28) : 0;
+      ctx.fillStyle = '#1c2230';
+      ctx.strokeStyle = '#6fd3df';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(-r, -r * 0.8, r * 2, r * 1.6, 3);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#0c3c44';
+      ctx.fillRect(-r * 0.7, -r * 0.5, r * 1.4, r * 0.7);
+      ctx.fillStyle = `rgba(110, 230, 240, ${0.5 + 0.3 * Math.sin(this.time * 4 + c.lx)})`;
+      ctx.fillRect(-r * 0.7, -r * 0.5 + r * 0.5 * ((this.time * 0.8 + c.ly) % 1), r * 1.4, 2);
+      ctx.fillStyle = c.alert > 0 ? `rgba(255, ${60 + 120 * alertK | 0}, 60, 1)` : '#58f08a';
+      ctx.beginPath();
+      ctx.arc(0, r * 0.5, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      if (c.alert > 0) this.glowAt(ctx, r * (1.6 + alertK), 0.5 + 0.5 * alertK);
     } else {
       // Fuel tank: warm drum with hazard stripes and a pulsing cap.
       ctx.fillStyle = '#7a3516';
@@ -676,6 +734,14 @@ export class ComponentSystem implements SourceGate {
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.fill();
     }
+    if (c.state === 'active' && !c.powered) {
+      // Offline: dead and dark.
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = '#05060d';
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -738,6 +804,7 @@ export class ComponentSystem implements SourceGate {
       ctx.fillText(`${c.spec.id}${c.spec.group ? ' [' + c.spec.group + ']' : ''} ${c.spec.mount[0]}${c.spec.mount === 'embedded' ? c.layer : ''}${c.enabled ? '' : ' off'}`, p.x, p.y - c.spec.radius - 4);
     }
     ctx.restore();
+    this.extraDebug?.(ctx);
   }
 }
 
