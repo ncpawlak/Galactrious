@@ -2,6 +2,9 @@ import type { BossSpec } from '../boss';
 import { TUNING } from '../config';
 import { aimedShot, bomb, directVolley, lineSweep } from '../attacks';
 import { bob, combine, figureEight, named, sequence, still, sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
+import type { AttackPattern } from '../attacks';
+import type { AttackStep } from '../attackSchedulers';
+import type { ComponentSpec } from '../components';
 import type { BossDefinition } from './types';
 import { fillRects, makeCanvas as paintCanvas, shade } from './paint';
 
@@ -55,8 +58,30 @@ export function createDemoBoss(): BossSpec {
       { name: 'Rooms', density: TUNING.densities.rooms, canvas: rooms.canvas },
     ],
     core: { x: 189, y: 71, radius: 16, hp: TUNING.coreHp },
+    // The demo boss's one weapon mount: a gun on the bottom edge of the hull.
+    anchors: { gun: { x: 189, y: 408 } },
   };
 }
+
+/**
+ * Every attack fires from a weapon source (DESIGN.md "Turrets"): the demo boss carries one tracking gun on
+ * its lower hull. Destroy it, or cut away the hull under it, and the boss stops attacking.
+ */
+const DEMO_COMPONENTS: ComponentSpec[] = [
+  {
+    id: 'gun',
+    type: 'turret',
+    anchor: 'gun',
+    radius: 16,
+    hp: 450,
+    mount: 'surface',
+    group: 'guns',
+    turret: { aim: 'tracking', angle: 90, trackRate: 140, telegraph: 0.6 },
+    crater: { radius: 20, energy: 2200 },
+  },
+];
+/** A step firing `pattern` from the demo gun, on a pause scaled by `scale`. */
+const fromGun = (pattern: AttackPattern, scale = 1): AttackStep => ({ pattern, interval: pattern.interval * scale, source: 'guns' });
 
 /**
  * The default boss: one phase reproducing the original fight (sway from TUNING.sway, all four
@@ -67,11 +92,12 @@ export const demoBoss: BossDefinition = {
   name: 'Demo boss',
   layout: createDemoBoss,
   spawn: TUNING.boss,
+  components: DEMO_COMPONENTS,
   phases: [
     {
       name: 'Phase 1',
       movement: sway(TUNING.sway.amplitude, TUNING.sway.period),
-      attacks: [aimedShot, directVolley, lineSweep, bomb].map((pattern) => ({ pattern })),
+      attacks: [aimedShot, directVolley, lineSweep, bomb].map((p) => fromGun(p)),
     },
   ],
 };
@@ -85,20 +111,21 @@ export const demoBossPhased: BossDefinition = {
   name: 'Demo boss (3 phases)',
   layout: createDemoBoss,
   spawn: TUNING.boss,
+  components: DEMO_COMPONENTS,
   phases: [
     demoBoss.phases[0],
     {
       name: 'Phase 2: faster',
       trigger: { kind: 'damage', percent: 15 },
       movement: sway(TUNING.sway.amplitude * 1.6, TUNING.sway.period * 0.5),
-      attacks: [directVolley, aimedShot, bomb].map((pattern) => ({ pattern, interval: pattern.interval * 0.7 })),
+      attacks: [directVolley, aimedShot, bomb].map((p) => fromGun(p, 0.7)),
       attackDelay: 1.5,
     },
     {
       name: 'Phase 3: still',
       trigger: { kind: 'phaseTime', seconds: 12 },
       movement: still,
-      attacks: [lineSweep, bomb].map((pattern) => ({ pattern })),
+      attacks: [lineSweep, bomb].map((p) => fromGun(p)),
     },
   ],
 };
@@ -114,19 +141,20 @@ export const demoBossMotion: BossDefinition = {
   layout: createDemoBoss,
   mirror: true,
   spawn: TUNING.boss,
+  components: DEMO_COMPONENTS,
   phases: [
     { ...demoBoss.phases[0], name: 'Phase 1: sway' },
     {
       name: 'Phase 2: fast zip',
       trigger: { kind: 'damage', percent: 10 },
       movement: zip(ZIP_FAST),
-      attacks: [directVolley, bomb, lineSweep].map((pattern) => ({ pattern })),
+      attacks: [directVolley, bomb, lineSweep].map((p) => fromGun(p)),
     },
     {
       name: 'Phase 3: figure-eight',
       trigger: { kind: 'damage', percent: 25 },
       movement: figureEight(70, 35, 6),
-      attacks: [aimedShot, directVolley, bomb].map((pattern) => ({ pattern })),
+      attacks: [aimedShot, directVolley, bomb].map((p) => fromGun(p)),
     },
     {
       name: 'Phase 4: sequence',
@@ -135,7 +163,7 @@ export const demoBossMotion: BossDefinition = {
         { movement: combine(sway(55, 4), bob(25, 2)), duration: 4 },
         { movement: named('zip', zip(ZIP_NORMAL)), duration: 4 },
       ]),
-      attacks: [lineSweep, bomb, aimedShot].map((pattern) => ({ pattern })),
+      attacks: [lineSweep, bomb, aimedShot].map((p) => fromGun(p)),
     },
   ],
 };

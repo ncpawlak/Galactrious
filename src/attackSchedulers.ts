@@ -10,7 +10,7 @@ export interface AttackScheduler {
   /** Restart the timing (new fight, new phase). */
   reset(): void;
   update(dt: number): AttackPattern | null;
-  /** Source (component id or group) of the pattern just returned by `update`; undefined = the boss itself. */
+  /** Source (component id or group) of the pattern just returned by `update`; undefined for debug schedulers (any live turret). */
   lastSource?: string;
 }
 
@@ -18,8 +18,12 @@ export interface AttackScheduler {
 export interface AttackStep {
   pattern: AttackPattern;
   interval?: number;
-  /** Fire from this component (id or group) instead of the boss core. Skipped while it is destroyed, detached or disabled. */
-  source?: string;
+  /**
+   * REQUIRED weapon source: the turret (id or group) this step fires from, at its position. Skipped while it is
+   * destroyed, detached, disabled or unpowered; its live sweeps and bombs end with it. `BossFight` rejects a
+   * definition with a step that has no source, or one that names no turret.
+   */
+  source: string;
 }
 
 /**
@@ -44,13 +48,14 @@ export class ScriptedScheduler implements AttackScheduler {
     this.timer = this.startDelay;
   }
 
-  /** Index of the next step that can fire (sourceless steps always can), or -1 when none can. */
+  /** Index of the next step whose source can fire, or -1 when none can. */
   private nextUsable(): number {
     const n = this.steps.length;
     for (let k = 0; k < n; k++) {
       const j = (this.index + k) % n;
       const src = this.steps[j].source;
-      if (!src || !this.gate || this.gate.usable(src)) return j;
+      if (!src) throw new Error(`attack step "${this.steps[j].pattern.name}" has no source: every attack must fire from a weapon source`);
+      if (!this.gate || this.gate.usable(src)) return j;
     }
     return -1;
   }

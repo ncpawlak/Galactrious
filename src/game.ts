@@ -205,7 +205,7 @@ export class Game {
     const fight = new BossFight(def);
     fight.components.target = this.ship;
     this.attacks.sources = fight.components;
-    fight.rooms.host = { fire: (p, o) => this.attacks.firePattern(p, o, this.ship), hazard: (h) => this.attacks.spawnHazard(h) };
+    fight.rooms.host = { fire: (p, o, alive) => this.attacks.firePattern(p, o, this.ship, alive), hazard: (h) => this.attacks.spawnHazard(h) };
     this.attacks.setScript(fight.makeScheduler());
     fight.onPhaseChange = (phase) => {
       this.attacks.setScript(fight.makeScheduler());
@@ -298,7 +298,7 @@ export class Game {
         this.attacks.selected = (this.attacks.selected + 1) % PATTERNS.length;
         break;
       case 'KeyF':
-        if (this.state === 'playing') this.attacks.fireSelected(this.bossOrigin, this.ship);
+        if (this.state === 'playing') this.attacks.fireSelected(this.ship);
         break;
       case 'KeyY':
         this.setTestMode(!this.testMode);
@@ -417,14 +417,11 @@ export class Game {
     }
   }
 
-  /** Attack origin, read live each frame so attacks follow a moving boss. */
-  private readonly bossOrigin = () => ({ x: this.boss.x + this.boss.core.x, y: this.boss.y + this.boss.height });
-
   /** Boss fire, player damage and the defeat/reset flow. */
   private updateThreat(dt: number): void {
     const b = this.boss;
     const playing = this.state === 'playing';
-    this.attacks.update(dt, this.bossOrigin, this.ship, playing && !b.defeated);
+    this.attacks.update(dt, this.ship, playing && !b.defeated);
     if (!playing) {
       if (this.state === 'lost' && this.elapsed - this.lostAt > TUNING.player.defeatTime) this.reset();
       return;

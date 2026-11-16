@@ -87,6 +87,8 @@ export interface CoreArmorSpec {
 export interface FireSource {
   origin: () => Point;
   target: Point;
+  /** False once the source is destroyed, detached, disabled or unpowered: hazards it started end. */
+  alive: () => boolean;
 }
 
 /** Lets a scheduler ask whether a step's source can fire and show the telegraph glow. */
@@ -217,6 +219,7 @@ export class ComponentSystem implements SourceGate {
       if (!a) throw new Error(`component ${s.id}: unknown anchor "${s.anchor}"`);
       const c = new BossComponent(s, a.x, a.y, mirrored);
       c.supportBase = this.support(c);
+      if (c.supportBase < 0.5) console.warn(`component ${s.id}: only ${(c.supportBase * 100) | 0}% of its footprint is solid in layer ${c.layer}; check its anchor`);
       this.items.push(c);
     }
     if (this.items.length > 0) {
@@ -273,16 +276,36 @@ export class ComponentSystem implements SourceGate {
 
   /** Fire from every live turret matching `source`: returns their live origins and aim points. */
   fireFrom(source: string): FireSource[] {
-    return this.firing(source).map((c) => {
-      c.glow = 0;
-      c.muzzle = 0.12;
-      const muzzle = () => {
-        const p = this.pos(c);
-        return { x: p.x + Math.cos(c.angle) * c.spec.radius * 0.9, y: p.y + Math.sin(c.angle) * c.spec.radius * 0.9 };
-      };
-      const o = muzzle();
-      return { origin: muzzle, target: { x: o.x + Math.cos(c.angle) * 400, y: o.y + Math.sin(c.angle) * 400 } };
-    });
+    return this.firing(source).map((c) => this.sourceOf(c));
+  }
+
+  /** Debug schedulers and [F]: fire from one live turret, taking them in turn. Empty when none is left. */
+  fireFromAny(): FireSource[] {
+    const live = this.items.filter((c) => c.spec.type === 'turret' && c.state === 'active' && c.enabled && c.powered);
+    if (live.length === 0) return [];
+    return [this.sourceOf(live[this.anyTurn++ % live.length])];
+  }
+
+  private anyTurn = 0;
+
+  private sourceOf(c: BossComponent): FireSource {
+    c.glow = 0;
+    c.muzzle = 0.12;
+    const muzzle = () => {
+      const p = this.pos(c);
+      return { x: p.x + Math.cos(c.angle) * c.spec.radius * 0.9, y: p.y + Math.sin(c.angle) * c.spec.radius * 0.9 };
+    };
+    const o = muzzle();
+    return {
+      origin: muzzle,
+      target: { x: o.x + Math.cos(c.angle) * 400, y: o.y + Math.sin(c.angle) * 400 },
+      alive: () => c.state === 'active' && c.enabled && c.powered,
+    };
+  }
+
+  /** True when `source` (id or group) names at least one turret: used to validate boss definitions. */
+  hasTurret(source: string): boolean {
+    return this.items.some((c) => c.spec.type === 'turret' && c.matches(source));
   }
 
   // --- phases -------------------------------------------------------------------------------
@@ -425,6 +448,16 @@ export class ComponentSystem implements SourceGate {
     return solid / n;
   }
 
+  /**
+   * Surface or embedded, the part needs solid pixels in its attach layer under it. It lets go once little
+   * is left: under 30% of the sample points, or under half of what it started with, whichever is lower
+   * (and always when none is left).
+   */
+  private mountLost(c: BossComponent): boolean {
+    const s = this.support(c);
+    return s <= 0 || s < Math.min(0.3, c.supportBase * 0.5);
+  }
+
   /** The anchoring pass is about to cut orphan pixels loose in layer `li`: take along components attached there. */
   private onDetach(li: number, isOrphan: (x: number, y: number) => boolean): void {
     for (const c of this.items) {
@@ -464,8 +497,13 @@ export class ComponentSystem implements SourceGate {
     if (this.boss.version !== this.seenVersion) {
       this.seenVersion = this.boss.version;
       for (const c of this.items) {
-        if (c.state !== 'active' || c.spec.mount !== 'surface') continue;
-        if (this.support(c) < Math.min(0.15, c.supportBase * 0.25)) this.detach(c);
+        if (c.state !== 'active' || c.supportBase <= 0) continue;
+        if (this.mountLost(c)) {
+          // Nothing left to hold it (carved away, not cut off as a chunk): it is destroyed, with its normal
+          // effect (crater, blast for explosives). Chunks that break away carry their parts off in `onDetach`.
+          c.state = 'dying';
+          this.queue.push({ c, t: 0 });
+        }
       }
     }
 
