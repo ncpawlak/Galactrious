@@ -7,7 +7,8 @@ export interface Point {
 
 /** Visual-only lobbed bomb (no collision): flies from `from` to `to` over the telegraph time. */
 export interface Lob {
-  from: Point;
+  /** Live launch point (the weapon source moves with the boss). */
+  from: () => Point;
   to: Point;
   height: number;
 }
@@ -24,6 +25,8 @@ export interface Hazard {
   /** `phase` is 'telegraph' or 'live'; `p` is progress 0..1 within that phase. */
   shapeAt(phase: 'telegraph' | 'live', p: number): HazardShape;
   lob?: Lob;
+  /** Weapon-source check: when it returns false the hazard ends at once (source destroyed, detached or disabled). */
+  alive?: () => boolean;
   age: number;
 }
 
@@ -54,7 +57,8 @@ export function drawHazard(ctx: CanvasRenderingContext2D, h: Hazard, clock: numb
   if (ph.phase === 'live') drawDamageZone(ctx, shape);
   else drawTelegraph(ctx, shape, clock, ph.p);
   if (h.lob && ph.phase === 'telegraph') {
-    const { from, to, height } = h.lob;
+    const { to, height } = h.lob;
+    const from = h.lob.from();
     const t = ph.p;
     drawBullet(ctx, from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t - Math.sin(t * Math.PI) * height, 'bomb');
   }

@@ -4,6 +4,7 @@ import { aimedShot, bomb, directVolley, lineSweep } from '../attacks';
 import { sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
 import type { AttackStep } from '../attackSchedulers';
 import type { AttackPattern } from '../attacks';
+import type { ComponentSpec } from '../components';
 import type { BossDefinition } from './types';
 import { crisp, makeCanvas, shade } from './paint';
 
@@ -121,11 +122,45 @@ export function createBulwark(): BossSpec {
       { name: 'Rooms', density: BULWARK_TUNING.densities.rooms, canvas: rooms.canvas },
     ],
     core: { x: CORE.x, y: CORE.y, radius: 16, hp: BULWARK_TUNING.coreHp },
+    // Weapon mounts: two nose guns and the keel gun at the tail (clear of the hangar consoles).
+    anchors: {
+      noseL: { x: CX - 44, y: 34 },
+      noseR: { x: CX + 44, y: 34 },
+      keel: { x: CX, y: 305 },
+    },
   };
 }
 
+/** A hull-mounted turret (surface mount, layer 0). Shared by every Bulwark variant. */
+export const bulwarkTurret = (id: string, anchor: string, group: string, turretSpec: NonNullable<ComponentSpec['turret']>, enabled = true): ComponentSpec => ({
+  id,
+  type: 'turret',
+  anchor,
+  radius: 15,
+  hp: 450,
+  mount: 'surface',
+  group,
+  enabled,
+  turret: turretSpec,
+  crater: { radius: 20, energy: 2200 },
+});
+
+/**
+ * Weapon sources every Bulwark has (issue #43: every attack fires from a turret). The nose guns track the
+ * player (aimed shots); the keel gun at the tail is the main weapon: volleys, sweeps and bombs.
+ */
+export const BULWARK_BASE_TURRETS: ComponentSpec[] = [
+  bulwarkTurret('nose-l', 'noseL', 'nose-guns', { aim: 'tracking', angle: 90, trackRate: 120, telegraph: 0.6 }),
+  bulwarkTurret('nose-r', 'noseR', 'nose-guns', { aim: 'tracking', angle: 90, trackRate: 120, telegraph: 0.6 }),
+  bulwarkTurret('keel', 'keel', 'keel-gun', { aim: 'fixed', angle: 90, telegraph: 0.6 }),
+];
+
 /** The same pattern on a different pause: `scale` < 1 = faster. */
-const every = (pattern: AttackPattern, scale: number): AttackStep => ({ pattern, interval: pattern.interval * scale });
+const NOSE = 'nose-guns';
+const KEEL = 'keel-gun';
+/** Which weapon fires each pattern in the plain Bulwark. */
+const SOURCE: Record<string, string> = { aimed: NOSE, direct: KEEL, sweep: KEEL, bomb: KEEL };
+const every = (pattern: AttackPattern, scale: number): AttackStep => ({ pattern, interval: pattern.interval * scale, source: SOURCE[pattern.name] });
 
 /** Zip travel for a 420 px boss on a 540 screen: ZIP_* presets with the amplitude cut from 90 to 60. */
 const ZIP_NORMAL_WIDE = { ...ZIP_NORMAL, amplitude: 60 };
@@ -136,6 +171,7 @@ export const bulwark: BossDefinition = {
   name: 'Bulwark',
   layout: createBulwark,
   spawn: { x: TUNING.boss.x, y: 40 },
+  components: BULWARK_BASE_TURRETS,
   phases: [
     {
       name: 'Patrol',

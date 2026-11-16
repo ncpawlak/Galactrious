@@ -76,7 +76,8 @@ export function consoleSpecs(rooms: RoomSpec[], defaultLayer: number): Component
 
 /** Where a room's reaction fires: the centre of its consoles, live (follows the boss). */
 export interface RoomHost {
-  fire(pattern: AttackPattern, origin: () => Point): void;
+  /** `alive` ends the pattern's hazards when the room's consoles are gone. */
+  fire(pattern: AttackPattern, origin: () => Point, alive: () => boolean): void;
   hazard(h: Omit<Hazard, 'age'>): void;
 }
 
@@ -163,6 +164,17 @@ export class RoomSystem {
     return { x: this.components.boss.x + room.lx, y: this.components.boss.y + room.ly };
   }
 
+  /**
+   * Weapon source of a room's reactions: the centre of its consoles that are still working, live (follows the
+   * boss). With none left the room has no source: its attacks do not fire and ones already started end.
+   */
+  sourceOrigin(room: Room): Point | null {
+    const live = room.consoles.filter((c) => c.state === 'active' || c.state === 'dying');
+    if (live.length === 0) return null;
+    const b = this.components.boss;
+    return { x: b.x + live.reduce((a, c) => a + c.lx, 0) / live.length, y: b.y + live.reduce((a, c) => a + c.ly, 0) / live.length };
+  }
+
   /** Debug: force a room's exposure reaction now (once, like the real thing). Returns false if already exposed. */
   forceExpose(id?: string): boolean {
     const room = id ? this.find(id) : this.rooms.find((r) => !r.exposed && !r.offline);
@@ -218,16 +230,22 @@ export class RoomSystem {
   private run(p: Pending): void {
     if (!this.host) return;
     const room = p.room;
-    const origin = () => this.origin(room);
+    // Reactions come from the room's working consoles: none left, nothing fires.
+    const first = this.sourceOrigin(room);
+    if (!first) return;
+    const alive = () => this.sourceOrigin(room) !== null;
+    let last = first;
+    const origin = () => (last = this.sourceOrigin(room) ?? last);
     const e = p.effect;
     if (e.kind === 'attack') {
-      this.host.fire(e.pattern, origin);
+      this.host.fire(e.pattern, origin, alive);
     } else if (e.kind === 'pulse') {
       const width = e.width ?? 26;
       this.host.hazard({
         telegraph: e.telegraph ?? 0.5,
         active: e.active ?? 0.9,
         damage: e.damage ?? 1,
+        alive,
         // Telegraph: the outline of the final ring. Live: the ring expands from the room to `radius`.
         shapeAt: (phase, k) => {
           const o = origin();

@@ -49,6 +49,21 @@ export class BossFight {
     this.rooms = new RoomSystem(this.components, rooms);
     this.components.vulnerability = () => this.coreVulnerability();
     this.components.applyPhase(this.phase.components);
+    this.validateSources();
+  }
+
+  /**
+   * Every attack step must name a weapon source that exists on this boss (DESIGN.md "Turrets"). A missing or
+   * unknown source is a definition error, raised when the fight is built so it can never fire from nowhere.
+   */
+  private validateSources(): void {
+    for (const ph of this.def.phases) {
+      for (const s of ph.attacks) {
+        const where = `${this.def.id} / ${ph.name} / ${s.pattern.name}`;
+        if (!s.source) throw new Error(`${where}: attack step has no source (every attack must fire from a turret)`);
+        if (!this.components.hasTurret(s.source)) throw new Error(`${where}: source "${s.source}" matches no turret component`);
+      }
+    }
   }
 
   /**

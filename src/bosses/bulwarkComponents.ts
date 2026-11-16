@@ -5,7 +5,7 @@ import type { AttackPattern } from '../attacks';
 import type { AttackStep } from '../attackSchedulers';
 import type { ComponentSpec } from '../components';
 import { sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
-import { createBulwark } from './bulwark';
+import { BULWARK_BASE_TURRETS, bulwarkTurret as turret, createBulwark } from './bulwark';
 import type { BossDefinition } from './types';
 
 /**
@@ -26,8 +26,7 @@ export function createBulwarkComponents(): BossSpec {
   return {
     ...createBulwark(),
     anchors: {
-      noseL: { x: CX - 44, y: 34 },
-      noseR: { x: CX + 44, y: 34 },
+      ...createBulwark().anchors,
       wingL: { x: CX - 165, y: 135 },
       wingR: { x: CX + 165, y: 135 },
       frameTank: { x: 166, y: 121 },
@@ -37,22 +36,8 @@ export function createBulwarkComponents(): BossSpec {
   };
 }
 
-const turret = (id: string, anchor: string, group: string, turretSpec: NonNullable<ComponentSpec['turret']>, enabled = true): ComponentSpec => ({
-  id,
-  type: 'turret',
-  anchor,
-  radius: 15,
-  hp: 450,
-  mount: 'surface',
-  group,
-  enabled,
-  turret: turretSpec,
-  crater: { radius: 20, energy: 2200 },
-});
-
 export const BULWARK_COMPONENTS: ComponentSpec[] = [
-  turret('nose-l', 'noseL', 'nose-guns', { aim: 'tracking', angle: 90, trackRate: 120, telegraph: 0.6 }),
-  turret('nose-r', 'noseR', 'nose-guns', { aim: 'tracking', angle: 90, trackRate: 120, telegraph: 0.6 }),
+  ...BULWARK_BASE_TURRETS,
   turret('wing-l', 'wingL', 'wing-guns', { aim: 'rotating', angle: 60, spin: 55, telegraph: 0.5 }, false),
   turret('wing-r', 'wingR', 'wing-guns', { aim: 'fixed', angle: 105, telegraph: 0.5 }, false),
   {
@@ -89,7 +74,8 @@ export const BULWARK_COMPONENTS: ComponentSpec[] = [
   },
 ];
 
-const every = (pattern: AttackPattern, scale: number, source?: string): AttackStep => ({ pattern, interval: pattern.interval * scale, source });
+const every = (pattern: AttackPattern, scale: number, source: string): AttackStep => ({ pattern, interval: pattern.interval * scale, source });
+const KEEL = 'keel-gun';
 const ZIP_NORMAL_WIDE = { ...ZIP_NORMAL, amplitude: 60 };
 const ZIP_FAST_WIDE = { ...ZIP_FAST, amplitude: 60 };
 
@@ -106,11 +92,11 @@ export const bulwarkComponents: BossDefinition = {
       name: 'Patrol',
       movement: sway(50, 8),
       attacks: [
-        every(directVolley, 1),
+        every(directVolley, 1, KEEL),
         every(aimedShot, 0.9, 'nose-guns'),
-        every(directVolley, 1),
+        every(directVolley, 1, KEEL),
         every(aimedShot, 0.9, 'nose-guns'),
-        every(bomb, 1),
+        every(bomb, 1, KEEL),
       ],
     },
     {
@@ -118,12 +104,12 @@ export const bulwarkComponents: BossDefinition = {
       trigger: { kind: 'damage', percent: 30 },
       movement: zip(ZIP_NORMAL_WIDE),
       attacks: [
-        every(directVolley, 0.75),
+        every(directVolley, 0.75, KEEL),
         every(aimedShot, 0.8, 'nose-guns'),
         every(aimedShot, 0.8, 'wing-guns'),
-        every(lineSweep, 0.75),
+        every(lineSweep, 0.75, KEEL),
         every(aimedShot, 0.8, 'wing-guns'),
-        every(bomb, 0.75),
+        every(bomb, 0.75, KEEL),
       ],
       components: { enable: ['wing-guns'] },
     },
@@ -133,10 +119,10 @@ export const bulwarkComponents: BossDefinition = {
       movement: zip(ZIP_FAST_WIDE),
       attacks: [
         every(aimedShot, 0.5, 'nose-guns'),
-        every(directVolley, 0.5),
+        every(directVolley, 0.5, KEEL),
         every(aimedShot, 0.5, 'wing-guns'),
-        every(lineSweep, 0.5),
-        every(bomb, 0.5),
+        every(lineSweep, 0.5, KEEL),
+        every(bomb, 0.5, KEEL),
         every(aimedShot, 0.5, 'wing-guns'),
       ],
       enrage: {},

@@ -38,6 +38,8 @@ export interface AttackPattern {
   interval: number;
   /** Default bullet style for this pattern's spawns. */
   style?: StyleName;
+  /** The aim point is the player (bombs), not the firing turret's barrel direction. */
+  aimAtPlayer?: boolean;
   fire(ctx: AttackContext): void;
 }
 
@@ -95,6 +97,7 @@ export const lineSweep: AttackPattern = {
 export const bomb: AttackPattern = {
   name: 'bomb',
   interval: TUNING.attacks.bomb.interval,
+  aimAtPlayer: true,
   fire({ origin, target, spawnHazard }) {
     const c = TUNING.attacks.bomb;
     const to = { x: target.x, y: target.y };
@@ -103,8 +106,8 @@ export const bomb: AttackPattern = {
       active: c.active,
       damage: c.damage,
       shapeAt: () => ({ kind: 'circle', x: to.x, y: to.y, r: c.radius }),
-      // Visual lob only: launches from where the boss is now, no contact damage (see issue #27).
-      lob: { from: origin(), to, height: c.lobHeight },
+      // Visual lob only: launches from the weapon source's live position, no contact damage (see issue #27).
+      lob: { from: origin, to, height: c.lobHeight },
     });
   },
 };
@@ -124,7 +127,7 @@ export class Attacks {
   hazards: Hazard[] = [];
   private readonly debugScheduler = new DebugScheduler(PATTERNS);
   /** Resolves a step's `source` (turret id or group) to firing positions; set by the game from the boss's components. */
-  sources: { fireFrom(source: string): FireSource[] } | null = null;
+  sources: { fireFrom(source: string): FireSource[]; fireFromAny(): FireSource[] } | null = null;
   private script: AttackScheduler | null = null;
   private clock = 0;
 
@@ -155,17 +158,26 @@ export class Attacks {
     return this.mode === 'phase' ? this.script : this.debugScheduler;
   }
 
-  /** Fire pattern `i` of PATTERNS now, regardless of the schedule. */
-  fire(i: number, origin: () => Point, target: Point): void {
-    this.firePattern(PATTERNS[i], origin, target);
+  /** Debug: fire pattern `i` of PATTERNS now, from a live turret (nothing fires when none is left). */
+  fire(i: number, player: Point): void {
+    this.fireFromSources(PATTERNS[i], this.sources?.fireFromAny() ?? [], player);
   }
 
-  firePattern(p: AttackPattern, origin: () => Point, target: Point): void {
+  /** A turret's own aim is its barrel; lobbed patterns (`aimAtPlayer`) land on the player instead. */
+  private fireFromSources(p: AttackPattern, srcs: FireSource[], player: Point): void {
+    for (const s of srcs) this.firePattern(p, s.origin, p.aimAtPlayer ? player : s.target, s.alive);
+  }
+
+  /**
+   * Fire `p` from `origin` (a live getter). `alive` ties the pattern's hazards (sweep, bomb) to the weapon
+   * source: they end the moment it returns false. Bullets already in flight finish.
+   */
+  firePattern(p: AttackPattern, origin: () => Point, target: Point, alive?: () => boolean): void {
     p.fire({
       origin,
       target,
       spawn: (b) => this.bullets.push({ style: p.style, ...b, alive: true }),
-      spawnHazard: (h) => this.hazards.push({ ...h, age: 0 }),
+      spawnHazard: (h) => this.hazards.push({ alive, ...h, age: 0 }),
     });
   }
 
@@ -174,18 +186,21 @@ export class Attacks {
     this.hazards.push({ ...h, age: 0 });
   }
 
-  fireSelected(origin: () => Point, target: Point): void {
-    this.fire(this.selected, origin, target);
+  fireSelected(player: Point): void {
+    this.fire(this.selected, player);
   }
 
-  update(dt: number, origin: () => Point, target: Point, firing: boolean): void {
+  /**
+   * Every attack comes from a weapon source (a turret): the phase script names it per step, the debug
+   * schedulers use any live turret. There is no boss-centre fallback.
+   */
+  update(dt: number, player: Point, firing: boolean): void {
     if (this.enabled && firing) {
       const sched = this.scheduler;
       const p = sched?.update(dt);
-      if (p) {
+      if (p && this.sources) {
         const src = sched!.lastSource;
-        if (src && this.sources) for (const s of this.sources.fireFrom(src)) this.firePattern(p, s.origin, s.target);
-        else this.firePattern(p, origin, target);
+        this.fireFromSources(p, src ? this.sources.fireFrom(src) : this.sources.fireFromAny(), player);
       }
     }
     for (const b of this.bullets) {
@@ -195,7 +210,7 @@ export class Attacks {
     }
     this.bullets = this.bullets.filter((b) => b.alive);
     for (const h of this.hazards) h.age += dt;
-    this.hazards = this.hazards.filter((h) => hazardPhase(h) !== null);
+    this.hazards = this.hazards.filter((h) => hazardPhase(h) !== null && (!h.alive || h.alive()));
   }
 
   /** Remove and return the total damage of bullets touching the player hitbox (circle). */
@@ -218,6 +233,7 @@ export class Attacks {
   collectHazards(x: number, y: number, r: number): number {
     let dmg = 0;
     for (const h of this.hazards) {
+      if (h.alive && !h.alive()) continue;
       const ph = hazardPhase(h);
       if (ph && ph.phase === 'live' && shapeHits(h.shapeAt('live', ph.p), x, y, r)) dmg = Math.max(dmg, h.damage);
     }
