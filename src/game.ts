@@ -179,6 +179,7 @@ export class Game {
       setAttacks: (on: boolean) => (this.attacks.enabled = on),
       components: this.fight.components,
       rooms: this.fight.rooms,
+      regrowth: this.fight.regrowth,
       setComponentDebug: (on: boolean) => (this.fight.components.debug = on),
       /** Advance the sim `seconds` of game time without rendering (for scripted measurements). */
       simulate: (seconds: number, mode: 'off' | 'sweep' | 'focus' = this.auto) => {
@@ -296,6 +297,9 @@ export class Game {
         break;
       case 'KeyE':
         this.fight.rooms.forceExpose(); // debug: trigger the next room's exposure reaction
+        break;
+      case 'KeyU':
+        if (this.fight.regrowth) this.fight.regrowth.enabled = !this.fight.regrowth.enabled; // debug: regrowth on/off live
         break;
       case 'KeyH':
         this.fight.components.debug = !this.fight.components.debug;
@@ -816,6 +820,7 @@ export class Game {
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component/room hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]  expose room [E]`,
       `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${d.key}]`).join('  ')}  fire all [Q]  cooldown x${WEAPONS.cooldownScale} [, .]`,
+      ...this.regrowthLines(),
       `blast scale x${BLAST.scale.toFixed(2)} [-/=] (+Shift x4)  r: turret ${BLAST.defaults.turret.radius} expl ${BLAST.defaults.explosive.radius} room ${BLAST.defaults.room.radius}`,
     ];
     ctx.save();
@@ -828,6 +833,15 @@ export class Game {
     ctx.textBaseline = 'top';
     lines.forEach((t, i) => ctx.fillText(t, 12, 10 + i * 15));
     ctx.restore();
+  }
+
+  /** Debug overlay lines for hull regrowth (none for bosses that do not regrow). */
+  private regrowthLines(): string[] {
+    const g = this.fight.regrowth;
+    if (!g) return [];
+    return [
+      `regrowth ${g.enabled ? 'ON' : 'off'} [U] ${g.spec.mode} layer ${g.layerIndex}: ${(g.rate * 100).toFixed(2)}%/s  idle ${g.sinceHit.toFixed(1)}/${g.idleDelay}s${g.idle ? ' IDLE' : ''}  regrown ${(g.regrownFraction * 100).toFixed(1)}%${g.active ? ' growing' : ''}`,
+    ];
   }
 
   /** Player hitbox, shown with the debug overlay. */
