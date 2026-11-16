@@ -57,3 +57,40 @@ default; `[B]` in debug cycles them). `src/bossFight.ts` (`BossFight`) runs a de
 - **Phases**: Patrol (sway, volley/aimed, occasional bomb); Pressure at 30% pixel damage (zip, adds lineSweep, intervals x0.75); Enrage at 65% (ZIP_FAST, all four attacks, intervals x0.5). Pixel damage is dominated by the cheap hull (63% of pixels), so the 30%/65% transitions arrive early (about 20 s and 45 s under the sweep). Zip amplitude is cut to 60 (`ZIP_*` presets use 90, which is edge to edge for 360 px) so a 420 px boss stays on screen.
 - **Enrage cue** (any boss): set `enrage: {}` (optional `breather` seconds, `tint` 'r, g, b') on a `PhaseDefinition`. At the transition `BossFight` sets `enraged` and a 0.45 s `enrageFlash`; `Game` adds a full screen-shake (`Effects.onEnrage`) and plays `Sfx.enrage`; `EnrageTint` (`src/enrage.ts`) renders the boss offscreen and tints it with `source-atop` (white blink, then a slow red pulse that stays, carve visuals remain readable); `Hud.drawEnraged` shows an "ENRAGED" badge top centre, clear of the top-right health bar. The phase's attack scheduler starts after the breather (default 1.5 s), replacing `attackDelay`. Enraged state persists into later phases and is cleared when debug-jumping back before the enrage phase.
 - **Hull tuning metric**: the hull is tuned by time to carve 25% of it (`hull25` in `debug.clearTimes()` and the debug overlay; a player needs about 25% to reach the layers below), not by clearing it to <=5%. Target about 60 s, default ship stats, test mode off, steady sweep. Bulwark hull density 2.4 and demo `TUNING.densities.hull` 1.12 measure 57-63 s and 59-60 s. The <=5% numbers are still reported.
+
+## Boss anatomy: components (design only, not built)
+Status: design pass. Nothing here is implemented yet. It extends the boss definition framework above.
+
+**Concept.** A *component* is an object attached to a boss at a point in boss-local coordinates. It follows the boss (movement, mirror), has hidden HP, a hit area, a reaction to damage and an effect when destroyed. Turrets, explosive pieces and room consoles are all component *types*, so rooms/consoles (milestone 3, issue #10) reuse this system instead of adding another one. Later types (generators, regrowth nodes, conduits, spawners, shutters, weak points) slot in the same way.
+
+**Definition.** `BossDefinition` gets `components: ComponentSpec[]`:
+- `id`, `type` (`'turret' | 'explosive' | ...`), `anchor` (a named point from `BossSpec.anchors`, which mirror already flips, so components mirror for free), `radius` (circular hit area; rectangles can come later), `hp`.
+- `mount`: `'surface'` or `'embedded'` (see Placement). Embedded components also name a `layer`.
+- `onDestroy`: a list of effects (blast, disable group, spawn). `group`: optional string so one destruction can disable others (a room's consoles, a generator set).
+- Phases can enable/disable components and apply modifiers (e.g. turret fire interval x0.5 in enrage).
+
+**Placement.**
+- *Embedded* (explosive tanks, consoles, generators): sits in a layer. It is targetable only once that layer is exposed over the component's centre (same rule as carving: every layer above is empty there). Drawn at its layer depth, so it shows through the hole as you dig.
+- *Surface-mounted* (turrets): always targetable and drawn on top of the hull. It is attached to the hull region under it: if the anchoring rule cuts that region off, the component goes with the fragment (cut a wing, lose its turret).
+
+**HP and feedback.** HP is real but never shown: no bar, no number. Player bullets that reach a targetable component deal their damage to its HP and are consumed. Feedback is visual and audible only: a hit flash and sound, then visible damage states at about 75 / 50 / 25% HP (cracks, sparks, smoke, flicker) and a distinct destroy effect. No damage numbers on components.
+
+**Destruction and blasts.**
+- Every destroyed component carves a crater (a radial carve using the existing density rules, so tougher layers resist), small for most types.
+- Explosive pieces carry a `blast`: radius, energy and a falloff with distance. The blast carves boss layers in that radius, damages other components in range, and damages the core scaled by the core's current armor. **Boss-only for now:** blasts never hurt the player. Self-harm from blasts is a later risk/reward lever (issue #8).
+- **Chain reactions are on.** Processed with a queue and each component destroyed once, so chains cannot loop. Neighbouring explosives within a blast radius take blast damage and may chain.
+
+**Turrets.** Attack patterns fire from a turret's position, not the boss centre: an `AttackStep` can name a `source` (a component id or group). The scheduler skips steps whose source is destroyed or detached, so destroying a turret removes its attacks (the longer-term direction in issue #16). Aim modes: fixed, tracking, rotating. A turret telegraphs before firing (glow). Enrage can buff turrets through a phase modifier.
+
+**Core armor.** The core's armor is currently derived from how much layer is dug (`coreVulnerability` in `Game`). It moves into the boss definition: `coreArmor` with a base `min` plus optional `requires` (component ids or groups, e.g. generators). Each destroyed required component raises vulnerability by a set amount, so destroying parts can progress the fight without digging everything.
+
+**Debris.** Parts blown off the boss are in space: they do not fall toward the player. Detached chunks and components drift away from the break point with a slow outward push and spin, fade out and leave the screen. The existing fragment code (`FRAGMENT_GRAVITY` in `src/boss.ts`) currently pulls fragments down and must change to this.
+
+**Rendering and debug.** Mounted components draw above the hull, embedded ones at their layer depth. A debug toggle draws component hit areas and ids. Scripted measurement (`game.debug.simulate`) and the autopilot must keep working with components present.
+
+**Build order.**
+1. Component framework, plus two types: turret and explosive piece. Includes craters, chain reactions, damage states, source-bound turret attacks, `coreArmor` in the definition, floating debris, and a demo boss using them.
+2. Rooms and consoles (milestone 3, #10): consoles as a component type, room-disable via `group`.
+3. Generators and core-armor progression, regrowth nodes (#15), conduits, spawners, shutters, weak points.
+
+**Deferred decisions.** Damage multiplier for weak points; whether blasts can ever hurt the player; spawner enemy types; rectangular hit areas; how components are authored (a layout-time painter versus coordinates in the definition).
