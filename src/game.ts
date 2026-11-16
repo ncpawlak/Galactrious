@@ -505,6 +505,7 @@ export class Game {
     for (const s of this.stars) ctx.fillRect(s.x, s.y, s.size, s.size);
 
     if (!this.boss.defeated || this.elapsed - this.wonAt < 1.2) this.boss.render(ctx);
+    this.attacks.drawBossDim(ctx);
     this.drawBullets();
     this.attacks.draw(ctx);
     this.drawParticles();
