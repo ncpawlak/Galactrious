@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Galactrious</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #05060d;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      canvas {
+        width: min(100vw, calc(100vh * 540 / 960));
+        height: auto;
+        aspect-ratio: 540 / 960;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        image-rendering: pixelated;
+        background: #05060d;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game" width="540" height="960"></canvas>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
