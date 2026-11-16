@@ -16,6 +16,18 @@ export type PhaseTrigger =
   | { kind: 'fightTime'; seconds: number }
   | { kind: 'phaseTime'; seconds: number };
 
+/**
+ * Enrage cue, set on a phase to mark it as an enrage phase. At the transition the boss flashes, the
+ * screen shakes and a sound plays; while the phase lasts (and in later phases) a red pulse stays on
+ * the boss and the HUD shows "ENRAGED". `{}` takes every default.
+ */
+export interface EnrageCue {
+  /** Seconds before attacks resume after the transition, so it reads (default 1.5). */
+  breather?: number;
+  /** Tint colour as 'r, g, b' (default a hot red). */
+  tint?: string;
+}
+
 export interface PhaseDefinition {
   name: string;
   /** Required for every phase except the first. */
@@ -25,6 +37,8 @@ export interface PhaseDefinition {
   attacks: AttackStep[];
   /** Seconds before the first attack after the phase starts (default 1). */
   attackDelay?: number;
+  /** Marks this phase as an enrage phase (see EnrageCue). Overrides `attackDelay` with the breather. */
+  enrage?: EnrageCue;
 }
 
 /**

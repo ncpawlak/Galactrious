@@ -1,4 +1,4 @@
-import { H } from './config';
+import { H, W } from './config';
 import type { Boss } from './boss';
 
 /** Per-layer progress bars plus room status. Reads boss state only; owns no game logic. */
@@ -73,6 +73,24 @@ export class Hud {
       for (const i of r.pixels) if (layer.mask[i]) n++;
       return n / r.pixels.length;
     });
+  }
+
+  /** "ENRAGED" badge, top centre (clear of the top-right health bar). Pulses with `time`. */
+  drawEnraged(ctx: CanvasRenderingContext2D, time: number): void {
+    const pulse = 0.5 + 0.5 * Math.sin(time * 6);
+    ctx.save();
+    ctx.font = 'bold 18px ui-monospace, Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const w = 128;
+    ctx.fillStyle = `rgba(90, 8, 8, ${0.75 + 0.2 * pulse})`;
+    ctx.fillRect(W / 2 - w / 2, 14, w, 28);
+    ctx.strokeStyle = `rgba(255, 90, 60, ${0.6 + 0.4 * pulse})`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(W / 2 - w / 2 + 1, 15, w - 2, 26);
+    ctx.fillStyle = pulse > 0.5 ? '#ffd0c0' : '#ff7a5a';
+    ctx.fillText('ENRAGED', W / 2, 29);
+    ctx.restore();
   }
 
   draw(ctx: CanvasRenderingContext2D, boss: Boss): void {

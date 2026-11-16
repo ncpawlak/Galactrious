@@ -72,6 +72,12 @@ export class Effects {
     this.addTrauma(JUICE.shake.explosion);
   }
 
+  /** Enrage transition: a heavy shake. */
+  onEnrage(): void {
+    if (!this.enabled) return;
+    this.trauma = 1;
+  }
+
   private addTrauma(a: number): void {
     this.trauma = Math.min(1, Math.max(this.trauma, Math.min(JUICE.shake.maxTrauma, this.trauma + a)));
   }

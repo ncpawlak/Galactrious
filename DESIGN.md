@@ -24,7 +24,7 @@ whose layers are carved away by projectiles.
 4. Attack patterns tied to rooms, player damage, death reset.
 5. Action report and mission flow.
 6. Upgrades and currency.
-7. Second boss.
+7. Second boss (Bulwark, done).
 
 ## Stack
 TypeScript + Vite + Canvas 2D, 540x960 logical portrait resolution.
@@ -50,3 +50,10 @@ default; `[B]` in debug cycles them). `src/bossFight.ts` (`BossFight`) runs a de
 - **Attack scheduling** (`src/attackSchedulers.ts`): a scheduler returns which pattern to fire now. `ScriptedScheduler` runs a phase's attack set; `DebugScheduler` cycles or randomises all patterns. `[N]` switches phase script -> cycle -> random. Patterns read the boss origin through a getter every frame, never a cached position.
 - **Default boss**: one phase, the original sway and attack set. `Demo boss (3 phases)` is the example: phase 2 at 15% pixel damage, phase 3 after 12 s in phase 2.
 - The debug overlay shows the phase, its movement, progress toward the next trigger and both damage metrics.
+
+## Bulwark (second boss) and the enrage cue
+- **Bulwark** (`src/bosses/bulwark.ts`, `[B]` in game): a 420 x 330 manta gunship painted from shapes with the shared helpers in `src/bosses/paint.ts` (`makeCanvas`, `shade`, `crisp`, `fillRects`; the demo boss uses them too). Hull = bronze manta silhouette (swept wings, notch at the nose). Frame = graphite-blue outer armour ring (14 px band inside the hull edge), inner bulkhead ring (r 55..69) round the reactor, four diagonal spokes; the gaps between spokes leave hull directly over the rooms (open lanes). Rooms = left/right gun bay in the wings, reactor (holds the core), lower hangar, in rust/deep red. No violet, magenta, lime or cyan, so bullets stay readable. The frame is one connected region (wings detach when cut off); each room is its own region (one breaking away never takes the others).
+- **Own densities**: `BULWARK_TUNING` (hull 2.4, frame 4.2, rooms 0.8, core HP 1500). The global `TUNING` is untouched. Steady `debug.simulate(..., 'sweep')` with default ship stats measured roughly: hull and frame cleared at 80-90 s, rooms 80-110 s, core 250-490 s (core time is dominated by how often the sweep crosses the 32 px core target, so it varies a lot). A hull clear of 60 s was not reachable by sweep alone. Feel needs a human playtest.
+- **Phases**: Patrol (sway, volley/aimed, occasional bomb); Pressure at 30% pixel damage (zip, adds lineSweep, intervals x0.75); Enrage at 65% (ZIP_FAST, all four attacks, intervals x0.5). Pixel damage is dominated by the cheap hull (63% of pixels), so the 30%/65% transitions arrive early (about 20 s and 45 s under the sweep). Zip amplitude is cut to 60 (`ZIP_*` presets use 90, which is edge to edge for 360 px) so a 420 px boss stays on screen.
+- **Enrage cue** (any boss): set `enrage: {}` (optional `breather` seconds, `tint` 'r, g, b') on a `PhaseDefinition`. At the transition `BossFight` sets `enraged` and a 0.45 s `enrageFlash`; `Game` adds a full screen-shake (`Effects.onEnrage`) and plays `Sfx.enrage`; `EnrageTint` (`src/enrage.ts`) renders the boss offscreen and tints it with `source-atop` (white blink, then a slow red pulse that stays, carve visuals remain readable); `Hud.drawEnraged` shows an "ENRAGED" badge top centre, clear of the top-right health bar. The phase's attack scheduler starts after the breather (default 1.5 s), replacing `attackDelay`. Enraged state persists into later phases and is cleared when debug-jumping back before the enrage phase.
+- **Hull tuning metric**: the hull is tuned by time to carve 25% of it (`hull25` in `debug.clearTimes()` and the debug overlay; a player needs about 25% to reach the layers below), not by clearing it to <=5%. Target about 60 s, default ship stats, test mode off, steady sweep. Bulwark hull density 2.4 and demo `TUNING.densities.hull` 1.12 measure 57-63 s and 59-60 s. The <=5% numbers are still reported.

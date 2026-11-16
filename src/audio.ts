@@ -70,6 +70,14 @@ export class Sfx {
     this.tone(c, 90, 30, 0.7, 'sine', JUICE.audio.volume * 2);
   }
 
+  /** Enrage cue: a low falling growl under a rising alarm sweep. */
+  enrage(): void {
+    const c = this.ready();
+    if (!c) return;
+    this.tone(c, 220, 50, 0.9, 'sawtooth', JUICE.audio.volume * 1.3);
+    this.tone(c, 330, 660, 0.35, 'square', JUICE.audio.volume * 0.7);
+  }
+
   private tone(c: AudioContext, f0: number, f1: number, dur: number, type: OscillatorType, vol: number): void {
     const o = c.createOscillator();
     o.type = type;

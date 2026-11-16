@@ -2,6 +2,7 @@ import { Attacks, PATTERNS } from './attacks';
 import { Sfx } from './audio';
 import type { Boss } from './boss';
 import { BossFight } from './bossFight';
+import { EnrageTint } from './enrage';
 import { BOSSES, type BossDefinition } from './bosses';
 import { H, TUNING, W } from './config';
 import { Effects } from './effects';
@@ -84,6 +85,8 @@ export class Game {
   private wonAt = 0;
   /** Debug: elapsed time when each layer dropped to <=5% remaining, plus the core at the end (null until then). */
   private clearAt: (number | null)[] = [];
+  /** Time (s) at which 25% of the hull layer (layer 0) was carved away. */
+  private hull25At: number | null = null;
   /** Debug: scripted ship control for measuring clear times. 'sweep' = steady side-to-side, 'focus' = aim at the core. */
   private auto: 'off' | 'sweep' | 'focus' = 'off';
   private testMode = false;
@@ -149,7 +152,7 @@ export class Game {
 
   private clearTimes() {
     const names = [...this.boss.layers.map((l) => l.name.toLowerCase()), 'core'];
-    return Object.fromEntries(names.map((n, i) => [n, this.clearAt[i] === null || this.clearAt[i] === undefined ? null : +this.clearAt[i]!.toFixed(1)]));
+    return Object.fromEntries([['hull25', this.hull25At === null ? null : +this.hull25At.toFixed(1)] as const, ...names.map((n, i) => [n, this.clearAt[i] === null || this.clearAt[i] === undefined ? null : +this.clearAt[i]!.toFixed(1)]),]);
   }
 
   private setTestMode(on: boolean): void {
@@ -160,6 +163,7 @@ export class Game {
   }
 
   private readonly hud = new Hud();
+  private readonly enrageTint = new EnrageTint();
 
   /** The boss of the current fight (a new object after each restart). */
   private get boss(): Boss {
@@ -169,7 +173,13 @@ export class Game {
   private makeFight(def: BossDefinition = BOSSES[this.bossDefIndex]): BossFight {
     const fight = new BossFight(def);
     this.attacks.setScript(fight.makeScheduler());
-    fight.onPhaseChange = () => this.attacks.setScript(fight.makeScheduler());
+    fight.onPhaseChange = (phase) => {
+      this.attacks.setScript(fight.makeScheduler());
+      if (phase.enrage) {
+        this.fx.onEnrage();
+        this.sfx.enrage();
+      }
+    };
     return fight;
   }
 
@@ -208,6 +218,7 @@ export class Game {
     this.state = 'playing';
     this.elapsed = 0;
     this.clearAt = [];
+    this.hull25At = null;
     this.fx.reset();
   }
 
@@ -377,6 +388,7 @@ export class Game {
   }
 
   private trackClears(): void {
+    if (this.hull25At === null && this.boss.layerRemaining(0) <= 0.75) this.hull25At = this.elapsed;
     const n = this.boss.layers.length;
     for (let i = 0; i <= n; i++) {
       if (this.clearAt[i] != null) continue;
@@ -582,7 +594,7 @@ export class Game {
     ctx.fillStyle = '#8fa0c8';
     for (const s of this.stars) ctx.fillRect(s.x, s.y, s.size, s.size);
 
-    if (!this.boss.defeated || this.elapsed - this.wonAt < 1.2) this.boss.render(ctx);
+    if (!this.boss.defeated || this.elapsed - this.wonAt < 1.2) this.enrageTint.render(ctx, this.boss, this.fight);
     this.attacks.drawBossDim(ctx);
     this.drawBullets();
     this.attacks.draw(ctx);
@@ -595,6 +607,7 @@ export class Game {
     this.fx.drawNumbers(ctx);
     this.fx.endShake(ctx);
     this.health.draw(ctx);
+    if (this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
     if (this.state === 'playing') this.dodge.drawButton(ctx);
     if (this.showDebug) {
       this.drawDebug();
@@ -649,6 +662,7 @@ export class Game {
         (l, i) =>
           `${l.name.padEnd(5)} ${(this.boss.layerRemaining(i) * 100).toFixed(1).padStart(5)}%  d=${l.density}`,
       ),
+      `hull 25% carved: ${this.hull25At == null ? '--' : this.hull25At.toFixed(1) + 's'}`,
       `cleared <=5%: ${[...this.boss.layers.map((l) => l.name.toLowerCase()), 'core']
         .map((n, i) => `${n} ${this.clearAt[i] == null ? '--' : this.clearAt[i]!.toFixed(1) + 's'}`)
         .join('  ')}`,
