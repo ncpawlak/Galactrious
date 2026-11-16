@@ -19,6 +19,13 @@ export const TUNING = {
   boss: { x: W / 2, y: 40 },
   /** Dodge: dash `distance` px over `invulnTime` s (invulnerable meanwhile), then `cooldown` s. */
   dodge: { distance: 170, invulnTime: 0.25, cooldown: 2.5 },
+  /** Boss attacks. Speeds px/s, intervals s. */
+  attacks: {
+    aimed: { interval: 1.4, speed: 260, damage: 1 },
+    bulletRadius: 6,
+  },
+  /** Player health: `hitbox` is the collision circle radius (small, forgiving); `hitInvuln` = i-frames after a hit. */
+  player: { maxHealth: 5, hitbox: 5, hitInvuln: 1.0, defeatTime: 1.8 },
 };
 
 /** Game-feel ("juice") tunables. Everything is subtle by default; toggle live with [J]. */

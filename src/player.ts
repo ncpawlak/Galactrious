@@ -8,6 +8,65 @@ export function inDodgeButton(px: number, py: number): boolean {
   return Math.hypot(px - b.x, py - b.y) <= b.r;
 }
 
+/** Player health with post-hit invulnerability. The dodge's invulnerability is checked by the caller. */
+export class Health {
+  hp: number = TUNING.player.maxHealth;
+  /** Seconds of post-hit invulnerability left. */
+  invuln = 0;
+  /** Seconds since the last hit, for the bar flash. */
+  sinceHit = 99;
+
+  get dead(): boolean {
+    return this.hp <= 0;
+  }
+
+  update(dt: number): void {
+    this.invuln = Math.max(0, this.invuln - dt);
+    this.sinceHit += dt;
+  }
+
+  /** Apply damage unless invulnerable. Returns true if it landed. */
+  hit(dmg: number, invulnerable: boolean): boolean {
+    if (invulnerable || this.invuln > 0 || this.dead) return false;
+    this.hp = Math.max(0, this.hp - dmg);
+    this.invuln = TUNING.player.hitInvuln;
+    this.sinceHit = 0;
+    return true;
+  }
+
+  reset(): void {
+    this.hp = TUNING.player.maxHealth;
+    this.invuln = 0;
+    this.sinceHit = 99;
+  }
+
+  /** Top-right health bar (the left/bottom of the screen belongs to the HUD and debug overlay). */
+  draw(ctx: CanvasRenderingContext2D): void {
+    const w = 120;
+    const h = 14;
+    const x = W - w - 12;
+    const y = 12;
+    const frac = this.hp / TUNING.player.maxHealth;
+    ctx.save();
+    ctx.fillStyle = 'rgba(5, 6, 13, 0.7)';
+    ctx.fillRect(x - 6, y - 6, w + 12, h + 26);
+    ctx.fillStyle = '#9aa7c7';
+    ctx.font = '11px ui-monospace, Consolas, monospace';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillText('HULL', x, y + h + 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = this.sinceHit < 0.2 ? '#ffffff' : frac > 0.4 ? '#4ade80' : '#ff5a5a';
+    ctx.fillRect(x, y, w * frac, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    for (let i = 1; i < TUNING.player.maxHealth; i++) ctx.fillRect(x + (w * i) / TUNING.player.maxHealth - 1, y, 2, h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    ctx.restore();
+  }
+}
+
 /**
  * Dodge: a short dash with invulnerability, on a cooldown. There is no player damage yet, so
  * `invulnerable` is the hook future damage code should check; it is also shown visually.
