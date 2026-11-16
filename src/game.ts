@@ -1,3 +1,4 @@
+import { Attacks } from './attacks';
 import { Sfx } from './audio';
 import { Boss } from './boss';
 import { H, TUNING, W } from './config';
@@ -5,7 +6,7 @@ import { createDemoBoss } from './demoBoss';
 import { Effects } from './effects';
 import { Hud } from './hud';
 import { Input } from './input';
-import { Dodge } from './player';
+import { Dodge, Health } from './player';
 
 export interface ShipStats {
   /** Energy per bullet. */
@@ -59,7 +60,7 @@ interface Star {
 const MAX_PARTICLES = 500;
 const SHIP_MIN_Y = 520;
 
-type State = 'playing' | 'won';
+type State = 'playing' | 'won' | 'lost';
 
 export class Game {
   private readonly ctx: CanvasRenderingContext2D;
@@ -71,6 +72,9 @@ export class Game {
   private particles: Particle[] = [];
   private readonly stars: Star[] = [];
   private readonly dodge = new Dodge();
+  private readonly health = new Health();
+  private readonly attacks = new Attacks();
+  private lostAt = 0;
   private fireTimer = 0;
   private state: State = 'playing';
   private elapsed = 0;
@@ -121,6 +125,9 @@ export class Game {
       ship: this.ship,
       bullets: this.bullets,
       dodge: this.dodge,
+      health: this.health,
+      attacks: this.attacks,
+      setAttacks: (on: boolean) => (this.attacks.enabled = on),
       /** Advance the sim `seconds` of game time without rendering (for scripted measurements). */
       simulate: (seconds: number, mode: 'off' | 'sweep' | 'focus' = this.auto) => {
         this.auto = mode;
@@ -159,6 +166,8 @@ export class Game {
     this.bullets = [];
     this.particles = [];
     this.dodge.reset();
+    this.health.reset();
+    this.attacks.reset();
     this.state = 'playing';
     this.elapsed = 0;
     this.clearAt = [];
@@ -182,6 +191,10 @@ export class Game {
         break;
       case 'KeyJ':
         this.fx.enabled = this.sfx.enabled = !this.fx.enabled;
+        break;
+      case 'KeyK':
+        this.attacks.enabled = !this.attacks.enabled;
+        if (!this.attacks.enabled) this.attacks.bullets = [];
         break;
       case 'KeyY':
         this.setTestMode(!this.testMode);
@@ -260,6 +273,7 @@ export class Game {
       this.moveShip(dt);
       this.fire(dt);
     }
+    this.updateThreat(dt);
     this.updateBullets(dt);
     this.updateParticles(dt);
     this.trackClears();
@@ -270,6 +284,27 @@ export class Game {
       this.explode();
       this.fx.onExplosion();
       this.sfx.explosion();
+    }
+  }
+
+  /** Boss fire, player damage and the defeat/reset flow. */
+  private updateThreat(dt: number): void {
+    const b = this.boss;
+    const playing = this.state === 'playing';
+    this.attacks.update(dt, { x: b.x + b.core.x, y: b.y + b.height }, this.ship, playing && !b.defeated);
+    if (!playing) {
+      if (this.state === 'lost' && this.elapsed - this.lostAt > TUNING.player.defeatTime) this.reset();
+      return;
+    }
+    this.health.update(dt);
+    const dmg = this.attacks.collect(this.ship.x, this.ship.y, TUNING.player.hitbox);
+    if (dmg > 0 && this.health.hit(dmg, this.dodge.invulnerable)) {
+      if (this.health.dead) {
+        this.state = 'lost';
+        this.lostAt = this.elapsed;
+        this.fx.onExplosion();
+        this.sfx.explosion();
+      }
     }
   }
 
@@ -471,6 +506,7 @@ export class Game {
 
     if (!this.boss.defeated || this.elapsed - this.wonAt < 1.2) this.boss.render(ctx);
     this.drawBullets();
+    this.attacks.draw(ctx);
     this.drawParticles();
     this.hud.draw(ctx, this.boss);
     if (this.state === 'playing') {
@@ -479,9 +515,14 @@ export class Game {
     }
     this.fx.drawNumbers(ctx);
     this.fx.endShake(ctx);
+    this.health.draw(ctx);
     if (this.state === 'playing') this.dodge.drawButton(ctx);
-    if (this.showDebug) this.drawDebug();
+    if (this.showDebug) {
+      this.drawDebug();
+      this.drawHitbox();
+    }
     if (this.state === 'won') this.drawWin();
+    if (this.state === 'lost') this.drawLost();
   }
 
   private drawBullets(): void {
@@ -538,6 +579,7 @@ export class Game {
       `shots ${s.projectiles} [5/6]  pierce ${s.pierce} [7/8]  reset stats [0]`,
       `dodge [Shift/X] ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}${this.dodge.invulnerable ? ' INVULN' : ''}`,
       `sway ${this.boss.swayEnabled ? 'on' : 'off'} [T]  restart [R]  debug [\`]`,
+      `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${TUNING.player.maxHealth}  hitbox r=${TUNING.player.hitbox}`,
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]`,
     ];
     ctx.save();
@@ -549,6 +591,34 @@ export class Game {
     ctx.font = '12px monospace';
     ctx.textBaseline = 'top';
     lines.forEach((t, i) => ctx.fillText(t, 12, 10 + i * 15));
+    ctx.restore();
+  }
+
+  /** Player hitbox, shown with the debug overlay. */
+  private drawHitbox(): void {
+    if (this.state !== 'playing') return;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.strokeStyle = this.health.invuln > 0 || this.dodge.invulnerable ? '#9ff6ff' : '#ffff00';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(this.ship.x, this.ship.y, TUNING.player.hitbox, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawLost(): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.fillStyle = 'rgba(40,0,0,0.55)';
+    ctx.fillRect(0, H / 2 - 70, W, 140);
+    ctx.fillStyle = '#ff5a5a';
+    ctx.font = 'bold 34px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SHIP DESTROYED', W / 2, H / 2 - 15);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '16px monospace';
+    ctx.fillText('the boss repairs itself... restarting', W / 2, H / 2 + 25);
     ctx.restore();
   }
 
