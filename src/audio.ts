@@ -70,6 +70,23 @@ export class Sfx {
     this.tone(c, 90, 30, 0.7, 'sine', JUICE.audio.volume * 2);
   }
 
+  /** An auto weapon fired: gauss = sharp zap, rocket = low whoosh, arc = two quick chirps. */
+  weapon(id: 'gauss' | 'rocket' | 'arc'): void {
+    const c = this.ready();
+    if (!c) return;
+    const v = JUICE.audio.volume;
+    if (id === 'gauss') {
+      this.tone(c, 1800, 200, 0.22, 'sawtooth', v * 0.9);
+      this.tone(c, 90, 60, 0.18, 'sine', v * 1.2);
+    } else if (id === 'rocket') {
+      this.tone(c, 180, 420, 0.3, 'triangle', v * 0.9);
+      this.tone(c, 120, 60, 0.25, 'sawtooth', v * 0.5);
+    } else {
+      this.tone(c, 500, 900, 0.1, 'square', v * 0.5);
+      setTimeout(() => this.tone(c, 650, 1100, 0.1, 'square', v * 0.5), 70);
+    }
+  }
+
   /** Dry metallic tick when a bullet hits a component. */
   componentHit(): void {
     const c = this.ready();

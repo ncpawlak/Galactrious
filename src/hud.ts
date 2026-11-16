@@ -1,6 +1,7 @@
 import { H, W } from './config';
 import type { Boss } from './boss';
 import type { RoomSystem } from './rooms';
+import type { WeaponSystem } from './weapons';
 
 /** Per-layer progress bars plus room status. Reads boss state only; owns no game logic. */
 
@@ -74,6 +75,46 @@ export class Hud {
       for (const i of r.pixels) if (layer.mask[i]) n++;
       return n / r.pixels.length;
     });
+  }
+
+  /** Weapon cooldown rings, bottom right above the dodge button: each fills over its cooldown and flashes when it fires. */
+  drawWeapons(ctx: CanvasRenderingContext2D, weapons: WeaponSystem): void {
+    const r = 16;
+    const y = H - 130;
+    ctx.save();
+    ctx.font = 'bold 12px ui-monospace, Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    weapons.defs.forEach((d, i) => {
+      const x = W - 24 - (weapons.defs.length - 1 - i) * 42;
+      const on = weapons.enabled[d.id];
+      const p = on ? weapons.progress(d.id) : 0;
+      ctx.globalAlpha = on ? 0.9 : 0.4;
+      ctx.fillStyle = 'rgba(5, 6, 13, 0.75)';
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#26324d';
+      ctx.stroke();
+      if (p > 0) {
+        ctx.strokeStyle = d.color;
+        ctx.beginPath();
+        ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p);
+        ctx.stroke();
+      }
+      ctx.fillStyle = on ? (p > 0.92 ? '#ffffff' : '#c9d3ea') : '#6b7488';
+      ctx.fillText(d.name[0], x, y + 1);
+      if (!on) {
+        ctx.strokeStyle = '#6b7488';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - r + 3, y + r - 3);
+        ctx.lineTo(x + r - 3, y - r + 3);
+        ctx.stroke();
+      }
+    });
+    ctx.restore();
   }
 
   /** "ENRAGED" badge, top centre (clear of the top-right health bar). Pulses with `time`. */

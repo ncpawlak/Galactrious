@@ -363,6 +363,54 @@ export class ComponentSystem implements SourceGate {
     return false;
   }
 
+  /**
+   * A piercing player projectile (gauss shot, arc missile) at (px, py): damages every targetable component it
+   * touches once (`seen` remembers them), and is NOT consumed. Returns how much of its energy the parts soaked
+   * up (their hp before the hit, at most `energy`), 0 when it touched nothing new.
+   */
+  hitThrough(px: number, py: number, energy: number, seen: Set<object>): number {
+    let soaked = 0;
+    for (const c of this.items) {
+      if (seen.has(c) || !this.targetable(c)) continue;
+      const p = this.pos(c);
+      if (Math.hypot(px - p.x, py - p.y) > c.spec.radius) continue;
+      seen.add(c);
+      c.flash = HIT_FLASH;
+      this.events.push({ kind: 'hit', x: px, y: py });
+      this.spark(px, py, 3, '#fff2b0');
+      soaked += Math.min(energy, c.hp);
+      this.damage(c, energy);
+    }
+    if (soaked > 0 || this.queue.length > 0) this.flush();
+    return soaked;
+  }
+
+  /** True when a targetable component is under screen point (px, py) (rockets detonate on it). */
+  componentAt(px: number, py: number): boolean {
+    for (const c of this.items) {
+      if (!this.targetable(c)) continue;
+      const p = this.pos(c);
+      if (Math.hypot(px - p.x, py - p.y) <= c.spec.radius) return true;
+    }
+    return false;
+  }
+
+  /**
+   * A player blast (rocket) at screen point (px, py): the same crater, shock to nearby components (chains) and
+   * core damage as a component blast, with the global `BLAST.scale` applied. Boss-only, never hurts the player.
+   * `base` gives the unscaled numbers (radius, energy, damage, coreDamage).
+   */
+  playerBlast(px: number, py: number, base: BlastSpec): void {
+    const lx = px - this.boss.x;
+    const ly = py - this.boss.y;
+    const p = { x: px, y: py };
+    const blast = resolveBlast('turret', base);
+    this.events.push({ kind: 'destroy', x: px, y: py, blast: true, radius: blast.radius, type: 'explosive' });
+    this.blastEffect(px, py, blast.radius, '#ffb040', '#c8662a');
+    this.blastAt(lx, ly, p, blast, null);
+    this.flush();
+  }
+
   private damage(c: BossComponent, amount: number): void {
     if (c.state !== 'active') return;
     c.hp -= amount;

@@ -4,7 +4,7 @@ export const H = 960;
 
 /** Tunables for milestone 1. Densities: energy spent per pixel carved. */
 export const TUNING = {
-  densities: { hull: 1.12, frame: 0.8, rooms: 1.5 },
+  densities: { hull: 3.1, frame: 0.8, rooms: 1.5 },
   /** Starting ship stats (live-adjustable with the debug keys). */
   ship: { damage: 90, fireRate: 12 },
   /** Debug test-mode preset (toggle with [Y]): the fast values from PR #21, for quick iteration. */
@@ -76,8 +76,11 @@ export const JUICE = {
  * `scale` is the one global knob (live: [-] and [=] or the debug panel): radius scales with scale^radiusExp (0.85),
  * energy with scale^energyExp (1.6, a bit under the carved area), damage with scale^damageExp (0: constant) and the reach of the shock to other components and the core with scale^reachExp (0.5), so a high scale does not chain the whole boss.
  */
+/** Default `BLAST.scale` (playtested and kept; the live knob still works, RESET ALL returns here). */
+export const BLAST_DEFAULT_SCALE = 1.75;
+
 export const BLAST = {
-  scale: 1,
+  scale: BLAST_DEFAULT_SCALE,
   min: 0.25,
   max: 4,
   step: 0.25,
@@ -101,3 +104,37 @@ export function setBlastScale(v: number): number {
   BLAST.scale = Math.round(Math.min(BLAST.max, Math.max(BLAST.min, Number.isFinite(v) ? v : 1)) * 100) / 100;
   return BLAST.scale;
 }
+
+/**
+ * Auto-firing player weapons (issue #12, `src/weapons.ts`), all on timers, all equipped at once for now.
+ * Energies are for the default ship damage and scale with the live damage (debug keys), `power = damage / TUNING.ship.damage`.
+ * `cooldown` seconds, `pierce` = fraction of energy kept per impact, `shape` = carve shape name (`src/carveShapes.ts`).
+ */
+export const WEAPONS = {
+  /** Global multiplier on every cooldown (debug keys `,` and `.`). */
+  cooldownScale: 1,
+  /** Gauss cannon: one fast shot straight up. Keeps most of its energy through layers and components, drills a long, thin shaft. */
+  gauss: { cooldown: 5, energy: 1400, pierce: 0.9, shape: 'narrow' as const, speed: 2600 },
+  /** Rocket: one shot straight up. Detonates on the first solid pixel or component; the crater is a boss blast (`blast`, scaled by BLAST.scale). */
+  rocket: {
+    cooldown: 6,
+    speed: 260,
+    maxSpeed: 900,
+    accel: 1500,
+    blast: { radius: 70, energy: 1500, damage: 40, coreDamage: 40, falloff: 1 },
+  },
+  /** Arc missiles: a pair sideways, then random curved paths to a random solid spot of the boss (boss-local, follows its motion). */
+  arc: {
+    cooldown: 7,
+    energy: 1200,
+    pierce: 0.5,
+    shape: 'round' as const,
+    speed: 430,
+    /** Max turn rate toward the target, rad/s (grows near the target so it never orbits). */
+    turn: 2.8,
+    /** Sideways wander: amplitude (rad) range and frequency (rad/s) range, fades out near the target. */
+    wander: { min: 0.6, max: 1.2, freqMin: 3, freqMax: 6 },
+    /** Seconds before it stops wandering and flies straight at the target. */
+    wanderTime: 4,
+  },
+};
