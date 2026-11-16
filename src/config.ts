@@ -60,8 +60,44 @@ export const JUICE = {
   hitStop: { carveThreshold: 40, perPixel: 0.0004, max: 0.03, core: 0.025, cooldown: 0.12 },
   /** Screen shake: trauma-based. Amount is px at trauma 1. */
   shake: { maxOffset: 7, decay: 2.8, perPixel: 0.004, core: 0.12, explosion: 0.9, maxTrauma: 0.6 },
+  /** Component destruction (issue #44): shake and hit stop scale with the blast radius in px. */
+  destroy: { shakeBase: 0.12, shakePerPx: 0.004, maxShake: 0.55, maxTrauma: 0.85, stopBase: 0.02, stopPerPx: 0.0006, maxStop: 0.1 },
   /** Floating damage numbers; hits are merged within `mergeWindow` seconds. */
   numbers: { mergeWindow: 0.15, life: 0.7, rise: 40, minValue: 1 },
   /** WebAudio carve/hit sounds. */
   audio: { volume: 0.18, minInterval: 0.045 },
 };
+
+/**
+ * Blast sizes (issue #44). Every component that is destroyed makes a blast: crater, damage to
+ * neighbouring components (chains) and to the core. All boss-only, never the player. `defaults` are per
+ * component type; a boss definition overrides any field per component (`ComponentSpec.blast`, a
+ * partial). Overriding only `radius` rescales the default `energy` with the area (radius squared).
+ * `scale` is the one global knob (live: [-] and [=] or the debug panel): radius scales with scale^radiusExp (0.85),
+ * energy with scale^energyExp (1.6, a bit under the carved area), damage with scale^damageExp (0: constant) and the reach of the shock to other components and the core with scale^reachExp (0.5), so a high scale does not chain the whole boss.
+ */
+export const BLAST = {
+  scale: 1,
+  min: 0.25,
+  max: 4,
+  step: 0.25,
+  /** Carve radius scales with scale^radiusExp (a bit under linear: the boss is only ~420 px wide). */
+  radiusExp: 0.85,
+  energyExp: 1.6,
+  damageExp: 0,
+  /** Shock reach to other components and the core scales with scale^reachExp (carve radius is linear). */
+  reachExp: 0.5,
+  defaults: {
+    turret: { radius: 45, energy: 3000, damage: 60, coreDamage: 40, falloff: 1 },
+    explosive: { radius: 115, energy: 10000, damage: 150, coreDamage: 250, falloff: 1 },
+    console: { radius: 28, energy: 1200, damage: 15, coreDamage: 10, falloff: 1 },
+    /** A room that blows up (`explodeOnDisable`). */
+    room: { radius: 115, energy: 10000, damage: 160, coreDamage: 260, falloff: 1 },
+  },
+};
+
+/** Blast scale clamp used by the debug controls. */
+export function setBlastScale(v: number): number {
+  BLAST.scale = Math.round(Math.min(BLAST.max, Math.max(BLAST.min, Number.isFinite(v) ? v : 1)) * 100) / 100;
+  return BLAST.scale;
+}

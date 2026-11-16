@@ -44,11 +44,10 @@ export interface RoomSpec {
   consoles: ConsoleSpec[];
   /** Reactions when the room is first exposed, in order (each after its `delay`, default 0.6 s: the telegraph). */
   onExposed?: RoomEffect[];
-  /** Blow the room up when its last console goes. `true` uses `DEFAULT_ROOM_BLAST`. */
-  explodeOnDisable?: boolean | BlastSpec;
+  /** Blow the room up when its last console goes. `true` uses `BLAST.defaults.room`; an object overrides fields of it. */
+  explodeOnDisable?: boolean | Partial<BlastSpec>;
 }
 
-export const DEFAULT_ROOM_BLAST: BlastSpec = { radius: 90, energy: 8000, damage: 420, coreDamage: 150, falloff: 1 };
 /** Seconds between the warning (flash, sound, banner) and the room's effects. */
 export const EXPOSE_TELEGRAPH = 0.6;
 /** Seconds the HUD warning banner stays up. */
@@ -224,7 +223,7 @@ export class RoomSystem {
     const boom = room.spec.explodeOnDisable;
     this.components.events.push({ kind: 'roomOffline', x: o.x, y: o.y, name: room.name, blast: !!boom });
     this.onRoomOffline?.(room);
-    if (boom) this.components.roomBlast(room.lx, room.ly, boom === true ? DEFAULT_ROOM_BLAST : boom);
+    if (boom) this.components.roomBlast(room.lx, room.ly, boom === true ? undefined : boom);
   }
 
   private run(p: Pending): void {
