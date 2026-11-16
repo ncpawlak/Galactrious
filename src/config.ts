@@ -11,6 +11,8 @@ export const TUNING = {
   bulletSpeed: 1500,
   sway: { amplitude: 55, period: 8 },
   boss: { x: W / 2, y: 40 },
+  /** Dodge: dash `distance` px over `invulnTime` s (invulnerable meanwhile), then `cooldown` s. */
+  dodge: { distance: 170, invulnTime: 0.25, cooldown: 2.5 },
 };
 
 /** Game-feel ("juice") tunables. Everything is subtle by default; toggle live with [J]. */
