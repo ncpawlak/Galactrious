@@ -9,6 +9,12 @@ Ideas captured during planning. Nothing here is built until pulled into a milest
 - Per-layer progress HUD (hull 62%, frame 0%) plus room status.
 - Bullet readability: bright enemy bullets against a darker boss.
 
+## Bugs / rules to add
+- Floating fragments: carving can leave pieces and edges "floating" with the boss. Add a connectivity
+  rule so a piece that is cut off from the main body actually breaks away (falls/drifts off, can
+  drop debris) instead of staying attached. Tiny orphaned specks should be cleaned up too.
+  Decide per layer what counts as "anchored" (e.g. connected to the layer's main mass or the core).
+
 ## Gameplay
 - Risk/reward lever: combo or bonus for flying close / chaining explosive consoles.
 - Player dodge or bomb on a cooldown (screen clear or short invulnerability).
