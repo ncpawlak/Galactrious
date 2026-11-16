@@ -65,7 +65,7 @@ function fillRects(ctx: CanvasRenderingContext2D, rects: Rect[], color: string):
 export function createDemoBoss(): BossSpec {
   // Layer 1: hull slab.
   const hull = makeCanvas();
-  fillRects(hull.ctx, [[0, 0, BW, BH]], '#d02b33');
+  fillRects(hull.ctx, [[0, 0, BW, BH]], '#c9383f');
   shade(hull.ctx, { noise: 0.14, edge: 0.7, seamEvery: 72 });
 
   // Layer 2: frame lattice (solid struts).
@@ -78,7 +78,7 @@ export function createDemoBoss(): BossSpec {
     [4, 174, 356, 33], // middle horizontal
     [66, 291, 235, 32], // lower horizontal
   ];
-  fillRects(frame.ctx, struts, '#8c9099');
+  fillRects(frame.ctx, struts, '#c4cddb');
   shade(frame.ctx, { noise: 0.16, edge: 1.3 });
 
   // Layer 3: rooms.
@@ -90,7 +90,7 @@ export function createDemoBoss(): BossSpec {
     [239, 250, 71, 49], // right lower
     [83, 326, 227, 60], // bottom wide
   ];
-  fillRects(rooms.ctx, roomRects, '#2b3a63');
+  fillRects(rooms.ctx, roomRects, '#2f7f86');
   shade(rooms.ctx, { noise: 0.12, edge: 1.7 });
 
   return {

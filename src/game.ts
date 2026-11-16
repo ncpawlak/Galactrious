@@ -3,6 +3,7 @@ import { Boss } from './boss';
 import { H, TUNING, W } from './config';
 import { createDemoBoss } from './demoBoss';
 import { Effects } from './effects';
+import { Hud } from './hud';
 import { Input } from './input';
 import { Dodge } from './player';
 
@@ -111,6 +112,8 @@ export class Game {
   get debug() {
     return { boss: this.boss, stats: this.stats, ship: this.ship, bullets: this.bullets, dodge: this.dodge };
   }
+
+  private readonly hud = new Hud();
 
   private makeBoss(): Boss {
     return new Boss(createDemoBoss(), TUNING.boss.x, TUNING.boss.y);
@@ -388,6 +391,7 @@ export class Game {
     if (!this.boss.defeated || this.elapsed - this.wonAt < 1.2) this.boss.render(ctx);
     this.drawBullets();
     this.drawParticles();
+    this.hud.draw(ctx, this.boss);
     if (this.state === 'playing') {
       this.drawShip();
       this.dodge.drawShipFx(ctx, this.ship.x, this.ship.y);
