@@ -1,7 +1,7 @@
 import type { BossSpec } from '../boss';
 import { TUNING } from '../config';
 import { aimedShot, bomb, directVolley, lineSweep } from '../attacks';
-import { still, sway } from '../movement';
+import { bob, combine, figureEight, named, sequence, still, sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
 import type { BossDefinition } from './types';
 
 /**
@@ -149,6 +149,43 @@ export const demoBossPhased: BossDefinition = {
       trigger: { kind: 'phaseTime', seconds: 12 },
       movement: still,
       attacks: [lineSweep, bomb].map((pattern) => ({ pattern })),
+    },
+  ],
+};
+
+/**
+ * Motion demo, selectable with [B]: a MIRRORED layout (`mirror: true`) whose phases each pick a
+ * different movement. Phase 2 (10% damage) zips fast, phase 3 (25%) flies a figure-eight, phase 4
+ * (after 10 s) chains sway, zip and bob with `sequence`. [M] overrides the movement live.
+ */
+export const demoBossMotion: BossDefinition = {
+  id: 'demo-motion',
+  name: 'Demo boss (mirror + motion)',
+  layout: createDemoBoss,
+  mirror: true,
+  spawn: TUNING.boss,
+  phases: [
+    { ...demoBoss.phases[0], name: 'Phase 1: sway' },
+    {
+      name: 'Phase 2: fast zip',
+      trigger: { kind: 'damage', percent: 10 },
+      movement: zip(ZIP_FAST),
+      attacks: [directVolley, bomb, lineSweep].map((pattern) => ({ pattern })),
+    },
+    {
+      name: 'Phase 3: figure-eight',
+      trigger: { kind: 'damage', percent: 25 },
+      movement: figureEight(70, 35, 6),
+      attacks: [aimedShot, directVolley, bomb].map((pattern) => ({ pattern })),
+    },
+    {
+      name: 'Phase 4: sequence',
+      trigger: { kind: 'phaseTime', seconds: 10 },
+      movement: sequence([
+        { movement: combine(sway(55, 4), bob(25, 2)), duration: 4 },
+        { movement: named('zip', zip(ZIP_NORMAL)), duration: 4 },
+      ]),
+      attacks: [lineSweep, bomb, aimedShot].map((pattern) => ({ pattern })),
     },
   ],
 };

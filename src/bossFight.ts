@@ -1,7 +1,7 @@
-import { Boss } from './boss';
+import { Boss, mirrorSpec } from './boss';
 import { ScriptedScheduler } from './attackSchedulers';
 import type { BossDefinition, PhaseDefinition, PhaseTrigger } from './bosses/types';
-import type { Offset2 } from './movement';
+import type { Movement, Offset2 } from './movement';
 
 /** Seconds over which the position eases between two phases' movements, so a switch never snaps. */
 const BLEND_TIME = 0.6;
@@ -18,6 +18,8 @@ export class BossFight {
   phaseTime = 0;
   /** Debug: when false the boss is held at its anchor (movement frozen). */
   movementEnabled = true;
+  /** Debug: when set, replaces the phase's movement (live, with the usual ease). */
+  movementOverride: Movement | null = null;
   /** Called after a phase starts (not for phase 0). */
   onPhaseChange: ((phase: PhaseDefinition, index: number) => void) | null = null;
   private blendFrom: Offset2 = { x: 0, y: 0 };
@@ -26,7 +28,7 @@ export class BossFight {
   private readonly maxCoreHp: number;
 
   constructor(readonly def: BossDefinition) {
-    this.boss = new Boss(def.layout(), def.spawn.x, def.spawn.y);
+    this.boss = new Boss(def.mirror ? mirrorSpec(def.layout()) : def.layout(), def.spawn.x, def.spawn.y);
     this.maxCoreHp = this.boss.core.hp;
   }
 
@@ -87,6 +89,18 @@ export class BossFight {
     }
   }
 
+  /** The movement in effect: the debug override, else the phase's own. */
+  get movement(): Movement {
+    return this.movementOverride ?? this.phase.movement;
+  }
+
+  /** Set (or clear with null) the debug movement override; eases from the current position. */
+  setMovementOverride(m: Movement | null): void {
+    this.blendFrom = this.lastOffset;
+    this.blendLeft = BLEND_TIME;
+    this.movementOverride = m;
+  }
+
   /** Jump to phase `i` (also used by the debug overlay). */
   enterPhase(i: number): void {
     this.blendFrom = this.lastOffset;
@@ -103,7 +117,7 @@ export class BossFight {
     const next = this.def.phases[this.phaseIndex + 1];
     if (next?.trigger && this.triggered(next.trigger)) this.enterPhase(this.phaseIndex + 1);
 
-    let off = this.movementEnabled ? this.phase.movement.at(this.fightTime) : { x: 0, y: 0 };
+    let off = this.movementEnabled ? this.movement.at(this.fightTime) : { x: 0, y: 0 };
     if (this.blendLeft > 0) {
       this.blendLeft = Math.max(0, this.blendLeft - dt);
       const k = this.blendLeft / BLEND_TIME;

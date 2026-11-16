@@ -29,6 +29,29 @@ export interface BossSpec {
   /** Outermost layer first. The last layer holds the core. */
   layers: LayerSpec[];
   core: CoreSpec;
+  /** Optional named points in layout pixels (turrets, muzzles, hazard pivots). Mirrored with the layout. */
+  anchors?: Record<string, { x: number; y: number }>;
+}
+
+/**
+ * One-time horizontal flip of a layout (BossDefinition.mirror): every layer canvas, the core and
+ * all anchor points. Baked-in shading flips too, so the light direction flips with it.
+ */
+export function mirrorSpec(spec: BossSpec): BossSpec {
+  const layers = spec.layers.map((l) => {
+    const c = document.createElement('canvas');
+    c.width = l.canvas.width;
+    c.height = l.canvas.height;
+    const ctx = c.getContext('2d', { willReadFrequently: true })!;
+    ctx.translate(c.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(l.canvas, 0, 0);
+    return { ...l, canvas: c };
+  });
+  const anchors = spec.anchors
+    ? Object.fromEntries(Object.entries(spec.anchors).map(([k, a]) => [k, { x: spec.width - a.x, y: a.y }]))
+    : undefined;
+  return { ...spec, layers, core: { ...spec.core, x: spec.width - spec.core.x }, anchors };
 }
 
 export interface HitResult {
@@ -204,6 +227,9 @@ export class Boss {
   y: number;
   baseX: number;
   baseY: number;
+  /** Position at the start of the current frame, for swept bullet checks against a fast-moving boss. */
+  prevX: number;
+  prevY: number;
   private offsetX = 0;
   private offsetY = 0;
   private coreFlash = 0;
@@ -228,6 +254,8 @@ export class Boss {
     this.x = this.baseX;
     this.y = topY;
     this.baseY = topY;
+    this.prevX = this.x;
+    this.prevY = this.y;
   }
 
   get defeated(): boolean {
@@ -242,6 +270,8 @@ export class Boss {
 
   update(dt: number): void {
     this.coreFlash = Math.max(0, this.coreFlash - dt);
+    this.prevX = this.x;
+    this.prevY = this.y;
     this.x = this.baseX + this.offsetX;
     this.y = this.baseY + this.offsetY;
 
