@@ -21,8 +21,8 @@ export interface ShipStats {
 }
 
 const DEFAULT_STATS: ShipStats = {
-  damage: 60,
-  fireRate: 10,
+  damage: TUNING.ship.damage,
+  fireRate: TUNING.ship.fireRate,
   projectiles: 1,
   pierce: 0,
   spreadDeg: 5,
@@ -75,6 +75,8 @@ export class Game {
   private state: State = 'playing';
   private elapsed = 0;
   private wonAt = 0;
+  /** Debug: elapsed time when the hull dropped to <=5% remaining (null until then). */
+  private hullClearAt: number | null = null;
   private readonly fx = new Effects();
   private readonly sfx = new Sfx();
   private showDebug = true;
@@ -128,6 +130,7 @@ export class Game {
     this.dodge.reset();
     this.state = 'playing';
     this.elapsed = 0;
+    this.hullClearAt = null;
     this.fx.reset();
   }
 
@@ -221,6 +224,7 @@ export class Game {
     }
     this.updateBullets(dt);
     this.updateParticles(dt);
+    if (this.hullClearAt === null && this.boss.layerRemaining(0) <= 0.05) this.hullClearAt = this.elapsed;
 
     if (this.state === 'playing' && this.boss.defeated) {
       this.state = 'won';
@@ -448,6 +452,7 @@ export class Game {
         (l, i) =>
           `${l.name.padEnd(5)} ${(this.boss.layerRemaining(i) * 100).toFixed(1).padStart(5)}%  d=${l.density}`,
       ),
+      `hull cleared (<=5%): ${this.hullClearAt === null ? '--' : this.hullClearAt.toFixed(1) + 's'}`,
       `core ${Math.ceil(this.boss.core.hp)} / ${TUNING.coreHp}`,
       `dmg ${s.damage} [1/2]  rate ${s.fireRate} [3/4]`,
       `shots ${s.projectiles} [5/6]  pierce ${s.pierce} [7/8]  reset stats [0]`,
