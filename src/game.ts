@@ -181,6 +181,7 @@ export class Game {
       }
     }
     this.boss.update(dt, TUNING.sway);
+    for (const d of this.boss.dustEvents.splice(0)) this.spawnDebris(d.x, d.y, 24, false, d.r, d.g, d.b);
 
     if (this.state === 'playing') {
       this.moveShip(dt);
