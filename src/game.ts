@@ -1,8 +1,9 @@
 import { Attacks, PATTERNS } from './attacks';
 import { Sfx } from './audio';
-import { Boss } from './boss';
+import type { Boss } from './boss';
+import { BossFight } from './bossFight';
+import { BOSSES, type BossDefinition } from './bosses';
 import { H, TUNING, W } from './config';
-import { createDemoBoss } from './demoBoss';
 import { Effects } from './effects';
 import { Hud } from './hud';
 import { Input } from './input';
@@ -65,7 +66,8 @@ type State = 'playing' | 'won' | 'lost';
 export class Game {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly input: Input;
-  private boss: Boss;
+  private fight: BossFight;
+  private bossDefIndex = 0;
   private stats: ShipStats = { ...DEFAULT_STATS };
   private ship = { x: W / 2, y: H - 140 };
   private bullets: Bullet[] = [];
@@ -93,7 +95,7 @@ export class Game {
   constructor(canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
     this.input = new Input(canvas);
-    this.boss = this.makeBoss();
+    this.fight = this.makeFight();
 
     for (let i = 0; i < 90; i++) {
       this.stars.push({
@@ -121,6 +123,8 @@ export class Game {
   get debug() {
     return {
       boss: this.boss,
+      fight: this.fight,
+      setBoss: (def: BossDefinition) => this.setBoss(def),
       stats: this.stats,
       ship: this.ship,
       bullets: this.bullets,
@@ -155,14 +159,32 @@ export class Game {
 
   private readonly hud = new Hud();
 
-  private makeBoss(): Boss {
-    return new Boss(createDemoBoss(), TUNING.boss.x, TUNING.boss.y);
+  /** The boss of the current fight (a new object after each restart). */
+  private get boss(): Boss {
+    return this.fight.boss;
   }
 
-  private reset(): void {
-    const sway = this.boss.swayEnabled;
-    this.boss = this.makeBoss();
-    this.boss.swayEnabled = sway;
+  private makeFight(def: BossDefinition = BOSSES[this.bossDefIndex]): BossFight {
+    const fight = new BossFight(def);
+    this.attacks.setScript(fight.makeScheduler());
+    fight.onPhaseChange = () => this.attacks.setScript(fight.makeScheduler());
+    return fight;
+  }
+
+  /** Debug: start a fresh fight against `def` (any BossDefinition, registered or not). */
+  private setBoss(def: BossDefinition): void {
+    const movement = this.fight.movementEnabled;
+    this.fight = this.makeFight(def);
+    this.fight.movementEnabled = movement;
+    this.reset(true);
+  }
+
+  private reset(keepFight = false): void {
+    if (!keepFight) {
+      const movement = this.fight.movementEnabled;
+      this.fight = this.makeFight();
+      this.fight.movementEnabled = movement;
+    }
     this.bullets = [];
     this.particles = [];
     this.dodge.reset();
@@ -187,7 +209,11 @@ export class Game {
         this.reset();
         break;
       case 'KeyT':
-        this.boss.swayEnabled = !this.boss.swayEnabled;
+        this.fight.movementEnabled = !this.fight.movementEnabled;
+        break;
+      case 'KeyB':
+        this.bossDefIndex = (this.bossDefIndex + 1) % BOSSES.length;
+        this.setBoss(BOSSES[this.bossDefIndex]);
         break;
       case 'KeyJ':
         this.fx.enabled = this.sfx.enabled = !this.fx.enabled;
@@ -275,7 +301,7 @@ export class Game {
         s.x = Math.random() * W;
       }
     }
-    this.boss.update(dt, TUNING.sway);
+    this.fight.update(dt);
     for (const d of this.boss.dustEvents.splice(0)) this.spawnDebris(d.x, d.y, 24, false, d.r, d.g, d.b);
 
     if (this.state === 'playing') {
@@ -593,7 +619,9 @@ export class Game {
       `TEST MODE (fast dig) ${this.testMode ? 'ON' : 'off'} [Y]  autopilot ${this.auto} [P]`,
       `shots ${s.projectiles} [5/6]  pierce ${s.pierce} [7/8]  reset stats [0]`,
       `dodge [Shift/X] ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}${this.dodge.invulnerable ? ' INVULN' : ''}`,
-      `sway ${this.boss.swayEnabled ? 'on' : 'off'} [T]  restart [R]  debug [\`]`,
+      `movement ${this.fight.movementEnabled ? 'on' : 'off'} [T]  restart [R]  debug [\`]  boss ${this.fight.def.name} [B]`,
+      `phase ${this.fight.phaseIndex + 1}/${this.fight.def.phases.length} ${this.fight.phase.name} (${this.fight.phase.movement.name}) ${this.fight.phaseTime.toFixed(1)}s`,
+      `next: ${this.fight.describeNext()}  [pixel ${this.fight.pixelDamagePercent.toFixed(1)}% core ${this.fight.coreDamagePercent.toFixed(1)}%]`,
       `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${TUNING.player.maxHealth}  hitbox r=${TUNING.player.hitbox}`,
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]`,
@@ -601,7 +629,7 @@ export class Game {
     ctx.save();
     ctx.globalAlpha = 0.7;
     ctx.fillStyle = '#000';
-    ctx.fillRect(6, 6, 400, lines.length * 15 + 8);
+    ctx.fillRect(6, 6, 470, lines.length * 15 + 8);
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#b9f5c0';
     ctx.font = '12px monospace';
