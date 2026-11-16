@@ -4,6 +4,9 @@ import { bulwarkComponents } from './bulwarkComponents';
 import { bulwarkRooms, bulwarkRoomsMirror } from './bulwarkRooms';
 import type { BossDefinition } from './types';
 
-/** All known bosses. The first is the default; [B] in debug cycles through them. */
+/** All known bosses. [B] in debug cycles through them in this order. */
 export const BOSSES: BossDefinition[] = [demoBoss, demoBossPhased, demoBossMotion, bulwark, bulwarkComponents, bulwarkRooms, bulwarkRoomsMirror];
+
+/** The boss the game starts on (and restarts on after a page load). */
+export const DEFAULT_BOSS_ID = 'bulwark-rooms';
 export type { BossDefinition, PhaseDefinition, PhaseTrigger, EnrageCue } from './types';
