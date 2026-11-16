@@ -222,6 +222,15 @@ export class Boss {
   readonly height: number;
   readonly layers: Layer[];
   readonly core: CoreSpec;
+  /** Named layout points (mirrored with the layout); components attach to these. */
+  readonly anchors: Record<string, { x: number; y: number }>;
+  /** Bumped whenever pixels are carved or broken off (cheap change detection for components). */
+  version = 0;
+  /** Component drawing: after layer `li` is drawn (embedded parts), and after all layers (surface parts). */
+  layerHook: ((ctx: CanvasRenderingContext2D, li: number, ox: number, oy: number) => void) | null = null;
+  topHook: ((ctx: CanvasRenderingContext2D, ox: number, oy: number) => void) | null = null;
+  /** Called before the anchoring pass cuts orphans loose in layer `li`; `isOrphan` tests a layer pixel. */
+  onDetach: ((li: number, isOrphan: (x: number, y: number) => boolean) => void) | null = null;
   /** Top-left of the boss in screen space. */
   x: number;
   y: number;
@@ -249,6 +258,7 @@ export class Boss {
     this.height = spec.height;
     this.layers = spec.layers.map((l) => new Layer(l.name, l.density, l.canvas));
     this.core = { ...spec.core };
+    this.anchors = { ...(spec.anchors ?? {}) };
     this.regions = this.layers.map((l) => labelMask(l.mask, spec.width, spec.height).label);
     this.baseX = centerX - spec.width / 2;
     this.x = this.baseX;
@@ -332,6 +342,12 @@ export class Boss {
     const anchored = new Uint8Array(count + 1);
     for (const c of bestOf.values()) anchored[c] = 1;
     if (anchored.reduce((n, v) => n + v, 0) === count) return;
+    this.version++;
+    this.onDetach?.(li, (x, y) => {
+      if (x < 0 || y < 0 || x >= w || y >= h) return false;
+      const c = label[y * w + x];
+      return c > 0 && !anchored[c];
+    });
 
     // Bounding box per orphan component.
     const minX = new Int32Array(count + 1).fill(w);
@@ -458,6 +474,95 @@ export class Boss {
     return { layer: li, carved, spent, core: false, r, g, b };
   }
 
+  /** True when every layer above `layerIndex` is empty at layer pixel (lx, ly). */
+  isExposed(layerIndex: number, lx: number, ly: number): boolean {
+    if (lx < 0 || ly < 0 || lx >= this.width || ly >= this.height) return false;
+    return this.exposed(layerIndex, ly * this.width + lx);
+  }
+
+  isSolid(layerIndex: number, lx: number, ly: number): boolean {
+    if (lx < 0 || ly < 0 || lx >= this.width || ly >= this.height) return false;
+    return this.layers[layerIndex].mask[ly * this.width + lx] === 1;
+  }
+
+  /** Damage the core directly (blasts); armor is the caller's business. */
+  damageCore(amount: number): void {
+    if (amount <= 0) return;
+    this.core.hp = Math.max(0, this.core.hp - amount);
+    this.coreFlash = 0.08;
+  }
+
+  /**
+   * Radial carve around layout pixel (lx, ly) with the usual density rules: the topmost solid layer at
+   * each pixel is cut, nearest pixels first (ragged edge), until `energy` runs out. Pixel cost is
+   * density / weight, where weight = (1 - d/radius)^falloff, so the rim is expensive and tough layers
+   * resist. The core marker is never carved. Returns the number of pixels removed.
+   */
+  carveRadial(lx: number, ly: number, radius: number, energy: number, falloff = 1): number {
+    const ir = Math.ceil(radius);
+    const items: { x: number; y: number; d: number; k: number }[] = [];
+    for (let dy = -ir; dy <= ir; dy++) {
+      for (let dx = -ir; dx <= ir; dx++) {
+        const d = Math.hypot(dx, dy);
+        if (d <= radius) items.push({ x: Math.round(lx) + dx, y: Math.round(ly) + dy, d, k: d + Math.random() * radius * 0.12 });
+      }
+    }
+    items.sort((a, b) => a.k - b.k);
+    const w = this.width;
+    const last = this.layers.length - 1;
+    const touched = new Set<number>();
+    let e = energy;
+    let skips = 0;
+    let carved = 0;
+    let maxD = 0;
+    const topmost = (idx: number): number => {
+      for (let i = 0; i <= last; i++) if (this.layers[i].mask[idx]) return i;
+      return -1;
+    };
+    const isCore = (x: number, y: number, li: number): boolean =>
+      li === last && this.core.hp > 0 && Math.hypot(x - this.core.x, y - this.core.y) <= this.core.radius;
+    for (const it of items) {
+      if (it.x < 0 || it.y < 0 || it.x >= w || it.y >= this.height) continue;
+      const idx = it.y * w + it.x;
+      const li = topmost(idx);
+      if (li < 0 || isCore(it.x, it.y, li)) continue;
+      const layer = this.layers[li];
+      const cost = layer.density / Math.max(Math.pow(1 - it.d / radius, falloff), 0.08);
+      if (e < cost) {
+        if (++skips > 60) break;
+        continue;
+      }
+      skips = 0;
+      e -= cost;
+      layer.mask[idx] = 0;
+      layer.img.data[idx * 4 + 3] = 0;
+      layer.remaining--;
+      touched.add(li);
+      carved++;
+      maxD = it.d;
+    }
+    if (carved === 0) return 0;
+    // Scorch a rim around the new hole.
+    for (const it of items) {
+      if (it.d <= maxD || it.d > maxD + 3) continue;
+      if (it.x < 0 || it.y < 0 || it.x >= w || it.y >= this.height) continue;
+      const idx = it.y * w + it.x;
+      const li = topmost(idx);
+      if (li < 0) continue;
+      const data = this.layers[li].img.data;
+      data[idx * 4] *= 0.65;
+      data[idx * 4 + 1] *= 0.65;
+      data[idx * 4 + 2] *= 0.65;
+      touched.add(li);
+    }
+    for (const li of touched) {
+      this.layers[li].dirty = true;
+      this.layers[li].needsCheck = true;
+    }
+    this.version++;
+    return carved;
+  }
+
   private exposed(layerIndex: number, idx: number): boolean {
     for (let i = 0; i < layerIndex; i++) {
       if (this.layers[i].mask[idx]) return false;
@@ -510,6 +615,7 @@ export class Boss {
       }
       layer.dirty = true;
       layer.needsCheck = true;
+      this.version++;
     }
     return { carved, spent: energy - e };
   }
@@ -522,11 +628,14 @@ export class Boss {
 
     // Back to front; each layer casts a shadow onto everything beneath it.
     ctx.drawImage(this.layers[last].canvas, ox, oy);
+    this.layerHook?.(ctx, last, ox, oy);
     if (!this.defeated) this.drawCore(ctx, ox, oy);
     for (let i = last - 1; i >= 0; i--) {
       ctx.drawImage(this.layers[i].shadow, ox, oy);
       ctx.drawImage(this.layers[i].canvas, ox, oy);
+      this.layerHook?.(ctx, i, ox, oy);
     }
+    this.topHook?.(ctx, ox, oy);
 
     for (const f of this.fragments) {
       ctx.save();

@@ -1,5 +1,7 @@
 import { Boss, mirrorSpec } from './boss';
-import { ScriptedScheduler } from './attackSchedulers';
+import { ScriptedScheduler, type AttackStep } from './attackSchedulers';
+import { ComponentSystem } from './components';
+import { TUNING } from './config';
 import type { BossDefinition, PhaseDefinition, PhaseTrigger } from './bosses/types';
 import type { Movement, Offset2 } from './movement';
 
@@ -16,6 +18,7 @@ export const ENRAGE_FLASH = 0.45;
  */
 export class BossFight {
   readonly boss: Boss;
+  readonly components: ComponentSystem;
   phaseIndex = 0;
   /** Seconds since the fight started / since the current phase started. */
   fightTime = 0;
@@ -38,6 +41,28 @@ export class BossFight {
   constructor(readonly def: BossDefinition) {
     this.boss = new Boss(def.mirror ? mirrorSpec(def.layout()) : def.layout(), def.spawn.x, def.spawn.y);
     this.maxCoreHp = this.boss.core.hp;
+    this.components = new ComponentSystem(this.boss, def.components ?? [], !!def.mirror);
+    this.components.vulnerability = () => this.coreVulnerability();
+    this.components.applyPhase(this.phase.components);
+  }
+
+  /**
+   * 0..1 multiplier on core damage. Base: `coreArmor.min` (default TUNING.coreArmor.min) while the boss is
+   * walled in, ramping to 1 as the layers are dug away; each destroyed `requires` component adds more.
+   */
+  coreVulnerability(): number {
+    const ca = this.def.coreArmor;
+    const ls = this.boss.layers;
+    let dug = 0;
+    for (let i = 0; i < ls.length; i++) dug += 1 - Math.min(1, this.boss.layerRemaining(i) / 0.95);
+    dug = Math.max(0, Math.min(1, dug / ls.length));
+    const min = ca?.min ?? TUNING.coreArmor.min;
+    let v = min + (1 - min) * dug * (ca?.digWeight ?? 1);
+    if (ca?.requires?.length) {
+      const per = ca.perComponent ?? (1 - min) / Math.max(1, this.components.totalCount(ca.requires));
+      v += per * this.components.destroyedCount(ca.requires);
+    }
+    return Math.max(0, Math.min(1, v));
   }
 
   get phase(): PhaseDefinition {
@@ -47,7 +72,19 @@ export class BossFight {
   /** Scheduler for the current phase's attack set. */
   makeScheduler(): ScriptedScheduler {
     const delay = this.phase.enrage ? (this.phase.enrage.breather ?? ENRAGE_BREATHER) : (this.phase.attackDelay ?? 1);
-    return new ScriptedScheduler(this.phase.attacks, delay);
+    const mods = this.phase.components?.modifiers;
+    const steps: AttackStep[] = !mods
+      ? this.phase.attacks
+      : this.phase.attacks.map((s) => {
+          const scale = s.source ? mods.filter((m) => m.target === s.source || this.isMember(s.source!, m.target)).reduce((k, m) => k * (m.intervalScale ?? 1), 1) : 1;
+          return scale === 1 ? s : { ...s, interval: (s.interval ?? s.pattern.interval) * scale };
+        });
+    return new ScriptedScheduler(steps, delay, this.components);
+  }
+
+  /** True when a step source `source` (id or group) names a component that the modifier `target` (id or group) also names. */
+  private isMember(source: string, target: string): boolean {
+    return this.components.items.some((c) => c.matches(source) && c.matches(target));
   }
 
   /** Share of all layer pixels carved or broken away, 0..100. */
@@ -122,6 +159,7 @@ export class BossFight {
     } else if (this.def.phases.slice(0, i + 1).every((p) => !p.enrage)) {
       this.enraged = false;
     }
+    this.components.applyPhase(this.phase.components);
     this.onPhaseChange?.(this.phase, i);
   }
 
@@ -142,5 +180,6 @@ export class BossFight {
     this.lastOffset = off;
     this.boss.setOffset(off.x, off.y);
     this.boss.update(dt);
+    this.components.update(dt);
   }
 }

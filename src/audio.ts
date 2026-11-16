@@ -70,6 +70,36 @@ export class Sfx {
     this.tone(c, 90, 30, 0.7, 'sine', JUICE.audio.volume * 2);
   }
 
+  /** Dry metallic tick when a bullet hits a component. */
+  componentHit(): void {
+    const c = this.ready();
+    if (!c || c.currentTime - this.lastCarve < JUICE.audio.minInterval) return;
+    this.lastCarve = c.currentTime;
+    this.tone(c, 900 + Math.random() * 200, 420, 0.05, 'square', JUICE.audio.volume * 0.6);
+  }
+
+  /** A component crossed a damage threshold (75 / 50 / 25 %): a crack and a falling whine. */
+  componentDamage(level: number): void {
+    const c = this.ready();
+    if (!c) return;
+    this.tone(c, 500 - level * 80, 120, 0.18, 'sawtooth', JUICE.audio.volume * 0.7);
+  }
+
+  /** A component was destroyed: a pop, or a boom for an explosive one. */
+  componentDestroy(blast: boolean): void {
+    const c = this.ready();
+    if (!c || !this.noise) return;
+    const src = c.createBufferSource();
+    src.buffer = this.noise;
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(blast ? 1400 : 2600, c.currentTime);
+    f.frequency.exponentialRampToValueAtTime(100, c.currentTime + (blast ? 0.6 : 0.3));
+    this.envelope(c, src.connect(f), blast ? 0.6 : 0.3, JUICE.audio.volume * (blast ? 1.6 : 1.1));
+    src.start(c.currentTime, Math.random() * 0.4, 0.7);
+    this.tone(c, blast ? 110 : 200, 40, blast ? 0.5 : 0.25, 'sine', JUICE.audio.volume * 1.4);
+  }
+
   /** Enrage cue: a low falling growl under a rising alarm sweep. */
   enrage(): void {
     const c = this.ready();

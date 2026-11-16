@@ -1,5 +1,6 @@
 import { H, TUNING, W } from './config';
 import { DebugScheduler, type AttackScheduler } from './attackSchedulers';
+import type { FireSource } from './components';
 import { drawBullet, dimBoss, type StyleName } from './attackStyles';
 import { drawHazard, hazardPhase, shapeHits, type Hazard, type Point } from './hazards';
 
@@ -122,6 +123,8 @@ export class Attacks {
   bullets: EnemyBullet[] = [];
   hazards: Hazard[] = [];
   private readonly debugScheduler = new DebugScheduler(PATTERNS);
+  /** Resolves a step's `source` (turret id or group) to firing positions; set by the game from the boss's components. */
+  sources: { fireFrom(source: string): FireSource[] } | null = null;
   private script: AttackScheduler | null = null;
   private clock = 0;
 
@@ -172,8 +175,13 @@ export class Attacks {
 
   update(dt: number, origin: () => Point, target: Point, firing: boolean): void {
     if (this.enabled && firing) {
-      const p = this.scheduler?.update(dt);
-      if (p) this.firePattern(p, origin, target);
+      const sched = this.scheduler;
+      const p = sched?.update(dt);
+      if (p) {
+        const src = sched!.lastSource;
+        if (src && this.sources) for (const s of this.sources.fireFrom(src)) this.firePattern(p, s.origin, s.target);
+        else this.firePattern(p, origin, target);
+      }
     }
     for (const b of this.bullets) {
       b.x += b.vx * dt;
