@@ -158,6 +158,42 @@ const FRAGMENT_GRAVITY = 520;
 const FRAGMENT_LIFE = 2.4;
 const CONNECTIVITY_INTERVAL = 0.08;
 
+/** 8-connected component labelling of a mask; labels start at 1. */
+function labelMask(mask: Uint8Array, w: number, h: number): { label: Int32Array; sizes: number[]; count: number } {
+  const label = new Int32Array(w * h);
+  const sizes: number[] = [0];
+  const stack: number[] = [];
+  let count = 0;
+  for (let start = 0; start < w * h; start++) {
+    if (!mask[start] || label[start]) continue;
+    count++;
+    let size = 0;
+    label[start] = count;
+    stack.push(start);
+    while (stack.length) {
+      const p = stack.pop()!;
+      size++;
+      const px = p % w;
+      const py = (p / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = py + dy;
+        if (ny < 0 || ny >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = px + dx;
+          if (nx < 0 || nx >= w) continue;
+          const q = ny * w + nx;
+          if (mask[q] && !label[q]) {
+            label[q] = count;
+            stack.push(q);
+          }
+        }
+      }
+    }
+    sizes.push(size);
+  }
+  return { label, sizes, count };
+}
+
 export class Boss {
   readonly width: number;
   readonly height: number;
@@ -172,6 +208,8 @@ export class Boss {
   private coreFlash = 0;
   private fragments: Fragment[] = [];
   private checkTimer = 0;
+  /** Per layer: original connected region id of each pixel (0 = empty). Regions anchor independently. */
+  private regions: Int32Array[];
   /** Dust from vanished specks and break-aways, in screen space; the game may drain this for particles. */
   readonly dustEvents: { x: number; y: number; r: number; g: number; b: number }[] = [];
 
@@ -184,6 +222,7 @@ export class Boss {
     this.height = spec.height;
     this.layers = spec.layers.map((l) => new Layer(l.name, l.density, l.canvas));
     this.core = { ...spec.core };
+    this.regions = this.layers.map((l) => labelMask(l.mask, spec.width, spec.height).label);
     this.baseX = centerX - spec.width / 2;
     this.x = this.baseX;
     this.y = topY;
@@ -220,7 +259,7 @@ export class Boss {
   }
 
   /**
-   * Anchoring rule: a pixel is attached if it is 8-connected to its layer's main mass. The main mass
+   * Anchoring rule: a pixel is attached if it is 8-connected to the main mass of its original region (a layer may hold several separate regions, e.g. rooms). The main mass
    * is the component holding the core (innermost layer, when the core is still buried in it) or else
    * the largest component. Everything else is cut loose: specks vanish, bigger chunks break away.
    */
@@ -230,55 +269,37 @@ export class Boss {
     const w = this.width;
     const h = this.height;
     const mask = layer.mask;
-    const label = new Int32Array(w * h);
-    const sizes: number[] = [0];
-    const stack: number[] = [];
-    let count = 0;
+    const { label, sizes, count } = labelMask(mask, w, h);
+    if (count === 0) return;
 
-    for (let start = 0; start < w * h; start++) {
-      if (!mask[start] || label[start]) continue;
-      count++;
-      let size = 0;
-      label[start] = count;
-      stack.push(start);
-      while (stack.length) {
-        const p = stack.pop()!;
-        size++;
-        const px = p % w;
-        const py = (p / w) | 0;
-        for (let dy = -1; dy <= 1; dy++) {
-          const ny = py + dy;
-          if (ny < 0 || ny >= h) continue;
-          for (let dx = -1; dx <= 1; dx++) {
-            const nx = px + dx;
-            if (nx < 0 || nx >= w) continue;
-            const q = ny * w + nx;
-            if (mask[q] && !label[q]) {
-              label[q] = count;
-              stack.push(q);
-            }
-          }
-        }
-      }
-      sizes.push(size);
+    // Each component belongs to one original region (current mask is a subset of the initial one).
+    // Every region is anchored independently by its own largest component, or by the one holding
+    // the core when the core is still buried in this (innermost) layer.
+    const region = this.regions[li];
+    const regionOfComp = new Int32Array(count + 1);
+    for (let i = 0; i < w * h; i++) if (label[i]) regionOfComp[label[i]] = region[i];
+    const bestOf = new Map<number, number>();
+    for (let c = 1; c <= count; c++) {
+      const r = regionOfComp[c];
+      const cur = bestOf.get(r);
+      if (cur === undefined || sizes[c] > sizes[cur]) bestOf.set(r, c);
     }
-    if (count <= 1) return;
-
-    let anchor = 1;
-    for (let c = 2; c <= count; c++) if (sizes[c] > sizes[anchor]) anchor = c;
     if (li === this.layers.length - 1 && this.core.hp > 0) {
       const cx = Math.round(this.core.x);
       const cy = Math.round(this.core.y);
-      let best = 0;
-      for (let dy = -2; dy <= 2 && !best; dy++) {
-        for (let dx = -2; dx <= 2 && !best; dx++) {
+      let coreComp = 0;
+      for (let dy = -2; dy <= 2 && !coreComp; dy++) {
+        for (let dx = -2; dx <= 2 && !coreComp; dx++) {
           const x = cx + dx;
           const y = cy + dy;
-          if (x >= 0 && y >= 0 && x < w && y < h) best = label[y * w + x];
+          if (x >= 0 && y >= 0 && x < w && y < h) coreComp = label[y * w + x];
         }
       }
-      if (best) anchor = best;
+      if (coreComp) bestOf.set(regionOfComp[coreComp], coreComp);
     }
+    const anchored = new Uint8Array(count + 1);
+    for (const c of bestOf.values()) anchored[c] = 1;
+    if (anchored.reduce((n, v) => n + v, 0) === count) return;
 
     // Bounding box per orphan component.
     const minX = new Int32Array(count + 1).fill(w);
@@ -288,7 +309,7 @@ export class Boss {
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const c = label[y * w + x];
-        if (!c || c === anchor) continue;
+        if (!c || anchored[c]) continue;
         if (x < minX[c]) minX[c] = x;
         if (x > maxX[c]) maxX[c] = x;
         if (y < minY[c]) minY[c] = y;
@@ -299,7 +320,7 @@ export class Boss {
     const data = layer.img.data;
     let removed = 0;
     for (let c = 1; c <= count; c++) {
-      if (c === anchor) continue;
+      if (anchored[c]) continue;
       const bw = maxX[c] - minX[c] + 1;
       const bh = maxY[c] - minY[c] + 1;
       const speck = sizes[c] <= SPECK_PIXELS;
