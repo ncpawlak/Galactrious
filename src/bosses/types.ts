@@ -2,6 +2,7 @@ import type { BossSpec } from '../boss';
 import type { AttackStep } from '../attackSchedulers';
 import type { Movement } from '../movement';
 import type { RoomSpec } from '../rooms';
+import type { RegrowthSpec } from '../regrowth';
 import type { ComponentSpec, CoreArmorSpec, PhaseComponents } from '../components';
 
 /**
@@ -65,6 +66,8 @@ export interface BossDefinition {
   rooms?: RoomSpec[];
   /** Core armor rules. Default: the old formula (TUNING.coreArmor.min, ramping with how much is dug). */
   coreArmor?: CoreArmorSpec;
+  /** Opt in to hull regrowth (an anti-spam lever, see src/regrowth.ts). Omitted = the boss never regrows. */
+  regrowth?: RegrowthSpec;
   /** At least one phase. */
   phases: PhaseDefinition[];
 }
