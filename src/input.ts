@@ -1,4 +1,5 @@
 import { H, W } from './config';
+import { inDodgeButton } from './player';
 
 /** Keyboard + pointer (mouse/touch) input in logical (540x960) coordinates. */
 export class Input {
@@ -8,6 +9,8 @@ export class Input {
   py = H / 2;
   onPress: ((code: string) => void) | null = null;
   onPointerDown: (() => void) | null = null;
+  onDodge: (() => void) | null = null;
+  private steerPointer = -1;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     window.addEventListener('keydown', (e) => {
@@ -23,15 +26,24 @@ export class Input {
     });
 
     canvas.addEventListener('pointerdown', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const lx = ((e.clientX - rect.left) * W) / rect.width;
+      const ly = ((e.clientY - rect.top) * H) / rect.height;
+      if (inDodgeButton(lx, ly)) {
+        this.onDodge?.();
+        return;
+      }
       canvas.setPointerCapture(e.pointerId);
+      this.steerPointer = e.pointerId;
       this.pointerDown = true;
       this.track(e);
       this.onPointerDown?.();
     });
     canvas.addEventListener('pointermove', (e) => {
-      if (this.pointerDown) this.track(e);
+      if (this.pointerDown && e.pointerId === this.steerPointer) this.track(e);
     });
-    const release = (): void => {
+    const release = (e: PointerEvent): void => {
+      if (e.pointerId !== this.steerPointer) return;
       this.pointerDown = false;
     };
     canvas.addEventListener('pointerup', release);
