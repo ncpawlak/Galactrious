@@ -353,6 +353,7 @@ export class ComponentSystem implements SourceGate {
       const p = this.pos(c);
       if (Math.hypot(px - p.x, py - p.y) > c.spec.radius) continue;
       c.flash = HIT_FLASH;
+      this.boss.sinceHit = 0;
       this.events.push({ kind: 'hit', x: px, y: py });
       this.spark(px, py, 3, '#fff2b0');
       this.damage(c, energy);

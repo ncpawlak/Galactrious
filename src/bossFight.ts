@@ -3,6 +3,7 @@ import { ScriptedScheduler, type AttackStep } from './attackSchedulers';
 import { ComponentSystem } from './components';
 import { consoleSpecs, RoomSystem } from './rooms';
 import { TUNING } from './config';
+import { Regrowth } from './regrowth';
 import type { BossDefinition, PhaseDefinition, PhaseTrigger } from './bosses/types';
 import type { Movement, Offset2 } from './movement';
 
@@ -21,6 +22,8 @@ export class BossFight {
   readonly boss: Boss;
   readonly components: ComponentSystem;
   readonly rooms: RoomSystem;
+  /** Hull regrowth, present only when the definition opts in (`BossDefinition.regrowth`). */
+  readonly regrowth: Regrowth | null = null;
   phaseIndex = 0;
   /** Seconds since the fight started / since the current phase started. */
   fightTime = 0;
@@ -50,6 +53,25 @@ export class BossFight {
     this.components.vulnerability = () => this.coreVulnerability();
     this.components.applyPhase(this.phase.components);
     this.validateSources();
+    if (def.regrowth) {
+      this.regrowth = new Regrowth(this.boss, def.regrowth, (li, x, y) => this.regrowthBlocked(li, x, y));
+      this.boss.regrowth = this.regrowth;
+    }
+  }
+
+  /**
+   * Regrowth must not re-bury a target the player has reached: a live embedded component in a deeper layer
+   * (hit area plus a margin) or the live core marker keeps its hole.
+   */
+  private regrowthBlocked(li: number, x: number, y: number): boolean {
+    const b = this.boss;
+    if (b.core.hp > 0 && li < b.layers.length - 1 && Math.hypot(x - b.core.x, y - b.core.y) <= b.core.radius + 4) return true;
+    for (const c of this.components.items) {
+      if (c.spec.mount !== 'embedded' || c.layer <= li) continue;
+      if (c.state === 'detached' || c.state === 'destroyed') continue;
+      if (Math.hypot(x - c.lx, y - c.ly) <= c.spec.radius + 3) return true;
+    }
+    return false;
   }
 
   /**

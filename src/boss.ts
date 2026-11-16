@@ -1,5 +1,6 @@
 import { DEBRIS, TUNING } from './config';
 import { driftSpin, driftVelocity, stepDrift } from './debris';
+import type { Regrowth } from './regrowth';
 
 /**
  * Layered, carvable boss.
@@ -73,6 +74,11 @@ export class Layer {
   readonly total: number;
   remaining: number;
   dirty = false;
+  /** Original mask and colours, kept so regrowth can restore carved pixels (see src/regrowth.ts). */
+  readonly orig: Uint8Array;
+  readonly origRgba: Uint8ClampedArray;
+  /** Pixels lost for good (broken off as fragments, blasted by a component crater): never regrown. */
+  readonly gone: Uint8Array;
   /** Offset silhouette of this layer, drawn beneath it to cast a depth shadow onto lower layers. */
   readonly shadow: HTMLCanvasElement;
   private readonly shadowCtx: CanvasRenderingContext2D;
@@ -98,6 +104,9 @@ export class Layer {
     }
     this.total = n;
     this.remaining = n;
+    this.orig = this.mask.slice();
+    this.origRgba = new Uint8ClampedArray(this.img.data);
+    this.gone = new Uint8Array(w * h);
     this.canvas = document.createElement('canvas');
     this.canvas.width = w;
     this.canvas.height = h;
@@ -226,6 +235,10 @@ export class Boss {
   readonly anchors: Record<string, { x: number; y: number }>;
   /** Bumped whenever pixels are carved or broken off (cheap change detection for components). */
   version = 0;
+  /** Seconds since the boss last took player damage (a bullet landed on it or on a component, or the core was hit). */
+  sinceHit = 99;
+  /** Optional hull regrowth (set by BossFight when the definition opts in). */
+  regrowth: Regrowth | null = null;
   /** Component drawing: after layer `li` is drawn (embedded parts), and after all layers (surface parts). */
   layerHook: ((ctx: CanvasRenderingContext2D, li: number, ox: number, oy: number) => void) | null = null;
   topHook: ((ctx: CanvasRenderingContext2D, ox: number, oy: number) => void) | null = null;
@@ -280,6 +293,7 @@ export class Boss {
 
   update(dt: number): void {
     this.coreFlash = Math.max(0, this.coreFlash - dt);
+    this.sinceHit += dt;
     this.prevX = this.x;
     this.prevY = this.y;
     this.x = this.baseX + this.offsetX;
@@ -292,6 +306,8 @@ export class Boss {
         if (this.layers[i].needsCheck) this.detachOrphans(i);
       }
     }
+
+    this.regrowth?.update(dt);
 
     for (const f of this.fragments) {
       f.age += dt;
@@ -398,6 +414,7 @@ export class Boss {
           sg = data[i * 4 + 1];
           sb = data[i * 4 + 2];
           mask[i] = 0;
+          layer.gone[i] = 1;
           data[i * 4 + 3] = 0;
           removed++;
         }
@@ -453,6 +470,7 @@ export class Boss {
     }
     if (li < 0) return null;
 
+    this.sinceHit = 0;
     const layer = this.layers[li];
     const r = layer.img.data[idx * 4];
     const g = layer.img.data[idx * 4 + 1];
@@ -488,6 +506,7 @@ export class Boss {
   /** Damage the core directly (blasts); armor is the caller's business. */
   damageCore(amount: number): void {
     if (amount <= 0) return;
+    this.sinceHit = 0;
     this.core.hp = Math.max(0, this.core.hp - amount);
     this.coreFlash = 0.08;
   }
@@ -535,6 +554,7 @@ export class Boss {
       skips = 0;
       e -= cost;
       layer.mask[idx] = 0;
+      layer.gone[idx] = 1; // crater / blast: never refills
       layer.img.data[idx * 4 + 3] = 0;
       layer.remaining--;
       touched.add(li);
@@ -630,11 +650,13 @@ export class Boss {
 
     // Back to front; each layer casts a shadow onto everything beneath it.
     ctx.drawImage(this.layers[last].canvas, ox, oy);
+    this.regrowth?.drawGlow(ctx, last, ox, oy);
     this.layerHook?.(ctx, last, ox, oy);
     if (!this.defeated) this.drawCore(ctx, ox, oy);
     for (let i = last - 1; i >= 0; i--) {
       ctx.drawImage(this.layers[i].shadow, ox, oy);
       ctx.drawImage(this.layers[i].canvas, ox, oy);
+      this.regrowth?.drawGlow(ctx, i, ox, oy);
       this.layerHook?.(ctx, i, ox, oy);
     }
     this.topHook?.(ctx, ox, oy);
