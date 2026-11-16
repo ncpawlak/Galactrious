@@ -591,6 +591,8 @@ export class Boss {
       if (x < 0 || y < 0 || x >= w || y >= h) continue;
       const idx = y * w + x;
       if (!layer.mask[idx] || !this.exposed(li, idx)) continue;
+      // The core marker is never carved (huge-energy bullets would otherwise dig it out and bullets would pass through).
+      if (li === this.layers.length - 1 && this.core.hp > 0 && Math.hypot(x - this.core.x, y - this.core.y) <= this.core.radius) continue;
       if (e < layer.density) break;
       e -= layer.density;
       layer.mask[idx] = 0;

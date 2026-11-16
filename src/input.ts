@@ -10,6 +10,8 @@ export class Input {
   onPress: ((code: string) => void) | null = null;
   onPointerDown: (() => void) | null = null;
   onDodge: (() => void) | null = null;
+  /** Debug UI hook: return true to consume a press (no steering). Logical coordinates. */
+  capture: ((x: number, y: number, e: PointerEvent) => boolean) | null = null;
   private steerPointer = -1;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -29,6 +31,7 @@ export class Input {
       const rect = canvas.getBoundingClientRect();
       const lx = ((e.clientX - rect.left) * W) / rect.width;
       const ly = ((e.clientY - rect.top) * H) / rect.height;
+      if (this.capture?.(lx, ly, e)) return;
       if (inDodgeButton(lx, ly)) {
         this.onDodge?.();
         return;
