@@ -4,7 +4,7 @@ export const H = 960;
 
 /** Tunables for milestone 1. Densities: energy spent per pixel carved. */
 export const TUNING = {
-  densities: { hull: 0.05, frame: 0.8, rooms: 1.5 },
+  densities: { hull: 0.055, frame: 0.8, rooms: 1.5 },
   /** Starting ship stats (live-adjustable with the debug keys). */
   ship: { damage: 90, fireRate: 12 },
   /** Debug test-mode preset (toggle with [Y]): the fast values from PR #21, for quick iteration. */
