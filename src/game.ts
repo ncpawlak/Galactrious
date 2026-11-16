@@ -2,6 +2,7 @@ import { Attacks, PATTERNS } from './attacks';
 import { Sfx } from './audio';
 import type { Boss } from './boss';
 import { BossFight } from './bossFight';
+import { EnrageTint } from './enrage';
 import { BOSSES, type BossDefinition } from './bosses';
 import { H, TUNING, W } from './config';
 import { Effects } from './effects';
@@ -160,6 +161,7 @@ export class Game {
   }
 
   private readonly hud = new Hud();
+  private readonly enrageTint = new EnrageTint();
 
   /** The boss of the current fight (a new object after each restart). */
   private get boss(): Boss {
@@ -169,7 +171,13 @@ export class Game {
   private makeFight(def: BossDefinition = BOSSES[this.bossDefIndex]): BossFight {
     const fight = new BossFight(def);
     this.attacks.setScript(fight.makeScheduler());
-    fight.onPhaseChange = () => this.attacks.setScript(fight.makeScheduler());
+    fight.onPhaseChange = (phase) => {
+      this.attacks.setScript(fight.makeScheduler());
+      if (phase.enrage) {
+        this.fx.onEnrage();
+        this.sfx.enrage();
+      }
+    };
     return fight;
   }
 
@@ -582,7 +590,7 @@ export class Game {
     ctx.fillStyle = '#8fa0c8';
     for (const s of this.stars) ctx.fillRect(s.x, s.y, s.size, s.size);
 
-    if (!this.boss.defeated || this.elapsed - this.wonAt < 1.2) this.boss.render(ctx);
+    if (!this.boss.defeated || this.elapsed - this.wonAt < 1.2) this.enrageTint.render(ctx, this.boss, this.fight);
     this.attacks.drawBossDim(ctx);
     this.drawBullets();
     this.attacks.draw(ctx);
@@ -595,6 +603,7 @@ export class Game {
     this.fx.drawNumbers(ctx);
     this.fx.endShake(ctx);
     this.health.draw(ctx);
+    if (this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
     if (this.state === 'playing') this.dodge.drawButton(ctx);
     if (this.showDebug) {
       this.drawDebug();

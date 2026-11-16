@@ -3,6 +3,7 @@ import { TUNING } from '../config';
 import { aimedShot, bomb, directVolley, lineSweep } from '../attacks';
 import { bob, combine, figureEight, named, sequence, still, sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
 import type { BossDefinition } from './types';
+import { fillRects, makeCanvas as paintCanvas, shade } from './paint';
 
 /**
  * Demo boss built from rectangles that mirror the design mockups. The result is the same shape a
@@ -11,59 +12,8 @@ import type { BossDefinition } from './types';
 
 const BW = 360;
 const BH = 440;
-
 type Rect = [x: number, y: number, w: number, h: number];
-
-function makeCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
-  const canvas = document.createElement('canvas');
-  canvas.width = BW;
-  canvas.height = BH;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-  return { canvas, ctx };
-}
-
-function hash(x: number, y: number): number {
-  let h = (x * 374761393 + y * 668265263) | 0;
-  h = (h ^ (h >>> 13)) * 1274126177;
-  h ^= h >>> 16;
-  return (h >>> 0) / 4294967295;
-}
-
-interface ShadeOpts {
-  noise: number;
-  /** Brightness multiplier for pixels on the silhouette edge. */
-  edge: number;
-  seamEvery?: number;
-}
-
-/** Adds per-pixel noise, edge highlights/lowlights and optional panel seams to a painted canvas. */
-function shade(ctx: CanvasRenderingContext2D, opts: ShadeOpts): void {
-  const img = ctx.getImageData(0, 0, BW, BH);
-  const d = img.data;
-  const solid = (x: number, y: number): boolean =>
-    x >= 0 && y >= 0 && x < BW && y < BH && d[(y * BW + x) * 4 + 3] > 0;
-  const out = new Uint8ClampedArray(d);
-
-  for (let y = 0; y < BH; y++) {
-    for (let x = 0; x < BW; x++) {
-      const i = (y * BW + x) * 4;
-      if (d[i + 3] === 0) continue;
-      let f = 1 - opts.noise / 2 + hash(x, y) * opts.noise;
-      const onEdge = !solid(x - 1, y) || !solid(x + 1, y) || !solid(x, y - 1) || !solid(x, y + 1);
-      if (onEdge) f *= opts.edge;
-      if (opts.seamEvery && (x % opts.seamEvery === 0 || y % opts.seamEvery === 0)) f *= 0.78;
-      out[i] = d[i] * f;
-      out[i + 1] = d[i + 1] * f;
-      out[i + 2] = d[i + 2] * f;
-    }
-  }
-  ctx.putImageData(new ImageData(out, BW, BH), 0, 0);
-}
-
-function fillRects(ctx: CanvasRenderingContext2D, rects: Rect[], color: string): void {
-  ctx.fillStyle = color;
-  for (const [x, y, w, h] of rects) ctx.fillRect(x, y, w, h);
-}
+const makeCanvas = () => paintCanvas(BW, BH);
 
 export function createDemoBoss(): BossSpec {
   // Layer 1: hull slab.

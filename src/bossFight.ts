@@ -5,6 +5,10 @@ import type { Movement, Offset2 } from './movement';
 
 /** Seconds over which the position eases between two phases' movements, so a switch never snaps. */
 const BLEND_TIME = 0.6;
+/** Default pause (s) before attacks resume after an enrage transition. */
+export const ENRAGE_BREATHER = 1.5;
+/** Length (s) of the white flash on the boss at the transition. */
+export const ENRAGE_FLASH = 0.45;
 
 /**
  * Runs one fight from a BossDefinition: owns the Boss, the current phase, the phase clocks and the
@@ -20,6 +24,10 @@ export class BossFight {
   movementEnabled = true;
   /** Debug: when set, replaces the phase's movement (live, with the usual ease). */
   movementOverride: Movement | null = null;
+  /** True from an enrage phase's start on (later phases keep it). */
+  enraged = false;
+  /** Seconds left of the transition flash (0 when idle). */
+  enrageFlash = 0;
   /** Called after a phase starts (not for phase 0). */
   onPhaseChange: ((phase: PhaseDefinition, index: number) => void) | null = null;
   private blendFrom: Offset2 = { x: 0, y: 0 };
@@ -38,7 +46,8 @@ export class BossFight {
 
   /** Scheduler for the current phase's attack set. */
   makeScheduler(): ScriptedScheduler {
-    return new ScriptedScheduler(this.phase.attacks, this.phase.attackDelay ?? 1);
+    const delay = this.phase.enrage ? (this.phase.enrage.breather ?? ENRAGE_BREATHER) : (this.phase.attackDelay ?? 1);
+    return new ScriptedScheduler(this.phase.attacks, delay);
   }
 
   /** Share of all layer pixels carved or broken away, 0..100. */
@@ -107,12 +116,19 @@ export class BossFight {
     this.blendLeft = BLEND_TIME;
     this.phaseIndex = i;
     this.phaseTime = 0;
+    if (this.phase.enrage) {
+      this.enraged = true;
+      this.enrageFlash = ENRAGE_FLASH;
+    } else if (this.def.phases.slice(0, i + 1).every((p) => !p.enrage)) {
+      this.enraged = false;
+    }
     this.onPhaseChange?.(this.phase, i);
   }
 
   update(dt: number): void {
     this.fightTime += dt;
     this.phaseTime += dt;
+    this.enrageFlash = Math.max(0, this.enrageFlash - dt);
 
     const next = this.def.phases[this.phaseIndex + 1];
     if (next?.trigger && this.triggered(next.trigger)) this.enterPhase(this.phaseIndex + 1);
