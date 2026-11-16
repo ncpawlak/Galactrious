@@ -137,6 +137,7 @@ export class Game {
       attacks: this.attacks,
       setAttacks: (on: boolean) => (this.attacks.enabled = on),
       components: this.fight.components,
+      rooms: this.fight.rooms,
       setComponentDebug: (on: boolean) => (this.fight.components.debug = on),
       /** Advance the sim `seconds` of game time without rendering (for scripted measurements). */
       simulate: (seconds: number, mode: 'off' | 'sweep' | 'focus' = this.auto) => {
@@ -176,6 +177,7 @@ export class Game {
     const fight = new BossFight(def);
     fight.components.target = this.ship;
     this.attacks.sources = fight.components;
+    fight.rooms.host = { fire: (p, o) => this.attacks.firePattern(p, o, this.ship), hazard: (h) => this.attacks.spawnHazard(h) };
     this.attacks.setScript(fight.makeScheduler());
     fight.onPhaseChange = (phase) => {
       this.attacks.setScript(fight.makeScheduler());
@@ -247,6 +249,9 @@ export class Game {
       case 'KeyB':
         this.bossDefIndex = (this.bossDefIndex + 1) % BOSSES.length;
         this.setBoss(BOSSES[this.bossDefIndex]);
+        break;
+      case 'KeyG':
+        this.fight.rooms.forceExpose(); // debug: trigger the next room's exposure reaction
         break;
       case 'KeyH':
         this.fight.components.debug = !this.fight.components.debug;
@@ -402,6 +407,13 @@ export class Game {
           break;
         case 'detach':
           this.sfx.componentDamage(1);
+          break;
+        case 'roomExposed':
+          this.fx.onRoomExposed();
+          this.sfx.roomExposed();
+          break;
+        case 'roomOffline':
+          this.sfx.roomOffline();
           break;
       }
     }
@@ -626,7 +638,7 @@ export class Game {
     this.drawBullets();
     this.attacks.draw(ctx);
     this.drawParticles();
-    this.hud.draw(ctx, this.boss);
+    this.hud.draw(ctx, this.boss, this.fight.rooms);
     if (this.state === 'playing') {
       this.drawShip();
       this.dodge.drawShipFx(ctx, this.ship.x, this.ship.y);
@@ -703,7 +715,7 @@ export class Game {
       `next: ${this.fight.describeNext()}  [pixel ${this.fight.pixelDamagePercent.toFixed(1)}% core ${this.fight.coreDamagePercent.toFixed(1)}%]`,
       `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${TUNING.player.maxHealth}  hitbox r=${TUNING.player.hitbox}`,
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
-      `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]`,
+      `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component/room hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]  expose room [G]`,
     ];
     ctx.save();
     ctx.globalAlpha = 0.7;

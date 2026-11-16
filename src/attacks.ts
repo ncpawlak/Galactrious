@@ -169,6 +169,11 @@ export class Attacks {
     });
   }
 
+  /** Add a timed hazard directly (room reactions, scripted effects). */
+  spawnHazard(h: Omit<Hazard, 'age'>): void {
+    this.hazards.push({ ...h, age: 0 });
+  }
+
   fireSelected(origin: () => Point, target: Point): void {
     this.fire(this.selected, origin, target);
   }

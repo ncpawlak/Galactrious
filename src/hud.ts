@@ -1,5 +1,6 @@
 import { H, W } from './config';
 import type { Boss } from './boss';
+import type { RoomSystem } from './rooms';
 
 /** Per-layer progress bars plus room status. Reads boss state only; owns no game logic. */
 
@@ -93,7 +94,7 @@ export class Hud {
     ctx.restore();
   }
 
-  draw(ctx: CanvasRenderingContext2D, boss: Boss): void {
+  draw(ctx: CanvasRenderingContext2D, boss: Boss, rooms?: RoomSystem): void {
     this.bind(boss);
     this.refreshRooms();
     const rows = boss.layers.length;
@@ -140,6 +141,56 @@ export class Hud {
     const cleared = this.fractions.filter((f) => f <= 0).length;
     ctx.fillStyle = '#e8ecf8';
     ctx.fillText(`${cleared}/${this.rooms.length} cleared`, PANEL_X + 48 + this.rooms.length * 22 + 4, ry);
+    ctx.restore();
+    if (rooms?.active) {
+      this.drawRoomStatus(ctx, rooms, y0 - 6);
+      this.drawRoomAlert(ctx, rooms);
+    }
+  }
+
+  /** Named rooms with consoles: function and status, stacked above the layer panel. Online / exposed (can be seen) / offline. */
+  private drawRoomStatus(ctx: CanvasRenderingContext2D, rooms: RoomSystem, bottom: number): void {
+    const lineH = 15;
+    const h = rooms.rooms.length * lineH + 8;
+    const top = bottom - h - 4;
+    ctx.save();
+    ctx.font = '11px ui-monospace, Consolas, monospace';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(5, 6, 13, 0.7)';
+    ctx.fillRect(PANEL_X - 6, top, BAR_W + 150, h);
+    rooms.rooms.forEach((r, i) => {
+      const y = top + 5 + i * lineH;
+      const color = r.offline ? '#7a8196' : r.exposed ? '#ffb347' : '#6fd3df';
+      ctx.fillStyle = color;
+      ctx.fillRect(PANEL_X, y + 2, 8, 8);
+      ctx.fillStyle = r.offline ? '#7a8196' : '#e8ecf8';
+      ctx.fillText(`${r.spec.function}`.slice(0, 20), PANEL_X + 14, y);
+      ctx.fillStyle = color;
+      ctx.fillText(r.offline ? 'OFFLINE' : r.exposed ? 'EXPOSED' : 'online', PANEL_X + 14 + BAR_W + 40, y);
+    });
+    ctx.restore();
+  }
+
+  /** "WARNING" banner top centre while a room's reaction is telegraphed (sits under the ENRAGED badge). */
+  private drawRoomAlert(ctx: CanvasRenderingContext2D, rooms: RoomSystem): void {
+    const r = rooms.rooms.filter((x) => x.alert > 0).sort((a, b) => b.alert - a.alert)[0];
+    if (!r) return;
+    const pulse = Math.sin(r.alert * 18) > 0;
+    const k = Math.min(1, r.alert / 0.4);
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.font = 'bold 15px ui-monospace, Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const text = `WARNING: ${r.spec.function.toUpperCase()} DEFENCES`;
+    const w = ctx.measureText(text).width + 24;
+    ctx.fillStyle = 'rgba(70, 8, 8, 0.85)';
+    ctx.fillRect(W / 2 - w / 2, 50, w, 26);
+    ctx.strokeStyle = pulse ? '#ffd0c0' : '#ff5a3c';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(W / 2 - w / 2 + 1, 51, w - 2, 24);
+    ctx.fillStyle = pulse ? '#ffd0c0' : '#ff7a5a';
+    ctx.fillText(text, W / 2, 64);
     ctx.restore();
   }
 }
