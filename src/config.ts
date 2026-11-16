@@ -14,3 +14,15 @@ export const TUNING = {
   /** Dodge: dash `distance` px over `invulnTime` s (invulnerable meanwhile), then `cooldown` s. */
   dodge: { distance: 170, invulnTime: 0.25, cooldown: 2.5 },
 };
+
+/** Game-feel ("juice") tunables. Everything is subtle by default; toggle live with [J]. */
+export const JUICE = {
+  /** Hit stop: freeze gameplay briefly on heavy carves. Seconds. */
+  hitStop: { carveThreshold: 40, perPixel: 0.0004, max: 0.03, core: 0.025, cooldown: 0.12 },
+  /** Screen shake: trauma-based. Amount is px at trauma 1. */
+  shake: { maxOffset: 7, decay: 2.8, perPixel: 0.004, core: 0.12, explosion: 0.9, maxTrauma: 0.6 },
+  /** Floating damage numbers; hits are merged within `mergeWindow` seconds. */
+  numbers: { mergeWindow: 0.15, life: 0.7, rise: 40, minValue: 1 },
+  /** WebAudio carve/hit sounds. */
+  audio: { volume: 0.18, minInterval: 0.045 },
+};
