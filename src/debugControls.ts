@@ -3,7 +3,8 @@
  * and the pure helpers behind them. Kept out of game.ts so the game only wires it up.
  */
 
-import { BLAST, setBlastScale } from './config';
+import { BLAST, setBlastScale, WEAPONS } from './config';
+import type { WeaponSystem } from './weapons';
 
 export const DAMAGE_MIN = 1;
 /** Upper clamp. Bullet energy only feeds bounded loops (fixed carve tables), so this is about sanity, not safety. */
@@ -42,6 +43,7 @@ export interface DebugHost {
   stats: { damage: number; fireRate: number };
   defaultDamage: () => number;
   godMode: boolean;
+  weapons: WeaponSystem;
   /** Reset stats (like [0]) and anything else the host wants back to defaults. */
   resetAll: () => void;
 }
@@ -116,7 +118,7 @@ export class DebugPanel {
   private layout(): void {
     const b: Button[] = [];
     const x0 = this.px;
-    const rows = this.open ? 7 : 1;
+    const rows = this.open ? 9 : 1;
     this.ph = rows * ROW + 6;
     this.py = this.H - this.ph - 8;
     const y = (r: number) => this.py + 4 + r * ROW;
@@ -158,6 +160,21 @@ export class DebugPanel {
         on: () => (this.host.godMode = !this.host.godMode),
         active: () => this.host.godMode,
       });
+      const wk = this.host.weapons;
+      wk.defs.forEach((d, i) => {
+        b.push({
+          label: d.name.toUpperCase(),
+          x: x0 + 4 + i * 86,
+          y: y(7),
+          w: 82,
+          h: ROW - 4,
+          on: () => (wk.enabled[d.id] = !wk.enabled[d.id]),
+          active: () => wk.enabled[d.id],
+        });
+      });
+      b.push({ label: 'FIRE ALL', x: x0 + 4, y: y(8), w: 82, h: ROW - 4, on: () => wk.fireAll() });
+      b.push({ label: 'CD /2', x: x0 + 90, y: y(8), w: 50, h: ROW - 4, on: () => (wk.cooldownScale /= 2) });
+      b.push({ label: 'CD x2', x: x0 + 144, y: y(8), w: 50, h: ROW - 4, on: () => (wk.cooldownScale *= 2) });
       b.push({ label: 'RESET ALL', x: x0 + 132, y: y(6), w: 126, h: ROW - 4, on: () => this.host.resetAll() });
     }
     this.buttons = b;
@@ -210,6 +227,9 @@ export class DebugPanel {
       ctx.fillText(`RATE ${s.fireRate}/s`, x0 + PW / 2, row(4) + 1);
       ctx.fillStyle = '#ffb27a';
       ctx.fillText(`BLAST x${BLAST.scale.toFixed(2)}`, x0 + PW / 2, row(5) + 1);
+      ctx.font = '12px monospace';
+      ctx.fillStyle = '#b9f5c0';
+      ctx.fillText(`cd x${WEAPONS.cooldownScale}`, x0 + 228, row(8) + 1);
     }
     ctx.restore();
   }

@@ -1,16 +1,18 @@
 import { Attacks, PATTERNS } from './attacks';
 import { Sfx } from './audio';
-import type { Boss } from './boss';
+import type { Boss, HitResult } from './boss';
 import { BossFight } from './bossFight';
 import { EnrageTint } from './enrage';
 import { BOSSES, DEFAULT_BOSS_ID, type BossDefinition } from './bosses';
-import { BLAST, H, setBlastScale, TUNING, W } from './config';
+import type { CarveShapeName } from './carveShapes';
+import { BLAST, BLAST_DEFAULT_SCALE, H, setBlastScale, TUNING, W, WEAPONS } from './config';
 import { DebugPanel, modifierMult } from './debugControls';
 import { Effects } from './effects';
 import { Hud } from './hud';
 import { Input } from './input';
 import { MOVEMENT_PRESETS } from './movement';
 import { Dodge, Health } from './player';
+import { WeaponSystem } from './weapons';
 
 export interface ShipStats {
   /** Energy per bullet. */
@@ -79,6 +81,14 @@ export class Game {
   private readonly dodge = new Dodge();
   private readonly health = new Health();
   private readonly attacks = new Attacks();
+  private readonly weapons: WeaponSystem = new WeaponSystem({
+    ship: this.ship,
+    boss: () => this.boss,
+    components: () => this.fight.components,
+    power: () => this.stats.damage / TUNING.ship.damage,
+    carve: (x, y, energy, shape) => this.carveAt(x, y, energy, shape),
+    onFire: (id) => this.sfx.weapon(id),
+  });
   private lostAt = 0;
   private fireTimer = 0;
   private state: State = 'playing';
@@ -125,9 +135,11 @@ export class Game {
         set godMode(v: boolean) {
           game.godMode = v;
         },
+        weapons: this.weapons,
         resetAll: () => {
           this.godMode = false;
-          setBlastScale(1);
+          setBlastScale(BLAST_DEFAULT_SCALE);
+          this.weapons.resetDebug();
           this.resetStats();
         },
       },
@@ -174,6 +186,7 @@ export class Game {
         for (let t = 0; t < seconds; t += 1 / 60) this.update(1 / 60);
         return this.clearTimes();
       },
+      weapons: this.weapons,
       setBlastScale: (v: number) => setBlastScale(v),
       setSwept: (on: boolean) => (this.sweptBullets = on),
       setAuto: (m: 'off' | 'sweep' | 'focus') => (this.auto = m),
@@ -247,6 +260,7 @@ export class Game {
       this.carryDebug(old);
     }
     this.bullets = [];
+    this.weapons.reset();
     this.particles = [];
     this.dodge.reset();
     this.health.reset();
@@ -328,6 +342,24 @@ export class Game {
       case 'Equal':
         this.panel.adjustBlast(code === 'Minus' ? -1 : 1, this.heldMult() > 1 ? 4 : 1);
         break;
+      case 'KeyI':
+        this.weapons.enabled.gauss = !this.weapons.enabled.gauss;
+        break;
+      case 'KeyO':
+        this.weapons.enabled.rocket = !this.weapons.enabled.rocket;
+        break;
+      case 'KeyL':
+        this.weapons.enabled.arc = !this.weapons.enabled.arc;
+        break;
+      case 'KeyQ':
+        if (this.state === 'playing') this.weapons.fireAll();
+        break;
+      case 'Comma':
+        this.weapons.cooldownScale /= 2;
+        break;
+      case 'Period':
+        this.weapons.cooldownScale *= 2;
+        break;
       case 'KeyG':
         this.godMode = !this.godMode;
         break;
@@ -408,6 +440,7 @@ export class Game {
       this.moveShip(dt);
       this.fire(dt);
     }
+    this.weapons.update(dt, this.state === 'playing');
     this.updateThreat(dt);
     this.updateBullets(dt);
     this.drainComponentEvents();
@@ -587,6 +620,23 @@ export class Game {
     this.bullets = this.bullets.filter((b) => b.alive);
   }
 
+  /** Carve the boss at a screen point (core armor, juice, sound, debris). Shared by the base gun and the weapons. */
+  private carveAt(x: number, y: number, budget: number, shape: CarveShapeName): HitResult | null {
+    const hpBefore = this.boss.core.hp;
+    const res = this.boss.hit(x, y, budget, shape);
+    if (!res) return null;
+    if (res.core) {
+      // Core armor: a bullet tunnelled straight in only scratches the core until the outer layers are dug away.
+      const dealt = hpBefore - this.boss.core.hp;
+      this.boss.core.hp = hpBefore - dealt * this.fight.coreVulnerability();
+    }
+    this.fx.onHit(x, y, res.carved, res.spent, res.core);
+    if (res.core) this.sfx.coreHit();
+    else this.sfx.carve(res.carved);
+    this.spawnDebris(x, y, res.carved, res.core, res.r, res.g, res.b);
+    return res;
+  }
+
   private resolveImpact(b: Bullet): void {
     const budget = b.energy * (1 - b.pierce);
     // A component under the bullet takes the hit (hidden hp, no numbers) and consumes the bullet.
@@ -594,19 +644,8 @@ export class Game {
       b.alive = false;
       return;
     }
-    const hpBefore = this.boss.core.hp;
-    const res = this.boss.hit(b.x, b.y, budget);
+    const res = this.carveAt(b.x, b.y, budget, 'default');
     if (!res) return;
-    if (res.core) {
-      // Core armor: a bullet tunnelled straight in only scratches the core until the outer layers are dug away.
-      const dealt = hpBefore - this.boss.core.hp;
-      this.boss.core.hp = hpBefore - dealt * this.fight.coreVulnerability();
-    }
-
-    this.fx.onHit(b.x, b.y, res.carved, res.spent, res.core);
-    if (res.core) this.sfx.coreHit();
-    else this.sfx.carve(res.carved);
-    this.spawnDebris(b.x, b.y, res.carved, res.core, res.r, res.g, res.b);
     if (res.core || res.carved === 0) {
       b.alive = false;
       return;
@@ -692,6 +731,7 @@ export class Game {
     this.fight.components.drawFx(ctx);
     if (this.fight.components.debug) this.fight.components.drawDebug(ctx);
     this.drawBullets();
+    this.weapons.draw(ctx);
     this.attacks.draw(ctx);
     this.drawParticles();
     this.hud.draw(ctx, this.boss, this.fight.rooms);
@@ -704,6 +744,7 @@ export class Game {
     this.health.draw(ctx);
     if (this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
     if (this.state === 'playing') this.dodge.drawButton(ctx);
+    if (this.state === 'playing') this.hud.drawWeapons(ctx, this.weapons);
     if (this.showDebug) {
       this.drawDebug();
       this.panel.draw(this.ctx);
@@ -774,6 +815,7 @@ export class Game {
       `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${TUNING.player.maxHealth}  hitbox r=${TUNING.player.hitbox}`,
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component/room hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]  expose room [E]`,
+      `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${d.key}]`).join('  ')}  fire all [Q]  cooldown x${WEAPONS.cooldownScale} [, .]`,
       `blast scale x${BLAST.scale.toFixed(2)} [-/=] (+Shift x4)  r: turret ${BLAST.defaults.turret.radius} expl ${BLAST.defaults.explosive.radius} room ${BLAST.defaults.room.radius}`,
     ];
     ctx.save();

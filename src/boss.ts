@@ -1,4 +1,5 @@
-import { DEBRIS, TUNING } from './config';
+import { DEBRIS } from './config';
+import { carveTable, type CarveShapeName } from './carveShapes';
 import { driftSpin, driftVelocity, stepDrift } from './debris';
 
 /**
@@ -129,39 +130,9 @@ export class Layer {
   }
 }
 
-/** Pixel offsets around an impact point, sorted by (jittered) distance so holes get ragged edges. */
-interface Offset {
-  dx: number;
-  dy: number;
-  d: number;
-}
-
 /** Depth shadow offset: light comes from the upper left, so shadows fall down and right. */
 const SHADOW_DX = 3;
 const SHADOW_DY = 4;
-
-const TABLE_COUNT = 8;
-const { lateralPenalty, backPenalty, reach } = TUNING.carve;
-const REACH_X = Math.ceil(reach / lateralPenalty);
-
-/**
- * Carve order is an ellipse elongated along the bullet's direction (straight up): lateral and
- * backward offsets cost more, so energy digs a tunnel forward instead of widening a crater.
- */
-function buildTable(): Offset[] {
-  const items: (Offset & { k: number })[] = [];
-  for (let dy = -reach; dy <= reach; dy++) {
-    for (let dx = -REACH_X; dx <= REACH_X; dx++) {
-      const back = dy > 0 ? backPenalty : 1;
-      const d = Math.hypot(dx * lateralPenalty, dy * back);
-      if (d <= reach) items.push({ dx, dy, d, k: d + Math.random() * 2.5 });
-    }
-  }
-  items.sort((a, b) => a.k - b.k);
-  return items;
-}
-
-const TABLES: Offset[][] = Array.from({ length: TABLE_COUNT }, buildTable);
 
 /** A chunk cut off from its layer's main mass; it tumbles away and fades out. */
 interface Fragment {
@@ -438,7 +409,7 @@ export class Boss {
    * Resolve a bullet at screen position (px, py) with the given energy.
    * Returns null if it is not inside any solid pixel.
    */
-  hit(px: number, py: number, energy: number): HitResult | null {
+  hit(px: number, py: number, energy: number, shape: CarveShapeName = 'default'): HitResult | null {
     const lx = Math.floor(px - this.x);
     const ly = Math.floor(py - this.y);
     if (lx < 0 || ly < 0 || lx >= this.width || ly >= this.height) return null;
@@ -470,7 +441,7 @@ export class Boss {
       return { layer: li, carved: 0, spent: energy, core: true, r: 255, g: 230, b: 80 };
     }
 
-    const { carved, spent } = this.carve(li, lx, ly, energy);
+    const { carved, spent } = this.carve(li, lx, ly, energy, shape);
     return { layer: li, carved, spent, core: false, r, g, b };
   }
 
@@ -575,9 +546,10 @@ export class Boss {
     lx: number,
     ly: number,
     energy: number,
+    shape: CarveShapeName,
   ): { carved: number; spent: number } {
     const layer = this.layers[li];
-    const table = TABLES[(Math.random() * TABLE_COUNT) | 0];
+    const table = carveTable(shape);
     const w = this.width;
     const h = this.height;
     const data = layer.img.data;

@@ -29,7 +29,8 @@ Open the printed URL (use the `--host` address on a phone on the same network).
     Clicks on it never steer the ship.
   - Damage is clamped to 1 .. 1,000,000 and fire rate to 1 .. 200. Very high damage is safe: each bullet carves at most one
     fixed-size hole, so cost stays bounded; the core is never carved away, so a 100,000 bullet that reaches it kills it.
-- Blast size: `-` / `=` lower / raise **`BLAST.scale`** by 0.25 (`Shift` = x4 steps; 0.25 .. 4, default 1) and the debug panel's BLAST row does the same; RESET ALL sets it back to 1. It scales every component and room blast at once (per-type defaults are in `BLAST.defaults`, `src/config.ts`), shown in the overlay. `game.debug.setBlastScale(2)` for scripted runs.
+- Blast size: `-` / `=` lower / raise **`BLAST.scale`** by 0.25 (`Shift` = x4 steps; 0.25 .. 4, default 1.75) and the debug panel's BLAST row does the same; RESET ALL sets it back to 1.75. It scales every component and room blast at once (per-type defaults are in `BLAST.defaults`, `src/config.ts`), shown in the overlay. `game.debug.setBlastScale(2)` for scripted runs.
+- Auto weapons (issue #12; DESIGN.md "Player weapons"): besides the machine gun the ship fires a Gauss cannon (5 s), a Rocket (6 s) and a pair of Arc missiles (7 s) on its own. Debug: `I` / `O` / `L` toggle Gauss / Rocket / Arc, `Q` fires every enabled weapon now, `,` / `.` halve / double all cooldowns (cooldown scale). The debug panel has a toggle per weapon, FIRE ALL and CD /2, CD x2. Cooldown rings sit bottom right above the dodge button. The damage keys (`1/2`, `[`/`]`, `9`) scale the weapons too. `game.debug.weapons` for scripting.
 - Debug: `Y` toggles **test mode** (fast dig preset, `TUNING.testMode`; off by default), `P` cycles a scripted
   autopilot (off / steady sweep / aim at core). The overlay shows per-layer clear times (<=5% left);
   `game.debug.simulate(seconds, 'sweep' | 'focus')` runs the sim headless and returns them.

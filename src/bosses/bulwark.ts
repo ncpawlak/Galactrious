@@ -46,7 +46,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 /** Layers are densities for THIS boss; the global TUNING pacing numbers stay as they are. */
 export const BULWARK_TUNING = {
-  densities: { hull: 2.4, frame: 4.2, rooms: 0.8 },
+  densities: { hull: 6, frame: 4.2, rooms: 0.8 },
   coreHp: 1500,
 };
 
