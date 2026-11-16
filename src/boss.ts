@@ -49,6 +49,9 @@ export class Layer {
   readonly total: number;
   remaining: number;
   dirty = false;
+  /** Offset silhouette of this layer, drawn beneath it to cast a depth shadow onto lower layers. */
+  readonly shadow: HTMLCanvasElement;
+  private readonly shadowCtx: CanvasRenderingContext2D;
 
   constructor(
     readonly name: string,
@@ -74,12 +77,29 @@ export class Layer {
     this.canvas.height = h;
     this.ctx = this.canvas.getContext('2d')!;
     this.ctx.putImageData(this.img, 0, 0);
+    this.shadow = document.createElement('canvas');
+    this.shadow.width = w;
+    this.shadow.height = h;
+    this.shadowCtx = this.shadow.getContext('2d')!;
+    this.rebuildShadow();
   }
 
   flush(): void {
     if (!this.dirty) return;
     this.ctx.putImageData(this.img, 0, 0);
+    this.rebuildShadow();
     this.dirty = false;
+  }
+
+  private rebuildShadow(): void {
+    const c = this.shadowCtx;
+    const { width: w, height: h } = this.shadow;
+    c.globalCompositeOperation = 'source-over';
+    c.clearRect(0, 0, w, h);
+    c.drawImage(this.canvas, SHADOW_DX, SHADOW_DY);
+    c.globalCompositeOperation = 'source-in';
+    c.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    c.fillRect(0, 0, w, h);
   }
 }
 
@@ -89,6 +109,10 @@ interface Offset {
   dy: number;
   d: number;
 }
+
+/** Depth shadow offset: light comes from the upper left, so shadows fall down and right. */
+const SHADOW_DX = 3;
+const SHADOW_DY = 4;
 
 const TABLE_COUNT = 8;
 const { lateralPenalty, backPenalty, reach } = TUNING.carve;
@@ -260,9 +284,13 @@ export class Boss {
     const oy = Math.round(this.y);
     const last = this.layers.length - 1;
 
+    // Back to front; each layer casts a shadow onto everything beneath it.
     ctx.drawImage(this.layers[last].canvas, ox, oy);
     if (!this.defeated) this.drawCore(ctx, ox, oy);
-    for (let i = last - 1; i >= 0; i--) ctx.drawImage(this.layers[i].canvas, ox, oy);
+    for (let i = last - 1; i >= 0; i--) {
+      ctx.drawImage(this.layers[i].shadow, ox, oy);
+      ctx.drawImage(this.layers[i].canvas, ox, oy);
+    }
   }
 
   private drawCore(ctx: CanvasRenderingContext2D, ox: number, oy: number): void {
