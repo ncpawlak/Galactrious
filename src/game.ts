@@ -5,6 +5,7 @@ import { BossFight } from './bossFight';
 import { EnrageTint } from './enrage';
 import { BOSSES, type BossDefinition } from './bosses';
 import { H, TUNING, W } from './config';
+import { DebugPanel, modifierMult } from './debugControls';
 import { Effects } from './effects';
 import { Hud } from './hud';
 import { Input } from './input';
@@ -93,6 +94,9 @@ export class Game {
   private readonly fx = new Effects();
   private readonly sfx = new Sfx();
   private showDebug = true;
+  /** Debug: the player takes no damage. */
+  godMode = false;
+  private readonly panel: DebugPanel;
   private fps = 60;
   private last = 0;
 
@@ -110,6 +114,30 @@ export class Game {
       });
     }
 
+    const game = this;
+    this.panel = new DebugPanel(
+      {
+        stats: this.stats,
+        defaultDamage: () => TUNING.ship.damage,
+        get godMode() {
+          return game.godMode;
+        },
+        set godMode(v: boolean) {
+          game.godMode = v;
+        },
+        resetAll: () => {
+          this.godMode = false;
+          this.resetStats();
+        },
+      },
+      H,
+    );
+    // Clicks on the debug panel are consumed here so they never steer the ship.
+    this.input.capture = (x, y, e) => {
+      if (!this.showDebug || !this.panel.handlePointer(x, y, e)) return false;
+      this.sfx.resume();
+      return true;
+    };
     this.input.onPress = (code) => this.onKey(code);
     this.input.onDodge = () => this.tryDodge();
     this.input.onPointerDown = () => {
@@ -277,16 +305,27 @@ export class Game {
         this.showDebug = !this.showDebug;
         break;
       case 'Digit1':
-        s.damage = Math.max(10, s.damage - 10);
-        break;
       case 'Digit2':
-        s.damage += 10;
+        this.panel.adjustDamage(code === 'Digit1' ? -1 : 1, this.heldMult());
+        break;
+      case 'Digit9':
+        this.panel.cyclePreset();
+        break;
+      case 'BracketLeft':
+        this.panel.scaleDamage(0.5);
+        break;
+      case 'BracketRight':
+        this.panel.scaleDamage(2);
+        break;
+      case 'KeyG':
+        this.godMode = !this.godMode;
+        break;
+      case 'KeyC':
+        this.panel.toggleOpen();
         break;
       case 'Digit3':
-        s.fireRate = Math.max(1, s.fireRate - 1);
-        break;
       case 'Digit4':
-        s.fireRate += 1;
+        this.panel.adjustRate(code === 'Digit3' ? -1 : 1, this.heldMult() > 1 ? 5 : 1);
         break;
       case 'Digit5':
         s.projectiles = Math.max(1, s.projectiles - 1);
@@ -301,10 +340,24 @@ export class Game {
         s.pierce = Math.min(0.9, +(s.pierce + 0.1).toFixed(2));
         break;
       case 'Digit0':
-        Object.assign(this.stats, DEFAULT_STATS);
-        this.setTestMode(this.testMode);
+        this.resetStats();
         break;
     }
+  }
+
+  private resetStats(): void {
+    Object.assign(this.stats, DEFAULT_STATS);
+    this.setTestMode(this.testMode);
+  }
+
+  /** Held modifier for debug steps: Shift = x10, Alt/Ctrl = x100. */
+  private heldMult(): number {
+    const k = this.input.keys;
+    return modifierMult({
+      shift: k.has('ShiftLeft') || k.has('ShiftRight'),
+      alt: k.has('AltLeft') || k.has('AltRight'),
+      ctrl: k.has('ControlLeft') || k.has('ControlRight'),
+    });
   }
 
   private tryDodge(): void {
@@ -375,7 +428,7 @@ export class Game {
     const dmg =
       this.attacks.collect(this.ship.x, this.ship.y, TUNING.player.hitbox) +
       this.attacks.collectHazards(this.ship.x, this.ship.y, TUNING.player.hitbox);
-    if (dmg > 0 && this.health.hit(dmg, this.dodge.invulnerable)) {
+    if (dmg > 0 && !this.godMode && this.health.hit(dmg, this.dodge.invulnerable)) {
       if (this.health.dead) {
         this.state = 'lost';
         this.lostAt = this.elapsed;
@@ -638,6 +691,7 @@ export class Game {
     if (this.state === 'playing') this.dodge.drawButton(ctx);
     if (this.showDebug) {
       this.drawDebug();
+      this.panel.draw(this.ctx);
       this.drawHitbox();
     }
     if (this.state === 'won') this.drawWin();
@@ -694,7 +748,8 @@ export class Game {
         .map((n, i) => `${n} ${this.clearAt[i] == null ? '--' : this.clearAt[i]!.toFixed(1) + 's'}`)
         .join('  ')}`,
       `core ${Math.ceil(this.boss.core.hp)} / ${TUNING.coreHp}  dmg taken x${this.fight.coreVulnerability().toFixed(2)}`,
-      `dmg ${s.damage} [1/2]  rate ${s.fireRate} [3/4]`,
+      `DMG ${s.damage.toLocaleString('en-US')}  [1/2] step (+Shift x10, +Alt/Ctrl x100)  rate ${s.fireRate} [3/4]`,
+      `dmg x0.5 [ [ ]  x2 [ ] ]  presets [9]  god mode ${this.godMode ? 'ON' : 'off'} [G]  panel [C] (click it)`,
       `TEST MODE (fast dig) ${this.testMode ? 'ON' : 'off'} [Y]  autopilot ${this.auto} [P]`,
       `shots ${s.projectiles} [5/6]  pierce ${s.pierce} [7/8]  reset stats [0]`,
       `dodge [Shift/X] ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}${this.dodge.invulnerable ? ' INVULN' : ''}`,
