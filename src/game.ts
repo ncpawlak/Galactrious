@@ -7,6 +7,7 @@ import { H, TUNING, W } from './config';
 import { Effects } from './effects';
 import { Hud } from './hud';
 import { Input } from './input';
+import { MOVEMENT_PRESETS } from './movement';
 import { Dodge, Health } from './player';
 
 export interface ShipStats {
@@ -138,6 +139,7 @@ export class Game {
         for (let t = 0; t < seconds; t += 1 / 60) this.update(1 / 60);
         return this.clearTimes();
       },
+      setSwept: (on: boolean) => (this.sweptBullets = on),
       setAuto: (m: 'off' | 'sweep' | 'focus') => (this.auto = m),
       setTestMode: (on: boolean) => this.setTestMode(on),
       reset: () => this.reset(),
@@ -173,17 +175,30 @@ export class Game {
 
   /** Debug: start a fresh fight against `def` (any BossDefinition, registered or not). */
   private setBoss(def: BossDefinition): void {
-    const movement = this.fight.movementEnabled;
+    const old = this.fight;
     this.fight = this.makeFight(def);
-    this.fight.movementEnabled = movement;
+    this.carryDebug(old);
     this.reset(true);
+  }
+
+  /** Keep the debug movement settings across a new fight. */
+  private carryDebug(old: BossFight): void {
+    this.fight.movementEnabled = old.movementEnabled;
+    this.fight.movementOverride = old.movementOverride;
+  }
+
+  /** [M]: cycle phase default -> each preset -> phase default. */
+  private cycleMovement(): void {
+    const cur = this.fight.movementOverride;
+    const i = cur ? MOVEMENT_PRESETS.indexOf(cur) : -1;
+    this.fight.setMovementOverride(i + 1 < MOVEMENT_PRESETS.length ? MOVEMENT_PRESETS[i + 1] : null);
   }
 
   private reset(keepFight = false): void {
     if (!keepFight) {
-      const movement = this.fight.movementEnabled;
+      const old = this.fight;
       this.fight = this.makeFight();
-      this.fight.movementEnabled = movement;
+      this.carryDebug(old);
     }
     this.bullets = [];
     this.particles = [];
@@ -210,6 +225,9 @@ export class Game {
         break;
       case 'KeyT':
         this.fight.movementEnabled = !this.fight.movementEnabled;
+        break;
+      case 'KeyM':
+        this.cycleMovement();
         break;
       case 'KeyB':
         this.bossDefIndex = (this.bossDefIndex + 1) % BOSSES.length;
@@ -430,10 +448,23 @@ export class Game {
     }
   }
 
+  /**
+   * Swept bullet check: the boss moves during the frame, so each sub-step tests the bullet against
+   * the boss position interpolated between the frame's start and end positions. Off = the old
+   * behaviour (bullet sub-steps against the boss's final position only); kept for measuring.
+   */
+  sweptBullets = true;
+
   private updateBullets(dt: number): void {
+    const boss = this.boss;
+    const endX = boss.x;
+    const endY = boss.y;
+    const mx = endX - boss.prevX;
+    const my = endY - boss.prevY;
+    const bossMove = this.sweptBullets ? Math.hypot(mx, my) : 0;
     for (const b of this.bullets) {
       const dist = TUNING.bulletSpeed * dt;
-      const steps = Math.max(1, Math.ceil(dist));
+      const steps = Math.max(1, Math.ceil(dist), Math.ceil(bossMove));
       const sx = (b.dx * dist) / steps;
       const sy = (b.dy * dist) / steps;
       for (let i = 0; i < steps && b.alive; i++) {
@@ -443,9 +474,16 @@ export class Game {
           b.alive = false;
           break;
         }
+        if (bossMove > 0) {
+          const f = (i + 1) / steps;
+          boss.x = boss.prevX + mx * f;
+          boss.y = boss.prevY + my * f;
+        }
         this.resolveImpact(b);
       }
     }
+    boss.x = endX;
+    boss.y = endY;
     this.bullets = this.bullets.filter((b) => b.alive);
   }
 
@@ -619,8 +657,8 @@ export class Game {
       `TEST MODE (fast dig) ${this.testMode ? 'ON' : 'off'} [Y]  autopilot ${this.auto} [P]`,
       `shots ${s.projectiles} [5/6]  pierce ${s.pierce} [7/8]  reset stats [0]`,
       `dodge [Shift/X] ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}${this.dodge.invulnerable ? ' INVULN' : ''}`,
-      `movement ${this.fight.movementEnabled ? 'on' : 'off'} [T]  restart [R]  debug [\`]  boss ${this.fight.def.name} [B]`,
-      `phase ${this.fight.phaseIndex + 1}/${this.fight.def.phases.length} ${this.fight.phase.name} (${this.fight.phase.movement.name}) ${this.fight.phaseTime.toFixed(1)}s`,
+      `movement ${this.fight.movementEnabled ? 'on' : 'off'} [T]  cycle [M]  restart [R]  debug [\`]  boss ${this.fight.def.name} [B]`,
+      `phase ${this.fight.phaseIndex + 1}/${this.fight.def.phases.length} ${this.fight.phase.name} (${this.fight.movementOverride ? 'OVERRIDE ' : ''}${this.fight.movement.name}) ${this.fight.phaseTime.toFixed(1)}s`,
       `next: ${this.fight.describeNext()}  [pixel ${this.fight.pixelDamagePercent.toFixed(1)}% core ${this.fight.coreDamagePercent.toFixed(1)}%]`,
       `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${TUNING.player.maxHealth}  hitbox r=${TUNING.player.hitbox}`,
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
@@ -629,7 +667,7 @@ export class Game {
     ctx.save();
     ctx.globalAlpha = 0.7;
     ctx.fillStyle = '#000';
-    ctx.fillRect(6, 6, 470, lines.length * 15 + 8);
+    ctx.fillRect(6, 6, 528, lines.length * 15 + 8);
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#b9f5c0';
     ctx.font = '12px monospace';

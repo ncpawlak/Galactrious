@@ -39,6 +39,8 @@ export interface BossDefinition {
   layout: () => BossSpec;
   /** Anchor: screen x of the boss centre and y of its top edge. Movements offset from here. */
   spawn: { x: number; y: number };
+  /** Flip the layout horizontally once at load (layers, rooms, core, anchors). Not live. */
+  mirror?: boolean;
   /** At least one phase. */
   phases: PhaseDefinition[];
 }
