@@ -16,6 +16,7 @@ export const WAVES: WaveDefinition[] = [
   // --- level 1 ------------------------------------------------------------------------------------------
   {
     id: 'l1w1',
+    lower: 60,
     name: 'Scouts',
     groups: [
       group('drone', row(8, 170, 56), { entrance: { kind: 'drop' }, stagger: 0.3, dive: { first: 7, every: 9 } }),
@@ -24,6 +25,7 @@ export const WAVES: WaveDefinition[] = [
   },
   {
     id: 'l1w2',
+    lower: 60,
     name: 'Escort',
     groups: [
       group('frigate', slots([270, 112]), { entrance: { kind: 'drop', time: 2.4 } }),
@@ -33,6 +35,7 @@ export const WAVES: WaveDefinition[] = [
   },
   {
     id: 'l1w3',
+    lower: 60,
     name: 'Fleet',
     groups: [
       group('frigate', slots([140, 108], [400, 108]), { entrance: { kind: 'drop', time: 2.4 }, stagger: 0.6 }),
@@ -44,6 +47,7 @@ export const WAVES: WaveDefinition[] = [
   // --- level 2 ------------------------------------------------------------------------------------------
   {
     id: 'l2w1',
+    lower: 80,
     name: 'Swarm',
     groups: [
       group('drone', { kind: 'vee', count: 10, x: 270, y: 300, spacingX: 40, spacingY: 34 }, { entrance: { kind: 'swoop' }, stagger: 0.25, dive: { first: 5, every: 7 } }),
@@ -53,6 +57,7 @@ export const WAVES: WaveDefinition[] = [
   },
   {
     id: 'l2w2',
+    lower: 80,
     name: 'Bombardment',
     groups: [
       group('mortar', slots([270, 112]), { entrance: { kind: 'drop', time: 2.6 } }),
@@ -63,6 +68,7 @@ export const WAVES: WaveDefinition[] = [
   },
   {
     id: 'l2w3',
+    lower: 80,
     name: 'Armada',
     groups: [
       group('mortar', slots([150, 112], [390, 112]), { entrance: { kind: 'drop', time: 2.6 }, stagger: 0.6 }),
@@ -75,6 +81,7 @@ export const WAVES: WaveDefinition[] = [
   // --- level 3 (the "+" units shoot faster) -----------------------------------------------------------------
   {
     id: 'l3w1',
+    lower: 100,
     name: 'Onslaught',
     groups: [
       group('drone', { kind: 'rows', rows: 2, perRow: 7, x: 270, y: 290, spacingX: 62, spacingY: 40 }, { entrance: { kind: 'swoop' }, stagger: 0.2, dive: { first: 4, every: 6 } }),
@@ -84,6 +91,7 @@ export const WAVES: WaveDefinition[] = [
   },
   {
     id: 'l3w2',
+    lower: 100,
     name: 'Dreadnoughts',
     groups: [
       group('frigate+', slots([130, 112], [410, 112]), { entrance: { kind: 'drop', time: 2.4 }, stagger: 0.5 }),
@@ -95,6 +103,7 @@ export const WAVES: WaveDefinition[] = [
   },
   {
     id: 'l3w3',
+    lower: 100,
     name: 'Last Stand',
     groups: [
       group('mortar+', slots([130, 112], [410, 112]), { entrance: { kind: 'drop', time: 2.6 }, stagger: 0.5 }),

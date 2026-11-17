@@ -4,7 +4,7 @@ import { aimedShot, bomb, directVolley, lineSweep } from '../attacks';
 import type { AttackPattern } from '../attacks';
 import type { AttackStep } from '../attackSchedulers';
 import type { ComponentSpec } from '../components';
-import { sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
+import { lowered, sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
 import { BULWARK_BASE_TURRETS, bulwarkTurret as turret, createBulwark } from './bulwark';
 import type { BossDefinition } from './types';
 
@@ -101,7 +101,7 @@ export const bulwarkComponents: BossDefinition = {
     {
       name: 'Pressure',
       trigger: { kind: 'damage', percent: 30 },
-      movement: zip(ZIP_NORMAL_WIDE),
+      movement: lowered(40, zip(ZIP_NORMAL_WIDE)),
       attacks: [
         every(directVolley, 0.75, KEEL),
         every(aimedShot, 0.8, 'nose-guns'),
@@ -115,7 +115,7 @@ export const bulwarkComponents: BossDefinition = {
     {
       name: 'Enrage',
       trigger: { kind: 'damage', percent: 65 },
-      movement: zip(ZIP_FAST_WIDE),
+      movement: lowered(70, zip(ZIP_FAST_WIDE)),
       attacks: [
         every(aimedShot, 0.5, 'nose-guns'),
         every(directVolley, 0.5, KEEL),

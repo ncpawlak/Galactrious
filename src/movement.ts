@@ -119,6 +119,14 @@ export function sequence(steps: SequenceStep[], blend = 0.5): Movement {
   };
 }
 
+/**
+ * "Close in": hold the boss `dy` px lower than its anchor while `m` plays on top (the phase blend eases the drop).
+ * Used by later phases so the fight comes down into the close-weapon range (DESIGN.md "Combat range").
+ */
+export function lowered(dy: number, m: Movement): Movement {
+  return { name: `${m.name}+low${dy}`, at: (t) => { const o = m.at(t); return { x: o.x, y: o.y + dy }; } };
+}
+
 /** Rename a movement (e.g. to label a tuned preset in the debug overlay). */
 export function named(name: string, m: Movement): Movement {
   return { name, at: m.at };

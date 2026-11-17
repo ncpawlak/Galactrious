@@ -53,6 +53,8 @@ export interface WaveDefinition {
   id: string;
   name?: string;
   groups: WaveGroup[];
+  /** Pixels every formation slot is shifted down (closer to the player; DESIGN.md "Combat range"). Default 0. */
+  lower?: number;
 }
 
 // --- formations ------------------------------------------------------------------------------------------
@@ -217,7 +219,7 @@ export function spawnWave(units: UnitSystem, wave: WaveDefinition, lookup: (id: 
   let total = 0;
   for (const g of wave.groups) {
     const def = lookup(g.unit);
-    const slots = formationSlots(g.formation);
+    const slots = formationSlots(g.formation).map((p) => ({ x: p.x, y: p.y + (wave.lower ?? 0) }));
     slots.forEach((slot, i) => {
       units.queue({ at: base + (g.start ?? 0) + i * (g.stagger ?? 0.25), def, placement: placementFor(g, slot, i) });
       total++;

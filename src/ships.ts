@@ -31,6 +31,8 @@ export interface ShipStats {
   dodgeCooldown: number;
   /** Collision circle radius, px. */
   hitbox: number;
+  /** Highest y (px from the top) the ship may fly to; lower = closer to the enemies. Omitted = `TUNING.shipMinY`. */
+  minY?: number;
 }
 
 export interface WeaponLoadout {
@@ -82,7 +84,7 @@ export const SHIPS: ShipDefinition[] = [
       cockpit: { color: '#2a1608', x: -3, y: -2, w: 6, h: 10 },
       flame: { color: '#ffd23a', x: -6, y: 14, w: 12, len: 4, flicker: 6 },
     },
-    baseStats: { maxHealth: 7, speed: 390, dodgeCooldown: 3, hitbox: 6 },
+    baseStats: { maxHealth: 7, speed: 390, dodgeCooldown: 3, hitbox: 6, minY: 290 },
     startingWeapons: { main: 'scatter', aux: ['blades', 'rocket', 'lance'] },
     unlock: 'warden',
     unlockHint: 'Defeat the first boss in a run.',
@@ -108,6 +110,11 @@ export const SHIPS: ShipDefinition[] = [
 ];
 
 export const SHIP_BY_ID = new Map(SHIPS.map((s) => [s.id, s]));
+
+/** The ship's highest allowed y. */
+export function shipMinY(id: string): number {
+  return shipById(id).baseStats.minY ?? TUNING.shipMinY;
+}
 
 export function shipById(id: string): ShipDefinition {
   return SHIP_BY_ID.get(id) ?? SHIP_BY_ID.get(DEFAULT_SHIP_ID)!;

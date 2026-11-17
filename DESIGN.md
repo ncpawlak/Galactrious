@@ -399,3 +399,12 @@ Alongside, independent: the room function catalog (can run next to steps 1-2).
 
 ### Open questions
 - Squad/ally behaviour; Conquest death rule; whether ships change handling; number of campaigns/levels; how many weapon variants per ship.
+
+## Combat range
+
+Close weapons (Scatter ~80 px, Blades, Lance, Needler) need the ship near the enemies, so the field is tuned both ways:
+
+- **Ship reach**: the ship may fly up to `minY` px from the top (bottom clamp unchanged, `H - 36`). Default `TUNING.shipMinY = 320` (`src/config.ts`); a ship overrides it with `baseStats.minY` in `src/ships.ts` (Warden 290, others default). Read via `shipMinY(id)`; the clamp in `Game.moveShip` runs after dodge and drag, so neither can leave the range. Touch keeps its 90 px finger offset, so the finger stays below the ship.
+- **Waves**: `WaveDefinition.lower` (px, optional) shifts every formation slot down in `spawnWave`. Currently level 1 +60, level 2 +80, level 3 +100 (`src/enemies/waveContent.ts`). Entrance paths and dives are derived from the shifted slot.
+- **Bosses**: `lowered(dy, movement)` (`src/movement.ts`) holds a phase `dy` px below the spawn point while the movement plays; the phase blend eases the drop. Used in later phases: Mantis Frenzy +40 / Overdrive +70, Bulwark (both variants) Pressure +40 / Enrage +70, demo-phased phase 2 +40. The default demo boss is unchanged.
+- Not changed: HP, damage, attack timings and projectile speeds. If a closer wave is unfair, reduce its `lower` first.
