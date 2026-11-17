@@ -245,7 +245,7 @@ export class Boss {
   coreColor: RGB = DEFAULT_CORE_COLOR;
   coreSimple = false;
   coreVuln = 1;
-  private readonly coreMaxHp: number;
+  readonly coreMaxHp: number;
   private corePhase = Math.random();
   private coreTime = 0;
   private coreDeadFor = 0;
@@ -255,6 +255,12 @@ export class Boss {
   unionAnchoring = true;
   /** False = no connectivity pass at all: a carved piece stays where it is (terrain structures are attached to the ground, see src/terrain). */
   anchoring = true;
+  /**
+   * Ground mode (terrain walls, src/terrain): > 0 = the structure is attached to the ground, so ANY solid piece (union of all layers) of at least this many
+   * pixels stays where it is (a lane cut through a wall leaves both halves standing), and everything smaller is cut loose: specks vanish, bigger bits drift away
+   * as debris. The core marker is ignored. 0 = the normal core/largest-mass rule.
+   */
+  groundKeep = 0;
   /** Per layer: original connected region id of each pixel (0 = empty). Regions anchor independently. */
   private regions: Int32Array[];
   /** Dust from vanished specks and break-aways, in screen space; the game may drain this for particles. */
@@ -344,12 +350,21 @@ export class Boss {
    * layer that is not in the main mass hangs on nothing, however well connected it is inside its own layer
    * (a room cut free of the frame and hull around it).
    */
-  private unionAnchor(): { label: Int32Array; main: number; orphans: number } {
+  private unionAnchor(): { label: Int32Array; main: number; orphans: number; keep?: Uint8Array } {
     const w = this.width;
     const h = this.height;
     const mask = new Uint8Array(w * h);
     for (const l of this.layers) for (let i = 0; i < mask.length; i++) if (l.mask[i]) mask[i] = 1;
     const { label, sizes, count } = labelMask(mask, w, h);
+    if (this.groundKeep > 0) {
+      let orphans = 0;
+      const keep = new Uint8Array(count + 1);
+      for (let c = 1; c <= count; c++) {
+        if (sizes[c] >= this.groundKeep) keep[c] = 1;
+        else orphans++;
+      }
+      return { label, main: -1, orphans, keep };
+    }
     let main = 0;
     if (this.core.hp > 0) {
       const cx = Math.round(this.core.x);
@@ -366,18 +381,42 @@ export class Boss {
     return { label, main, orphans: count > 0 ? count - 1 : 0 };
   }
 
+  /**
+   * True when nothing but the core itself is left: at most `maxOther` solid pixels (all layers) lie outside the core's disc plus a margin.
+   * A core in this state floats in empty space; the finale makes it go critical (`BossDefinition.coreCollapse`).
+   */
+  coreIsolated(maxOther = 40): boolean {
+    if (this.core.hp <= 0) return false;
+    const w = this.width;
+    const reach = (this.core.radius + 8) ** 2;
+    let other = 0;
+    for (const l of this.layers) {
+      for (let i = 0; i < l.mask.length; i++) {
+        if (!l.mask[i]) continue;
+        const x = (i % w) - this.core.x;
+        const y = Math.floor(i / w) - this.core.y;
+        if (x * x + y * y > reach && ++other > maxOther) return false;
+      }
+    }
+    return true;
+  }
+
   /** Debug: per layer, live pixels that are not connected to the boss's main mass. Should always settle to 0. */
   unanchoredPixels(): number[] {
     const u = this.unionAnchor();
     const w = this.width * this.height;
     return this.layers.map((l) => {
       let n = 0;
-      for (let i = 0; i < w; i++) if (l.mask[i] && u.label[i] !== u.main) n++;
+      for (let i = 0; i < w; i++) if (l.mask[i] && !this.unionHolds(u, i)) n++;
       return n;
     });
   }
 
-  private detachOrphans(li: number, u: { label: Int32Array; main: number }): boolean {
+  private unionHolds(u: { label: Int32Array; main: number; keep?: Uint8Array }, i: number): boolean {
+    return u.keep ? u.keep[u.label[i]] === 1 : u.label[i] === u.main;
+  }
+
+  private detachOrphans(li: number, u: { label: Int32Array; main: number; keep?: Uint8Array }): boolean {
     const layer = this.layers[li];
     layer.needsCheck = false;
     const w = this.width;
@@ -413,11 +452,12 @@ export class Boss {
     }
     const anchored = new Uint8Array(count + 1);
     for (const c of bestOf.values()) anchored[c] = 1;
+    if (this.groundKeep > 0) anchored.fill(1); // ground mode: only the union rule below decides
     const regionRemoved = anchored.reduce((n, v) => n + v, 0) !== count;
     // A component that is its region's main mass still falls if it hangs on nothing in the union of all layers.
     for (let i = 0; i < w * h; i++) {
       const c = label[i];
-      if (c && anchored[c] && this.unionAnchoring && u.label[i] !== u.main) anchored[c] = 0;
+      if (c && anchored[c] && (this.unionAnchoring || this.groundKeep > 0) && !this.unionHolds(u, i)) anchored[c] = 0;
     }
     if (anchored.reduce((n, v) => n + v, 0) === count) return false;
     this.version++;

@@ -8,6 +8,8 @@ import { GROUND_TAG, isTerrainEntry, type TerrainEntry } from './types';
 
 /** Contact damage of a wall to the ship (the ship has 5 hull by default; a bullet is 1). Never an instant kill. */
 export const WALL_DAMAGE = 1;
+/** A solid piece of a wall or pad smaller than this (px, all layers) is cut loose and falls away as debris; bigger pieces stay attached to the ground. */
+export const GROUND_KEEP_PIXELS = 360;
 
 interface TurretRef {
   id: string;
@@ -94,7 +96,7 @@ export class TerrainSystem {
       const follow: Follow = { y: lag - plan.dy };
       const def = buildStructure(plan, follow);
       const unit = spawn.call(this.host, def, { slot: { x: plan.cx, y: -plan.height / 2 - 8 } });
-      unit.boss.anchoring = false; // attached to the ground: a carved piece stays where it is
+      unit.boss.groundKeep = GROUND_KEEP_PIXELS; // attached to the ground: big pieces stay where they are, small cut-loose bits fall away (no floating orphans)
       unit.boss.coreColor = [38, 40, 52]; // the 1 px core marker is not meant to be seen
       const turrets = plan.turrets.map((_, i) => ({ id: `t${i}`, tag, counted: false }));
       this.structures.push({ unit, follow, plan, turrets });

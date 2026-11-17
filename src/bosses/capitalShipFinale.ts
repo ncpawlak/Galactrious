@@ -148,6 +148,7 @@ export const capitalShipFinale: BossDefinition = {
   components: [...CAPITAL_COMPONENTS, flank('gun-ml', 'gunML'), flank('gun-mr', 'gunMR')],
   rooms: CAPITAL_FINALE_ROOMS,
   afterRestore: restoreRooms,
+  coreCollapse: true,
   coreArmor: { min: 0.05, digWeight: 0.2, requires: [`room:${SHIELD_ROOM_ID}`, `room:${WEAPONS_ROOM_ID}`] },
   phases: [
     {

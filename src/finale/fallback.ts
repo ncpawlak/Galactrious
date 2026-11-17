@@ -58,3 +58,13 @@ export function disabledCapitalShip(): BossSnapshot {
   fight.boss.version++;
   return captureSnapshot(fight);
 }
+
+/**
+ * Debug / test: carve away EVERYTHING except the core, the way the player's guns would (armour opened, a huge radial carve, so the
+ * detach rules and component/room bookkeeping run for real). Reproduces the chapter 7 report "all destroyed except the core".
+ */
+export function isolateCore(fight: BossFight): void {
+  fight.armourCarvable = true;
+  const b = fight.boss;
+  for (let i = 0; i < b.layers.length; i++) b.carveRadial(b.core.x, b.core.y, 2000, 1e12, 0); // one layer per pass (a pass cuts the topmost solid layer at each pixel)
+}
