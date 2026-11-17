@@ -2,6 +2,7 @@ import type { UnitDefinition } from '../units';
 import { BIG_UNITS } from './big';
 import { EMPIRE_UNITS } from './empire';
 import { ACE_UNITS } from './empireAces';
+import { MINIBOSS_UNITS } from './empireMiniBosses';
 import { SMALL_UNITS } from './small';
 import { EMPIRE_WAVES } from './empireWaves';
 import { WAVES } from './waveContent';
@@ -18,7 +19,7 @@ export function harder(def: UnitDefinition, scale = 0.75): UnitDefinition {
   };
 }
 
-const BASE = [...SMALL_UNITS, ...BIG_UNITS, ...EMPIRE_UNITS, ...ACE_UNITS];
+const BASE = [...SMALL_UNITS, ...BIG_UNITS, ...EMPIRE_UNITS, ...ACE_UNITS, ...MINIBOSS_UNITS];
 
 /** Every unit, for the debug spawner and the wave lookup. Level 3 uses the "+" variants (the ones that shoot). */
 export const UNIT_LIST: UnitDefinition[] = [...BASE, ...BASE.filter((d) => d.attacks.length > 0).map((d) => harder(d))];

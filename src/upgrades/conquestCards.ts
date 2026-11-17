@@ -29,4 +29,16 @@ export const CONQUEST_CARDS: CardDef[] = [
     unlockHint: 'Conquest, Empire Base: destroy every gun of the capital ship.',
     modifiers: [{ stat: 'gauss.cooldown', op: 'mul', value: 0.8 }],
   },
+  {
+    id: 'cq-ace-plating',
+    name: "Ace's Plating",
+    group: 'Ship',
+    desc: '+1 max hull (plating cut from a mini-boss).',
+    maxStacks: 1,
+    weight: 0.7,
+    rarity: 'rare',
+    unlock: 'cq-ace-plating',
+    unlockHint: 'Conquest, Empire Base: defeat all three mini-bosses in one run.',
+    modifiers: [{ stat: 'ship.maxHealth', op: 'add', value: 1 }],
+  },
 ];

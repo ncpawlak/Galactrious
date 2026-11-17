@@ -14,6 +14,8 @@ export type ChallengeMetric =
   | { kind: 'time'; seconds: number }
   /** Hidden items found in one run. */
   | { kind: 'hidden'; n: number }
+  /** Different mini-bosses defeated in one run (each is counted once). */
+  | { kind: 'miniBosses'; n: number }
   /** Reach the end of the run. */
   | { kind: 'clear' }
   /** Boss feat: defeat a boss without losing a hull point. `boss` = a boss id; omitted = any boss of the run. */

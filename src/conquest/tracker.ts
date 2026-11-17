@@ -57,7 +57,7 @@ export class ConquestTracker {
   readonly met = new Set<string>();
   readonly found = new Set<string>();
   kills = 0;
-  private readonly base: { kills: number; hidden: Record<string, number>; turrets: number };
+  private readonly base: { kills: number; hidden: Record<string, number>; turrets: number; mini: Record<string, number> };
   private boss: BossWatch | null = null;
   private time = 0;
   private done = false;
@@ -70,7 +70,19 @@ export class ConquestTracker {
     const c = host.counters();
     const hidden: Record<string, number> = {};
     for (const h of region.hidden) hidden[h.id] = c.killsByTag[hiddenKey(h.id)] ?? 0;
-    this.base = { kills: c.kills, hidden, turrets: c.killsByTag['boss-turret'] ?? 0 };
+    this.base = { kills: c.kills, hidden, turrets: c.killsByTag['boss-turret'] ?? 0, mini: this.miniCounts(c.killsByTag) };
+  }
+
+  private miniCounts(tags: Record<string, number>): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(tags)) if (k.startsWith('miniboss:')) out[k] = v;
+    return out;
+  }
+
+  /** Different mini-bosses defeated in this run. */
+  get miniBossesDown(): number {
+    const now = this.miniCounts(this.host.counters().killsByTag);
+    return Object.entries(now).filter(([k, v]) => v > (this.base.mini[k] ?? 0)).length;
   }
 
   get hiddenFound(): number {
@@ -133,6 +145,7 @@ export class ConquestTracker {
       if (m.kind === 'kills' && this.kills >= m.n) this.meet(ch);
       else if (m.kind === 'time' && run.time >= m.seconds) this.meet(ch);
       else if (m.kind === 'hidden' && this.found.size >= m.n) this.meet(ch);
+      else if (m.kind === 'miniBosses' && this.miniBossesDown >= m.n) this.meet(ch);
     }
   }
 
