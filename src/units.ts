@@ -3,7 +3,7 @@ import type { AttackStep } from './attackSchedulers';
 import type { ScriptedScheduler } from './attackSchedulers';
 import type { BossSpec } from './boss';
 import { BossFight } from './bossFight';
-import type { ComponentSpec, CoreArmorSpec } from './components';
+import type { ComponentSpec, CoreArmorSpec, PhaseComponents } from './components';
 import type { BossDefinition } from './bosses/types';
 import type { Movement } from './movement';
 import { still } from './movement';
@@ -52,7 +52,12 @@ export interface UnitDefinition {
   /** Tag / banner colour (aces): the paint accent. */
   accent?: string;
   /** A second attack set, switched to when this share (0..100) of the hull pixels is gone (the unit is a two-phase fight). */
-  phase2?: { at: number; attacks: AttackStep[]; attackDelay?: number };
+  phase2?: { at: number; attacks: AttackStep[]; attackDelay?: number; components?: PhaseComponents };
+  /**
+   * A fallback weapon set: once EVERY component matching `keys` (ids or groups) is destroyed, the components in `enable` switch on (they start
+   * disabled and have steps in the attack lists, which skip them until then). A mini-boss that loses its visible guns grows new ones.
+   */
+  lastStand?: { keys: string[]; enable: string[] };
   /**
    * Own entrance and dives, used when the spawn does not bring a flyby: the placement derived from the slot replaces the caller's
    * `entrance`/`entranceTime`/`dive` (campaign `spawn` beats and the debug spawner place units without any, so this is how an ace flies in).
@@ -150,7 +155,7 @@ export function toBossDefinition(def: UnitDefinition, p: UnitPlacement, attackDe
     phases: [
       { name: 'unit', movement: placementMovement(def, p), attacks: def.attacks, attackDelay: eT + attackDelay },
       ...(def.phase2
-        ? [{ name: 'unit-2', trigger: { kind: 'damage' as const, percent: def.phase2.at }, movement: placementMovement(def, p), attacks: def.phase2.attacks, attackDelay: def.phase2.attackDelay ?? 0.6 }]
+        ? [{ name: 'unit-2', trigger: { kind: 'damage' as const, percent: def.phase2.at }, movement: placementMovement(def, p), attacks: def.phase2.attacks, attackDelay: def.phase2.attackDelay ?? 0.6, components: def.phase2.components }]
         : []),
     ],
   };
@@ -178,6 +183,8 @@ export class Unit {
   /** Seconds since a script told it to break off and fly away (null = it fights). A leaving unit never fires and is not a kill when it goes. */
   leaving: number | null = null;
   leaveDirX = 1;
+  /** `UnitDefinition.lastStand` has fired. */
+  lastStandOn = false;
   private readonly deathFraction: number;
 
   constructor(
@@ -343,6 +350,14 @@ export class UnitSystem {
         u.dyingFor += dt;
         if (u.dyingFor >= u.dyingTime) u.gone = true;
         continue;
+      }
+      if (u.def.lastStand && !u.lastStandOn) {
+        const ls = u.def.lastStand;
+        const comps = u.fight.components;
+        if (comps.totalCount(ls.keys) > 0 && comps.goneCount(ls.keys) >= comps.totalCount(ls.keys)) {
+          u.lastStandOn = true;
+          comps.applyPhase({ enable: ls.enable });
+        }
       }
       if (!firing || u.leaving !== null) continue;
       // A chaser holds fire while it has lost sight of the player.

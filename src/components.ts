@@ -290,6 +290,11 @@ export class ComponentSystem implements SourceGate {
     return this.items.filter((c) => c.state === 'destroyed' && keys.some((k) => c.matches(k))).length;
   }
 
+  /** Components matching any of `keys` that are out of the fight (destroyed, or torn off with the armour under them). */
+  goneCount(keys: string[]): number {
+    return this.items.filter((c) => c.state !== 'active' && keys.some((k) => c.matches(k))).length;
+  }
+
   totalCount(keys: string[]): number {
     return this.specs.filter((s) => keys.some((k) => s.id === k || s.group === k)).length;
   }

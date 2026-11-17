@@ -48,7 +48,7 @@ export class WaveNode implements FlowNode {
     const left = this.ctx.host.waveRemaining();
     g.save();
     g.textAlign = 'center';
-    if (this.t < BANNER_TIME) {
+    if (this.t < BANNER_TIME && !this.def.hud) {
       const k = Math.min(1, (BANNER_TIME - this.t) / 0.6);
       g.globalAlpha = k;
       g.fillStyle = '#6ee7ff';
