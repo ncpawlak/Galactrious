@@ -145,7 +145,8 @@ export class Game {
   private testMode = false;
   private readonly fx = new Effects();
   private readonly sfx = new Sfx();
-  private showDebug = true;
+  /** Debug text/panel: off in the normal run, on in `?mode=boss` or with `?debug`. [`] toggles it live. */
+  private showDebug = ((p) => p.get('mode') === 'boss' || p.has('debug'))(new URLSearchParams(location.search));
   /** Debug: the player takes no damage. */
   godMode = false;
   private readonly panel: DebugPanel;
