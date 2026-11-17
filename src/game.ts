@@ -24,6 +24,7 @@ import { MOVEMENT_PRESETS } from './movement';
 import { Dodge, Health } from './player';
 import { DamageFx, type Emit } from './damageFx';
 import { dodgeTarget } from './debugBot';
+import { scaleBoss } from './difficulty';
 import { TagSystem, type TagSet } from './tags';
 import { CARDS, CARD_BY_ID } from './upgrades/cards';
 import { RewardNode } from './flow/nodes/reward';
@@ -317,6 +318,7 @@ export class Game {
     // The campaign framework's scroll hooks drive the running scroll level (speed beats, distance triggers).
     setScrollHooks({ setSpeed: (v, e) => this.scroll?.setSpeed(v, e ?? 0), distance: () => this.scroll?.distance ?? 0 });
     this.units.onDeath = (u) => this.onUnitDeath(u);
+    this.units.scale = () => this.run.enemyScale();
     this.units.roomHost = this.roomHost;
 
     for (let i = 0; i < 90; i++) {
@@ -595,7 +597,8 @@ export class Game {
       if (i < 0) throw new Error(`boss node: unknown boss id "${o.bossId}"`);
       this.bossDefIndex = i;
       const old = this.fight;
-      this.fight = this.makeFight(BOSSES[i]);
+      const sc = this.run.enemyScale();
+      this.fight = this.makeFight(scaleBoss(BOSSES[i], sc.bossHp, sc.bossFire));
       this.carryDebug(old);
       if (o.restore) restoreSnapshot(this.fight, o.restore);
       this.reset(true, o.keepHealth); // health carries over from the previous node

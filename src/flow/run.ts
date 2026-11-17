@@ -4,6 +4,7 @@ import { drawConquestHud } from '../conquest/hud';
 import { drawConquestResult, RegionScreen, RegionSelectScreen } from '../conquest/screens';
 import { ConquestTracker, type ConquestResult } from '../conquest/tracker';
 import type { RegionDefinition } from '../conquest/types';
+import { NO_SCALE, type EnemyScale } from '../difficulty';
 import { cleanLoadout, defaultLoadoutFor, initialSelection } from '../loadouts';
 import { saveStore } from '../save';
 import { DEFAULT_SHIP_ID, SHIP_BY_ID, shipById, SHIPS, type WeaponLoadout } from '../ships';
@@ -91,6 +92,12 @@ export class Run {
     const last = levelIndex === this.activeDef.levels.length - 1;
     const nodes = this.built[levelIndex] ?? level.nodes;
     return level.reward && !last ? [...nodes, { type: 'reward', ...level.reward }] : nodes;
+  }
+
+  /** Enemy scaling now (Conquest: the region's per-map table and the cards held); none in Endless. */
+  enemyScale(): EnemyScale {
+    const f = this.region?.run.enemyScale;
+    return f ? f(this.state.levelIndex, this.state.upgrades.length) : NO_SCALE;
   }
 
   /** Debug: every level's node list as built for this run, rewards included. */

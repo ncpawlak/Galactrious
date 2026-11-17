@@ -107,6 +107,8 @@ export interface LevelDefinition {
 export interface RunDefinition {
   name: string;
   levels: LevelDefinition[];
+  /** Conquest: enemy scaling for map `levelIndex` when the player holds `cards` upgrades (src/difficulty.ts). Omitted = enemies as authored. */
+  enemyScale?: (levelIndex: number, cards: number) => import('../difficulty').EnemyScale;
 }
 
 // --- run state -----------------------------------------------------------------------------------------

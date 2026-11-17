@@ -1,6 +1,7 @@
 import { CAPITAL_CONQUEST_ID } from '../bosses/capitalShipConquest';
 import type { WaveDefinition } from '../waves';
 import { cqWave, miniBossWave, type Archetype } from './waveGen';
+import type { EnemyScale } from '../difficulty';
 import type { LevelDefinition, NodeDefinition, RunDefinition } from '../flow/node';
 import { SPEED5, SURFACE_TUNE, surfaceTimeline, T5, type SurfaceTune } from '../scroll/fallenPeace45';
 import type { ScrollEntry, ScrollLevelDef } from '../scroll/types';
@@ -99,6 +100,51 @@ export const CQ_SECTIONS: Record<string, ScrollLevelDef> = Object.fromEntries(
  */
 const wv = (id: string, name: string, kind: Archetype, tier: number, light = false): WaveDefinition => cqWave({ id, name, kind, tier, light });
 
+// --- difficulty --------------------------------------------------------------------------------------------------
+
+/**
+ * THE tuning table: every difficulty number of the Empire Base run, per map, in one place. Map 1 is the baseline (all 1 / 0: as authored).
+ * Cards make the player stronger as the run goes on, so enemy HP and fire rate also grow with the number of cards held (`perCard*`, after the
+ * map's base multiplier): the later maps outgrow the player's gains instead of being outgrown by them.
+ *   hp, fire          unit hull and core multiplier, and unit fire-rate multiplier (`perCardHp`/`perCardFire` added per card held)
+ *   bossHp, bossFire  the same for the map boss (`perCardBossHp` per card; the fire multiplier is flat)
+ *   fireCap, hpCap    ceilings on the card-scaled multipliers, so a lucky card pile cannot make a map unwinnable
+ *   tiers             waveGen tier (formation size, "+" units, dive timing) of waves a / m / b of the map, one entry per chained wave
+ *   miniTier, miniEscort, miniChance   mini-boss tier, escort size, chance of one appearing
+ */
+export interface MapDifficulty {
+  hp: number;
+  fire: number;
+  perCardHp: number;
+  perCardFire: number;
+  hpCap: number;
+  fireCap: number;
+  bossHp: number;
+  bossFire: number;
+  perCardBossHp: number;
+  tiers: { a: number[]; m: number[]; b: number[] };
+  miniTier: number;
+  miniEscort: number;
+  miniChance: number;
+}
+
+export const CQ_DIFFICULTY: MapDifficulty[] = [
+  // Map 1: unchanged.
+  { hp: 1, fire: 1, perCardHp: 0, perCardFire: 0, hpCap: 1, fireCap: 1, bossHp: 1, bossFire: 1, perCardBossHp: 0, tiers: { a: [0, 0], m: [1], b: [0, 1] }, miniTier: 1, miniEscort: 3, miniChance: 0.6 },
+  // Map 2: noticeably harder.
+  { hp: 1.2, fire: 1.08, perCardHp: 0.03, perCardFire: 0.01, hpCap: 1.6, fireCap: 1.25, bossHp: 1.4, bossFire: 1.1, perCardBossHp: 0.025, tiers: { a: [1, 2], m: [2], b: [2, 3] }, miniTier: 3, miniEscort: 4, miniChance: 0.8 },
+  // Map 3: the hardest.
+  { hp: 1.4, fire: 1.45, perCardHp: 0.04, perCardFire: 0.04, hpCap: 2, fireCap: 2.4, bossHp: 1.7, bossFire: 1.4, perCardBossHp: 0.04, tiers: { a: [4, 4], m: [5], b: [5, 6] }, miniTier: 4, miniEscort: 6, miniChance: 1 },
+];
+
+/** Enemy scaling for map `map` with `cards` upgrades held (`RunDefinition.enemyScale`). */
+export function enemyScale(map: number, cards: number): EnemyScale {
+  const d = CQ_DIFFICULTY[Math.max(0, Math.min(CQ_DIFFICULTY.length - 1, map))];
+  const hp = Math.min(d.hpCap, d.hp + d.perCardHp * cards);
+  const fire = Math.min(d.fireCap, d.fire + d.perCardFire * cards);
+  return { hp: d.perCardHp === 0 ? d.hp : hp, fire: d.perCardFire === 0 ? d.fire : fire, bossHp: d.bossHp + d.perCardBossHp * cards, bossFire: d.bossFire };
+}
+
 interface MapDef {
   id: string;
   name: string;
@@ -116,45 +162,47 @@ interface MapDef {
   miniChance: number;
 }
 
+const T = CQ_DIFFICULTY;
+
 export const CQ_MAPS: MapDef[] = [
   {
     id: 'base',
     name: 'Base perimeter',
     theme: 'baseInterior',
-    a: { section: 'cq-1a', waves: [wv('cq-1a-a', 'Outer fence: line', 'line', 0, true), wv('cq-1a-b', 'Outer fence: grid', 'grid', 0, true)] },
-    m: { section: 'cq-1m', waves: [wv('cq-1m-a', 'Gunship escort', 'escort', 1)] },
-    b: { section: 'cq-1b', waves: [wv('cq-1b-a', 'Perimeter: vee', 'vee', 0, true), wv('cq-1b-b', 'Perimeter: strafers', 'strafers', 1, true)] },
+    a: { section: 'cq-1a', waves: [wv('cq-1a-a', 'Outer fence: line', 'line', T[0].tiers.a[0], true), wv('cq-1a-b', 'Outer fence: grid', 'grid', T[0].tiers.a[1], true)] },
+    m: { section: 'cq-1m', waves: [wv('cq-1m-a', 'Gunship escort', 'escort', T[0].tiers.m[0])] },
+    b: { section: 'cq-1b', waves: [wv('cq-1b-a', 'Perimeter: vee', 'vee', T[0].tiers.b[0], true), wv('cq-1b-b', 'Perimeter: strafers', 'strafers', T[0].tiers.b[1], true)] },
     bossId: 'bulwark-components',
     bossName: 'BULWARK',
-    miniTier: 1,
-    miniEscort: 3,
-    miniChance: 0.6,
+    miniTier: T[0].miniTier,
+    miniEscort: T[0].miniEscort,
+    miniChance: T[0].miniChance,
   },
   {
     id: 'surface',
     name: 'Surface defences',
     theme: 'surface',
-    a: { section: 'cq-2a', waves: [wv('cq-2a-a', 'Yard: grid', 'grid', 1, true), wv('cq-2a-b', 'Yard: pincer', 'pincer', 2, true)] },
-    m: { section: 'cq-2m', waves: [wv('cq-2m-a', 'Siege wing', 'siege', 2)] },
-    b: { section: 'cq-2b', waves: [wv('cq-2b-a', 'Hangar: vee', 'vee', 2, true), wv('cq-2b-b', 'Hangar: grid', 'grid', 2, true)] },
+    a: { section: 'cq-2a', waves: [wv('cq-2a-a', 'Yard: grid', 'grid', T[1].tiers.a[0], true), wv('cq-2a-b', 'Yard: pincer', 'pincer', T[1].tiers.a[1], true)] },
+    m: { section: 'cq-2m', waves: [wv('cq-2m-a', 'Siege wing', 'siege', T[1].tiers.m[0])] },
+    b: { section: 'cq-2b', waves: [wv('cq-2b-a', 'Hangar: strafers', 'strafers', T[1].tiers.b[0], true), wv('cq-2b-b', 'Hangar: grid', 'grid', T[1].tiers.b[1], true)] },
     bossId: 'mantis',
     bossName: 'MANTIS',
-    miniTier: 2,
-    miniEscort: 4,
-    miniChance: 0.7,
+    miniTier: T[1].miniTier,
+    miniEscort: T[1].miniEscort,
+    miniChance: T[1].miniChance,
   },
   {
     id: 'wilds',
     name: 'Frozen wilds',
     theme: 'surfaceWild',
-    a: { section: 'cq-3a', waves: [wv('cq-3a-a', 'Inner: line', 'line', 3, true), wv('cq-3a-b', 'Inner: vee', 'vee', 3, true)] },
-    m: { section: 'cq-3m', waves: [wv('cq-3m-a', 'Flak battery', 'flak', 4)] },
-    b: { section: 'cq-3b', waves: [wv('cq-3b-a', 'Last line: grid', 'grid', 4, true), wv('cq-3b-b', 'Strafers+', 'strafers', 4, true)] },
+    a: { section: 'cq-3a', waves: [wv('cq-3a-a', 'Inner: pincer', 'pincer', T[2].tiers.a[0], true), wv('cq-3a-b', 'Inner: escort', 'escort', T[2].tiers.a[1], true)] },
+    m: { section: 'cq-3m', waves: [wv('cq-3m-a', 'Flak battery', 'flak', T[2].tiers.m[0])] },
+    b: { section: 'cq-3b', waves: [wv('cq-3b-a', 'Last line: siege', 'siege', T[2].tiers.b[0], true), wv('cq-3b-b', 'Strafers+', 'strafers', T[2].tiers.b[1], true)] },
     bossId: CAPITAL_CONQUEST_ID,
     bossName: 'CAPITAL SHIP',
-    miniTier: 4,
-    miniEscort: 5,
-    miniChance: 0.8,
+    miniTier: T[2].miniTier,
+    miniEscort: T[2].miniEscort,
+    miniChance: T[2].miniChance,
   },
 ];
 
@@ -224,7 +272,7 @@ const LEVELS: LevelDefinition[] = CQ_MAPS.map((m, i) => ({
   reward: { choices: 3 },
 }));
 
-export const EMPIRE_BASE_RUN: RunDefinition = { name: 'Conquest: Empire Base', levels: LEVELS };
+export const EMPIRE_BASE_RUN: RunDefinition = { name: 'Conquest: Empire Base', levels: LEVELS, enemyScale };
 
 // --- challenges --------------------------------------------------------------------------------------------------
 
