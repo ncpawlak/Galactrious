@@ -1424,6 +1424,8 @@ export class Game {
     const cc = this.combatCounters;
     cc.kills++;
     if (u.tag) cc.killsByTag[u.tag] = (cc.killsByTag[u.tag] ?? 0) + 1;
+    // Conquest mini-bosses (src/enemies/empireMiniBosses.ts) are counted by name for the mini-boss challenge.
+    if (u.def.ace && u.def.id.startsWith('empire-mb-')) cc.killsByTag[`miniboss:${u.def.id}`] = (cc.killsByTag[`miniboss:${u.def.id}`] ?? 0) + 1;
     const c = u.center();
     if (u.big) {
       this.explode(c.x, c.y, 60);

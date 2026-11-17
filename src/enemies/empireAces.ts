@@ -28,7 +28,7 @@ const H_ = 66;
 /** Share (0..100) of the hull pixels gone when the second attack set starts. */
 const PHASE2_AT = 38;
 
-function layoutAce(kit: FactionKit): () => BossSpec {
+export function layoutAce(kit: FactionKit): () => BossSpec {
   return () => {
     const hull = makeCanvas(W_, H_);
     const h = hull.ctx;
@@ -73,14 +73,14 @@ function layoutAce(kit: FactionKit): () => BossSpec {
   };
 }
 
-const wingGun = (id: string, anchor: string): ComponentSpec => ({
+export const wingGun = (id: string, anchor: string): ComponentSpec => ({
   ...gun(id, anchor, 7, 130, { aim: 'tracking', angle: 90, trackRate: 220, telegraph: 0.3 }, 'wing-guns'),
   blast: { radius: 18, energy: 520, damage: 20, coreDamage: 45 },
   crater: { radius: 6, energy: 420 },
 });
 
 /** The ace entrance and strafing passes, from the slot: swoops in from the nearer side, then dives deep across the screen. */
-function acePlacement(first: number, every_: number): (slot: Point) => Pick<UnitPlacement, 'entrance' | 'entranceTime' | 'dive'> {
+export function acePlacement(first: number, every_: number): (slot: Point) => Pick<UnitPlacement, 'entrance' | 'entranceTime' | 'dive'> {
   return (slot) => {
     const from: Point = { x: slot.x < W / 2 ? -70 : W + 70, y: 60 };
     return {

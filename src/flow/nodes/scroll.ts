@@ -19,7 +19,7 @@ export class ScrollNode implements FlowNode {
   update(): void {
     const host = this.ctx.host;
     if (host.combatResult() === 'lost') this.result = 'lost';
-    else if (host.scroll()?.done) this.result = 'done';
+    else if (host.scroll()?.done && (!this.def.waitForUnits || host.waveRemaining() === 0)) this.result = 'done';
   }
 
   outcome(): NodeOutcome | null {
@@ -37,6 +37,13 @@ export class ScrollNode implements FlowNode {
       g.fillRect(0, 956, 540, 4);
       g.fillStyle = '#6ee7ff';
       g.fillRect(0, 956, Math.min(1, s.distance / len) * 540, 4);
+      if (this.def.waitForUnits) {
+        const left = this.ctx.host.waveRemaining();
+        g.font = '12px ui-monospace, Consolas, monospace';
+        g.fillStyle = '#6ee7ff';
+        g.textAlign = 'center';
+        g.fillText(s.done && left > 0 ? `CLEAR THE ${left} REMAINING` : left > 0 ? `ENEMIES ${left}` : '', 360, 950);
+      }
     } else {
       g.fillStyle = 'rgba(5,6,13,0.6)';
       g.fillRect(8, 940, 124, 14);

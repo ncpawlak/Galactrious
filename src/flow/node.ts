@@ -41,6 +41,8 @@ export interface WaveNodeDefinition {
 export interface ScrollNodeDefinition {
   type: 'scroll';
   level: string | ScrollLevelDef;
+  /** The node also waits for every enemy unit (formation waves in the timeline) to be dead before it ends (Conquest). */
+  waitForUnits?: boolean;
 }
 
 /** A pick-one-of-N upgrade card screen (see nodes/reward.ts, src/upgrades/). */
