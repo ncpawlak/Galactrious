@@ -1,9 +1,12 @@
+import { DEMO_LOCKED_CARDS } from './demoCards';
 import type { CardDef } from './model';
 
 /**
  * The card pool: DATA ONLY. Every number here is a first guess meant to be tuned in this one file.
  * A card is a list of `modifiers` on stat keys (see `STATS` in stats.ts); stacking just applies the card N times,
  * up to `maxStacks`. `weight` is the draw weight (default 1; rarer cards use less).
+ *
+ * A card with `unlock: 'flag'` is only drawn once that flag is unlocked in the save (src/save.ts); without it, always available.
  *
  * To add a card: add an entry below. If it needs a stat that does not exist yet, add the key to `STATS` and
  * read it where the thing is built (`Loadout.get('your.key', base)`). Nothing else changes.
@@ -39,6 +42,7 @@ export const CARDS: CardDef[] = [
   { id: 'dodge-cooldown', name: 'Quick Thrusters', group: 'Ship', desc: 'Dodge recharges 20% faster.', maxStacks: 3, modifiers: [{ stat: 'dodge.cooldown', op: 'mul', value: 0.8 }] },
   { id: 'ship-speed', name: 'Engines', group: 'Ship', desc: 'Ship moves 12% faster.', maxStacks: 3, weight: 0.8, modifiers: [{ stat: 'ship.speed', op: 'mul', value: 1.12 }] },
   { id: 'ship-hitbox', name: 'Compact Hull', group: 'Ship', desc: 'Smaller hitbox: bullets must be closer to hurt you.', maxStacks: 2, weight: 0.6, rarity: 'rare', modifiers: [{ stat: 'ship.hitbox', op: 'mul', value: 0.8 }] },
+  ...DEMO_LOCKED_CARDS, // DEMO locked cards (gating proof); remove with demoCards.ts
 ];
 
 export const CARD_BY_ID = new Map(CARDS.map((c) => [c.id, c]));

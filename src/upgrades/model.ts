@@ -11,5 +11,9 @@ export interface CardDef extends Upgrade {
   /** Draw weight, default 1. */
   weight?: number;
   rarity?: 'common' | 'rare';
+  /** Unlock flag (`save.unlocks.cards`). Omitted = always available; set = only drawn once `isUnlocked('cards', unlock)`. */
+  unlock?: string;
+  /** Shown on the Unlocks screen while locked (how to get it). */
+  unlockHint?: string;
   modifiers: Modifier[];
 }
