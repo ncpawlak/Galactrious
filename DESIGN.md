@@ -159,8 +159,8 @@ Pacing (hull density 8, default ship, test mode off, god mode so deaths do not r
 
 Not verified: no human playtest (dodge fairness, feel of the speeds); no mirrored variant; hit positions of the pads and consoles were checked on a screenshot of the fresh boss only, not each after digging.
 
-## Run flow, enemy units and waves (v1 design, not built)
-Status: **design only**, agreed with the owner. Nothing here exists in code yet. Goal for v1: a Galaga-like fixed run that stresses how levels work. Bigger ambitions (branching maps, persistence, level set pieces) come later and must not need engine rewrites.
+## Run flow, enemy units and waves (v1)
+Status: design agreed with the owner; the flow engine, units, waves and level script are built (see the "as built" notes at the end of this section). Upgrade cards and elemental effects are not. Goal for v1: a Galaga-like fixed run that stresses how levels work. Bigger ambitions (branching maps, persistence, level set pieces) come later and must not need engine rewrites.
 
 ### The run
 A **run** is a fixed list of 3 **levels**; each level is a fixed list of **nodes**: `wave, wave, wave, boss`, then a **reward**. Beat the last boss and the run is won. One run is plain data (a `RunDefinition`).
@@ -209,8 +209,8 @@ A **wave** is data: which units appear, in what formation, on what entrance path
 ### Build order
 1. This design doc.
 2. Flow engine: run state machine, node interface, `wave`/`boss`/`reward` nodes, stub reward screen, existing bosses as boss nodes. Playable end to end with placeholders.
-3. Units and waves: `UnitDefinition`, formations and entrance paths, first set of 3 small and 2 big units. (Steps 2 and 3 can run in parallel once the node interface is agreed.)
-4. Level script: the 3 levels, wave pacing.
+3. Units and waves: `UnitDefinition`, formations and entrance paths, first set of 3 small and 2 big units. **Built.**
+4. Level script: the 3 levels, wave pacing. **Built** (first pass, unplaytested).
 5. Upgrade cards: stat cards and the tag hooks.
 6. Elemental effects: burn first.
 
@@ -243,3 +243,35 @@ Game integration (`src/game.ts`, small): `mode: 'run' | 'boss'`. **Run mode is t
 Stubbed / not built: real waves (placeholder screen, 1.2 s then done); reward cards (five placeholder cards, three drawn by the seed, the pick is pushed to `RunState.upgrades`, no effect, `Upgrade.modifiers` and `RunState.loadout` are the empty places for them); `level` and `interlude` node types (reserved, `createNode` throws); run persistence.
 
 Not verified: no human playtest; the scripted `hull25` measurement was not compared against `main` in the same session (single boss-mode run on Bulwark rooms gave 37.2 s with the merged weapons, the 47.0 s in the regrowth note predates them); touch input on the title and reward screens was only checked through keyboard events and scripted calls.
+
+### Units, waves and the level script: as built (steps 3 and 4)
+Status: **built**. Title -> L1 `wave, reward, wave, reward, wave, reward, boss` -> reward -> L2 -> reward -> L3 -> win; death anywhere -> run over.
+
+Files:
+- `src/units.ts`: `UnitDefinition`, `UnitPlacement`, `Unit`, `UnitSystem`. A unit is a `BossFight` over a one-phase `BossDefinition` built by `toBossDefinition`, so carving, anchoring, components, attack scripts, blasts and debris are the boss code unchanged.
+- `src/waves.ts`: `WaveDefinition`, formations, entrance curves, dives, `spawnWave`.
+- `src/enemies/`: `small.ts` (drone, gunner, spinner), `big.ts` (frigate, mortar), `waveContent.ts` (the 9 waves), `index.ts` (`UNIT_LIST`, `unitById`, `harder` = the "+" variants).
+- `src/flow/nodes/wave.ts` (the real wave node), `src/flow/defaultRun.ts` (the level script).
+- Changed: `weapons.ts` (`Combatant`, `Sweep`, `nearBox`; shots and weapons hit any target), `game.ts`, `boss.ts` (`carveRadial` skips pixels outside the layout), `components.ts` (`silenceAll`), `attacks.ts` (`setScript(null)`), `flow/node.ts`.
+
+**Unit data** (`UnitDefinition`): `id`, `name`, `size: 'small' | 'big'`, `layout()` (a `BossSpec`: 1 layer small, 1-2 big), `mirror?`, `components?` (turrets and explosives, the same `ComponentSpec` as bosses), `coreArmor?` (default `{ min: 1 }`: no armor), `deathFraction?` (share of layer pixels gone at which it dies even with the core alive: 0.6 small, 0.75 big), `hold?` (a `Movement` for idle sway in the slot), `attacks` (the same `AttackStep[]`; every step needs a `source`; `[]` means it never shoots, like the drone), `attackDelay?` (seconds after arriving, plus a per-unit jitter). A unit dies when its core is 0 or `deathFraction` is reached; it flashes out (0.22 s small, 0.5 s big) and its components go quiet at once (`silenceAll`), so its hazards end. No contact damage anywhere: only bullets and hazards hurt.
+- Small: Drone (red dart, no gun, dives), Gunner (steel hexagon, chin gun, aimed shot every 3.2 s), Spinner (amber cross; its rotating gun sits on the core and sprays aimed bursts, shoot the gun off first). Big: Frigate (olive gunship, 2 layers, two tracking side guns and a keel volley gun, core hp 450), Mortar (crimson wedge, 2 layers, bomb tube, two flank guns, a fuel tank buried by the core that cracks its armor).
+- Time to kill with the chain gun only, centred under the unit (autopilot `focus`): small 0.6-0.8 s (including a 1 s entrance), Frigate ~5 s, Mortar ~2.5 s (centring on its tank is easy; a human will be less exact). With all weapons on, Frigate 3-6 s.
+
+**Wave data** (`WaveDefinition { id, name?, groups }`, `WaveGroup`): `unit` (unit id), `formation` (`row | rows | column | vee | arc | slots`, each resolves to slot centres), `entrance?` (`drop | swoop | loop`, `side: left | right | alternate`, `time`), `start` (s), `stagger` (s between units), `dive?` (`first`, `every`, `time`, `depth`: the unit leaves its slot on a teardrop loop and returns; successive units are offset). Entrance and dive paths are Catmull-Rom curves flown at constant speed (`curve`), wrapped by `placementMovement` into one ordinary `Movement` (offsets from the slot), so the unit's `BossFight` positions it like a boss; nothing flies away. A wave ends when every unit is dead (`NodeHost.waveRemaining() === 0`) plus a 0.9 s beat; no timeout.
+
+**Level script** (`defaultRun.ts`, waves in `waveContent.ts`): wave 1 mostly small units, wave 2 adds big ones, wave 3 mixes both with more guns (spinners, more gunners). Level 2: bigger formations, the Mortar appears, up to three big units per wave. Level 3 uses the "+" units (attack pauses x0.75), tighter dive timers and three big units in the last wave. Boss order unchanged: bulwark-components, bulwark-rooms, mantis. A `reward` node follows every wave and every boss except the last. **Health:** full heal at each level start only (`Run` does that on entering a level); reward nodes do not heal. The placement forced no other decision.
+
+**Node contract change** (minimal, `flow/node.ts`): `WaveNodeDefinition { type: 'wave'; wave: WaveDefinition }`, and `NodeHost` gained `startWave(wave)` (combat on, no boss) and `waveRemaining()`. `FlowNode` and `Run` are unchanged.
+
+**Multi-target refactor.** `Game` keeps `fight` (the boss; dormant with `bossActive = false` in wave nodes) and a `UnitSystem`. `targetList` (live boss + live units) is refreshed once per update; player bullets (`resolveImpact`) and `WeaponSystem` (`WeaponHost.targets()`) loop over it with a bounding-box pre-check (`nearBox`) and a shared swept test (`Sweep`). Gauss and Arc pierce across units; Arc retargets across all of them; the Rocket detonates on the first unit under it and its shock (`playerBlast`) also reaches every unit within the blast radius. Enemy fire is one shared `Attacks` (bullets, hazards); each unit owns its own scheduler (`UnitSystem.update`). `Game.makeFight` and the boss debug tooling are untouched, and `?mode=boss` works as before: the scripted `hull25` of Bulwark rooms is the same bimodal 37 / 43 s on `main` and on this branch (37.0, 37.2, 42.9 vs 42.9, 43.0, 37.3). Small units skip hit stop, shake and damage numbers (sound and debris only).
+
+**Core armor fix.** `carveAt` now zeroes a core below 1 hp: with `coreArmor.min < 1` the last hit points decayed geometrically and never reached 0 (bosses never showed it; armored big units did).
+
+**Debug tooling.** `[;]` spawns the next unit type at the top centre, `[']` the next wave from `WAVE_LIST`, `[\]` blows up every unit, `[H]` also shows unit boxes, hp and pixel damage. In `window.game.debug`: `units`, `spawnUnit(id, x?, y?)`, `spawnWave(idOrDef)`, `killUnits()`, `unitIds`, `waveIds`. They work in run mode during combat and in `?mode=boss` alongside the boss. Autopilot `[P]` knows waves (`focus` = under the lowest unit, `sweep` = across the live units' span). The overlay shows a compact block when there is no boss.
+
+**Performance** (in-app browser, `game.update(1/60)` timed): 20 small units firing with all weapons: 0.05 ms per update on average, worst 10 ms; render 0.2-0.5 ms. Level 3 wave 3 (21 units, 27 enemy bullets): update 0.06 ms, render 0.46 ms. Spawning costs 0.2 ms per small unit and about 1 ms per big one. The first measurements showed a 400-700 ms spike every few seconds: a Rocket blast carving a 140 px radius disc (60k pixels) on every unit in reach; clipping `carveRadial` to the layout fixed it. The lighter path for small units (cheaper grid, no fragment labelling) was therefore **not needed** and is not built.
+
+**Stubbed / not built:** reward cards (the stub node, now between every wave); upgrade effects; elemental effects; contact damage; unit death debris (a dead unit's loose chunks vanish with it); score. The sweep autopilot with god mode clears all 3 levels and the run is won; its wave lengths are 17-120 s (Level 1: 20, 24, 32 s), a human who focuses should be quicker.
+
+**Not verified:** no human playtest (wave pacing, difficulty and the feel of dives are unjudged; the wave data is the tuning surface); touch controls and the on-screen dodge button were not exercised in waves; the ENEMIES counter (bottom centre) was only checked in one screenshot.

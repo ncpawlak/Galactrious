@@ -132,7 +132,7 @@ export class Attacks {
   private clock = 0;
 
   /** Set the scripted scheduler (the boss phase's attack set). Called on fight start and on each phase change. */
-  setScript(s: AttackScheduler): void {
+  setScript(s: AttackScheduler | null): void {
     this.script = s;
   }
 

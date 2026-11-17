@@ -491,8 +491,11 @@ export class Boss {
   carveRadial(lx: number, ly: number, radius: number, energy: number, falloff = 1): number {
     const ir = Math.ceil(radius);
     const items: { x: number; y: number; d: number; k: number }[] = [];
-    for (let dy = -ir; dy <= ir; dy++) {
-      for (let dx = -ir; dx <= ir; dx++) {
+    // Only pixels inside the layout can be carved, so skip the rest of the disc (a big blast on a small unit is 60k+ pixels).
+    const cx = Math.round(lx);
+    const cy = Math.round(ly);
+    for (let dy = Math.max(-ir, -cy); dy <= Math.min(ir, this.height - 1 - cy); dy++) {
+      for (let dx = Math.max(-ir, -cx); dx <= Math.min(ir, this.width - 1 - cx); dx++) {
         const d = Math.hypot(dx, dy);
         if (d <= radius) items.push({ x: Math.round(lx) + dx, y: Math.round(ly) + dy, d, k: d + Math.random() * radius * 0.12 });
       }
