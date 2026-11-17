@@ -175,16 +175,20 @@ export class RegionScreen {
   draw(g: CanvasRenderingContext2D): void {
     const r = this.region;
     dim(g);
-    drawCentered(g, r.name, 70, `bold 36px ${MONO}`, r.theme.accent);
-    wrap(r.blurb, 58).forEach((l, i) => drawCentered(g, l, 100 + i * 17, `12px ${MONO}`, '#b6c2e0'));
+    drawCentered(g, r.name, 62, `bold 36px ${MONO}`, r.theme.accent);
+    wrap(r.blurb, 64).forEach((l, i) => drawCentered(g, l, 92 + i * 17, `12px ${MONO}`, '#b6c2e0'));
     const enemies = [...r.roster.bosses, ...r.roster.hazards].join('  ·  ');
-    wrap(enemies, 60).forEach((l, i) => drawCentered(g, l, 156 + i * 15, `11px ${MONO}`, '#8fa0c8'));
-    drawCentered(g, 'about 15 to 25 minutes  ·  one life  ·  cards after every stage', 200, `12px ${MONO}`, '#6ee7ff');
+    wrap(enemies, 70).slice(0, 2).forEach((l, i) => drawCentered(g, l, 148 + i * 14, `11px ${MONO}`, '#8fa0c8'));
+    drawCentered(g, 'about 15 to 25 minutes  ·  one life  ·  cards after every stage', 182, `12px ${MONO}`, '#6ee7ff');
     const done = new Set(saveStore.challengesDone(r.id));
-    drawCentered(g, `CHALLENGES ${done.size}/${r.challenges.length}`, 238, `bold 15px ${MONO}`, '#ffd21f');
-    const rowH = 100;
+    drawCentered(g, `CHALLENGES ${done.size}/${r.challenges.length}`, 204, `bold 15px ${MONO}`, '#ffd21f');
+    // The cards share the space between the header and the buttons (the list never runs under them); the reward line follows the description.
+    const gap = 6;
+    const top = 216;
+    const n = Math.max(1, r.challenges.length);
+    const rowH = Math.min(104, Math.floor((846 - top - gap * (n - 1)) / n));
     r.challenges.forEach((c, i) => {
-      const y = 254 + i * (rowH + 8);
+      const y = top + i * (rowH + gap);
       const ok = done.has(c.id);
       g.save();
       g.fillStyle = ok ? '#0c1c18' : '#0b1424';
@@ -192,11 +196,12 @@ export class RegionScreen {
       g.fillStyle = ok ? '#4ade80' : r.theme.accent;
       g.fillRect(30, y, 6, rowH);
       g.restore();
-      text(g, c.name, 52, y + 26, `bold 17px ${MONO}`, ok ? '#7dffb0' : '#ffffff');
-      text(g, ok ? 'DONE' : progress(r, c), W - 46, y + 26, `bold 12px ${MONO}`, ok ? '#4ade80' : '#ffd21f', 'right');
-      wrap(c.desc, 58).slice(0, 2).forEach((l, k) => text(g, l, 52, y + 48 + k * 15, `12px ${MONO}`, '#b6c2e0'));
+      text(g, c.name, 52, y + 24, `bold 17px ${MONO}`, ok ? '#7dffb0' : '#ffffff');
+      text(g, ok ? 'DONE' : progress(r, c), W - 46, y + 24, `bold 13px ${MONO}`, ok ? '#4ade80' : '#ffd21f', 'right');
+      const lines = wrap(c.desc, 54).slice(0, 2);
+      lines.forEach((l, k) => text(g, l, 52, y + 45 + k * 16, `13px ${MONO}`, '#c9d3ee'));
       const rw = c.rewards.map((u) => describeUnlock(u).name).join(', ');
-      text(g, `${ok ? 'unlocked' : 'unlocks'}: ${clip(rw, 44)}`, 52, y + 88, `12px ${MONO}`, ok ? '#4ade80' : '#6ee7ff');
+      text(g, `${ok ? 'unlocked' : 'unlocks'}: ${clip(rw, 48)}`, 52, y + 45 + lines.length * 16 + 8, `12px ${MONO}`, ok ? '#4ade80' : '#6ee7ff');
     });
     button(g, START, 'CHOOSE SHIP  [ENTER]', '#ffd21f');
     button(g, BACK2, 'BACK', '#ffffff');
