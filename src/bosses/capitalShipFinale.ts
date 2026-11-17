@@ -9,6 +9,7 @@ import { capitalShip, CAPITAL_COMPONENTS, createCapitalShip } from './capitalShi
 import { crisp, makeCanvas, shade } from './paint';
 import type { BossDefinition } from './types';
 import type { BossFight } from '../bossFight';
+import type { BossSnapshot } from '../campaign/snapshot';
 
 /**
  * The capital ship of chapter 7 ("Fallen Peace" finale): the SAME hull as chapter 1 (same size, three layers and the same engine-room
@@ -77,7 +78,9 @@ function layoutFinale(): BossSpec {
 }
 
 /** The snapshot of chapter 1 knows nothing of the hidden rooms and wipes their pixels: put the two room patches back (interior layer, original pixels). */
-function restoreRooms(fight: BossFight): void {
+function restoreRooms(fight: BossFight, snap: BossSnapshot): void {
+  // Only for a snapshot of ANOTHER definition (chapter 1's ship): a finale phase snapshot already has the patches, carved or not.
+  if (snap.bossId === fight.def.id) return;
   const b = fight.boss;
   const l = b.layers[2];
   const d = l.img.data;

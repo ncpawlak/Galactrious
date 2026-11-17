@@ -290,7 +290,8 @@ class BossFightHandler implements ObjectiveHandler {
 
   update(_dt: number, env: ObjectiveEnv): void {
     const u = this.def.until;
-    if (!u) this.done = env.host.combatResult() === 'won';
+    if (this.def.phaseSeconds !== undefined) this.done = env.time >= this.def.phaseSeconds || env.host.combatResult() === 'won';
+    else if (!u) this.done = env.host.combatResult() === 'won';
     else this.done = env.host.bossTarget('component' in u ? 'component' : 'room', 'component' in u ? u.component : u.room) === 'destroyed';
   }
 
@@ -300,6 +301,7 @@ class BossFightHandler implements ObjectiveHandler {
 
   hint(): string {
     const u = this.def.until;
+    if (this.def.phaseSeconds !== undefined) return 'HOLD ON';
     return u ? `DESTROY THE ${('component' in u ? u.component : u.room).toUpperCase()}` : 'DEFEAT THE BOSS';
   }
 

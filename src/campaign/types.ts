@@ -121,6 +121,8 @@ export interface BossFightObjective extends ObjectiveBase {
   restoreSlot?: string;
   /** The boss id the slot's snapshot was taken from, when it differs from `bossId` (chapter 7 restores chapter 1's capital ship onto its finale variant). */
   restoreBossId?: string;
+  /** Time-gated phase: the objective is done after this many seconds (or when the boss falls). Chapter 7 splits the finale into three checkpointed phases this way. */
+  phaseSeconds?: number;
   /** Seconds after the objective starts at which the armour becomes carvable, IF the player's ship has `empireTech` (the armour resonance cue plays). Omitted = never. */
   armourResonance?: number;
   /** The boss's death plays the core overload sequence (src/finale/overload.ts) before the objective completes. */

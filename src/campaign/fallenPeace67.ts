@@ -15,7 +15,7 @@ import { CAPITAL_SHIP_ID } from '../bosses/capitalShip';
 import { CAPITAL_SNAPSHOT_SLOT } from './fallenPeace';
 import { FP6_OPEN, FP6_REUNION, FP7_APPROACH, FP7_VICTORY } from './fallenPeace67Cinematics';
 import { COMMAND, COMMAND_SHIP_NAME, EMPIRE_CONTROL, SQUAD_LEADER, WINGMAN_1, WINGMAN_2 } from './names';
-import type { Beat, CampaignLevel } from './types';
+import type { AssistSpec, Beat, CampaignLevel } from './types';
 
 /** The commandeered empire fighter with the campaign's preset loadout (no builder, no cards). */
 export const EMPIRE_SHIP = { id: 'empire-fighter', loadout: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] } };
@@ -53,31 +53,32 @@ const CHAPTER_6: CampaignLevel = {
   medals: { bronze: 300, silver: 150, gold: 110, bonus: { kind: 'noDamage', text: 'Clean climb: reach orbit without taking damage' } },
 };
 
-/** Squad assists on a fixed timer the player cannot change (every one announced 4 s ahead): one every 20 s. */
-const FP7_ASSISTS: Beat[] = [
-  { at: 14, do: 'assist', assist: { kind: 'strafeRun', x: 270, width: 220, warn: 4 } },
-  { at: 34, do: 'assist', assist: { kind: 'distract', seconds: 6, warn: 4 } },
-  { at: 54, do: 'assist', assist: { kind: 'coverFire', x: 270, y: 700, r: 170, seconds: 2.2, warn: 4 } },
-  { at: 74, do: 'assist', assist: { kind: 'strafeRun', x: 130, width: 200, warn: 4 } },
-  { at: 94, do: 'assist', assist: { kind: 'distract', seconds: 7, warn: 4 } },
-  { at: 114, do: 'assist', assist: { kind: 'strafeRun', x: 410, width: 200, warn: 4 } },
-  { at: 134, do: 'assist', assist: { kind: 'coverFire', x: 270, y: 640, r: 190, seconds: 2.4, warn: 4 } },
-  { at: 154, do: 'assist', assist: { kind: 'strafeRun', x: 270, width: 240, warn: 4 } },
-  { at: 174, do: 'assist', assist: { kind: 'distract', seconds: 7, warn: 4 } },
-  { at: 194, do: 'assist', assist: { kind: 'strafeRun', x: 150, width: 200, warn: 4 } },
-  { at: 214, do: 'assist', assist: { kind: 'coverFire', x: 270, y: 700, r: 190, seconds: 2.4, warn: 4 } },
-  { at: 234, do: 'assist', assist: { kind: 'strafeRun', x: 400, width: 200, warn: 4 } },
+/** The squad's repertoire; a phase takes `count` of them from `shift` on, one every 20 s from `first` s (each announced 4 s ahead). */
+const ASSIST_CYCLE: AssistSpec[] = [
+  { kind: 'strafeRun', x: 270, width: 220, warn: 4 },
+  { kind: 'distract', seconds: 6, warn: 4 },
+  { kind: 'coverFire', x: 270, y: 700, r: 170, seconds: 2.2, warn: 4 },
+  { kind: 'strafeRun', x: 130, width: 200, warn: 4 },
+  { kind: 'distract', seconds: 7, warn: 4 },
+  { kind: 'strafeRun', x: 410, width: 200, warn: 4 },
+  { kind: 'coverFire', x: 270, y: 640, r: 190, seconds: 2.4, warn: 4 },
+  { kind: 'strafeRun', x: 270, width: 240, warn: 4 },
 ];
+const assists = (first: number, count: number, shift: number): Beat[] =>
+  Array.from({ length: count }, (_, k): Beat => ({ at: first + k * 20, do: 'assist', assist: ASSIST_CYCLE[(shift + k) % ASSIST_CYCLE.length] }));
 
-/** Constant pressure: a harassment group (chapter 1's fighters) every 15 s from 8 s, plus a gunship at 52 s and 130 s. */
-function pressure(): Beat[] {
-  const out: Beat[] = [];
+/** Constant pressure: a harassment group (chapter 1 fighters) every 15 s from `first`, `count` of them. */
+function pressure(first: number, count: number, wave0 = 0): Beat[] {
   const ids = ['fp1-harass-a', 'fp1-harass-b'];
-  for (let k = 0; k < 18; k++) out.push({ at: 8 + k * 15, do: 'spawn', spawn: { wave: ids[k % ids.length] } });
-  // Two gunships over the whole fight: a heavy hitter to break the rhythm.
-  out.push({ at: 52, do: 'spawn', spawn: { wave: 'fp1-harass-c' } }, { at: 130, do: 'spawn', spawn: { wave: 'fp1-harass-c' } });
-  return out;
+  return Array.from({ length: count }, (_, k): Beat => ({ at: first + k * 15, do: 'spawn', spawn: { wave: ids[(k + wave0) % 2] } }));
 }
+
+/** Phase lengths (s) of the time-gated finale phases; phase 3 runs until the core goes. */
+const P1_SECONDS = 55;
+const P2_SECONDS = 70;
+/** Snapshot slots written at the end of phase 1 and phase 2 (the checkpoint a death restores). */
+const SLOT_P2 = 'fp7-phase-2';
+const SLOT_P3 = 'fp7-phase-3';
 
 const CHAPTER_7: CampaignLevel = {
   id: 'fp-7',
@@ -88,43 +89,78 @@ const CHAPTER_7: CampaignLevel = {
     'Named empire aces will hunt you the whole way. Stay alive.',
   ],
   ship: EMPIRE_SHIP,
+  // Three checkpointed phases (a death restarts only the current phase, with a full hull, from the capital ship as it was at the
+  // phase start: each phase writes its end state to a snapshot slot and the next restores it). Chapter 1's snapshot starts phase 1.
   objectives: [
     {
-      id: 'finale',
+      id: 'phase-aces',
       type: 'bossFight',
-      title: 'Break the command ship',
+      title: 'Phase 1: hold off the aces',
       scroll: 'fp7-finale',
       bossId: CAPITAL_FINALE_ID,
       restoreSlot: CAPITAL_SNAPSHOT_SLOT,
       restoreBossId: CAPITAL_SHIP_ID,
+      snapshotSlot: SLOT_P2,
+      phaseSeconds: P1_SECONDS,
       armourResonance: 1.2,
-      overload: true,
       coreHp: 24000,
       intro: FP7_APPROACH,
-      outro: FP7_VICTORY,
       beats: [
         { at: 3, do: 'text', speaker: SQUAD_LEADER, text: 'It is cracking! Rookie, the armour is giving!' },
-        // Phase 1: the aces.
         { at: 6, do: 'spawn', spawn: { unit: 'empire-ace-viper', x: 150, y: 230, tag: 'aces' } },
         { at: 20, do: 'text', speaker: WINGMAN_1, text: 'Viper is on you, rookie! We have the fighters.' },
-        { at: 30, do: 'spawn', spawn: { unit: 'empire-ace-cinder', x: 390, y: 250, tag: 'aces' } },
-        { at: 33, do: 'text', speaker: COMMAND, text: 'A second ace. They are calling in their best.' },
-        { at: 48, do: 'text', speaker: SQUAD_LEADER, text: 'Squad strike incoming. Use the cover and dig.' },
-        // Phase 2: dig to the rooms; the squad cannot hurt the armour.
-        { at: 62, do: 'text', speaker: COMMAND, text: 'Engineers report drive power at one quarter.' },
-        { at: 70, do: 'spawn', spawn: { unit: 'empire-ace-raven', x: 270, y: 210, tag: 'aces' } },
-        { at: 72, do: 'text', speaker: WINGMAN_2, text: 'A third ace! Raven! Rookie, watch your six!' },
-        { at: 110, do: 'text', speaker: SQUAD_LEADER, text: 'Find the shield projector and the weapons room. Those guns die with them.' },
-        { at: 140, do: 'text', speaker: COMMAND, text: 'Drive power at one half. Faster, Delta.' },
-        { at: 175, do: 'text', speaker: COMMAND, text: 'Three quarters. The drive is almost lit!' },
-        { at: 205, do: 'text', speaker: SQUAD_LEADER, text: 'Drive at ninety percent! Break her now, rookie!' },
-        ...pressure(),
-        ...FP7_ASSISTS,
+        { at: 28, do: 'spawn', spawn: { unit: 'empire-ace-cinder', x: 390, y: 250, tag: 'aces' } },
+        { at: 31, do: 'text', speaker: COMMAND, text: 'A second ace. They are calling in their best.' },
+        { at: 44, do: 'text', speaker: SQUAD_LEADER, text: 'Squad strike incoming. Use the cover and dig.' },
+        ...pressure(8, 4),
+        ...assists(14, 3, 0),
+      ],
+    },
+    {
+      id: 'phase-dig',
+      type: 'bossFight',
+      title: 'Phase 2: dig to the rooms and guns',
+      scroll: 'fp7-finale',
+      bossId: CAPITAL_FINALE_ID,
+      restoreSlot: SLOT_P2,
+      snapshotSlot: SLOT_P3,
+      phaseSeconds: P2_SECONDS,
+      armourResonance: 0.1,
+      beats: [
+        { at: 1, do: 'text', speaker: COMMAND, text: 'Engineers report drive power at one quarter.' },
+        { at: 5, do: 'spawn', spawn: { unit: 'empire-ace-raven', x: 270, y: 210, tag: 'aces' } },
+        { at: 7, do: 'text', speaker: WINGMAN_2, text: 'A third ace! Raven! Rookie, watch your six!' },
+        { at: 30, do: 'spawn', spawn: { unit: 'empire-ace-viper', x: 150, y: 230, tag: 'aces' } },
+        { at: 32, do: 'text', speaker: SQUAD_LEADER, text: 'Find the shield projector and the weapons room. Those guns die with them.' },
+        { at: 55, do: 'text', speaker: COMMAND, text: 'Drive power at one half. Faster, Delta.' },
+        ...pressure(6, 5, 1),
+        { at: 20, do: 'spawn', spawn: { wave: 'fp1-harass-c' } },
+        ...assists(10, 4, 3),
+      ],
+    },
+    {
+      id: 'phase-core',
+      type: 'bossFight',
+      title: 'Phase 3: break the core',
+      scroll: 'fp7-finale',
+      bossId: CAPITAL_FINALE_ID,
+      restoreSlot: SLOT_P3,
+      armourResonance: 0.1,
+      overload: true,
+      outro: FP7_VICTORY,
+      beats: [
+        { at: 1, do: 'text', speaker: COMMAND, text: 'Three quarters. The drive is almost lit!' },
+        { at: 4, do: 'spawn', spawn: { unit: 'empire-ace-cinder', x: 390, y: 250, tag: 'aces' } },
+        { at: 6, do: 'spawn', spawn: { unit: 'empire-ace-raven', x: 150, y: 220, tag: 'aces' } },
+        { at: 30, do: 'text', speaker: SQUAD_LEADER, text: 'Drive at ninety percent! Break her now, rookie!' },
+        ...pressure(8, 12, 0),
+        { at: 40, do: 'spawn', spawn: { wave: 'fp1-harass-c' } },
+        ...assists(10, 12, 7),
       ],
     },
   ],
-  // Measured with the dodging bot (DESIGN.md "As built: Fallen Peace chapters 6-7"): 149 to 167 s, no deaths. Gold by time is a clean, efficient run, or the Full dismantle bonus.
-  medals: { bronze: 450, silver: 280, gold: 190, bonus: { kind: 'dismantle', rooms: 2, turrets: 6, text: 'Full dismantle: destroy both rooms and all six guns before the core goes' } },
+  // Measured with the dodging bot (DESIGN.md "As built: Fallen Peace chapters 6-7"): 149 to 172 s over three phases, no deaths. Gold by time is a clean, efficient run, or the Full dismantle bonus.
+  medals: { bronze: 450, silver: 290, gold: 200, bonus: { kind: 'dismantle', rooms: 2, turrets: 6, text: 'Full dismantle: destroy both rooms and all six guns before the core goes' } },
 };
 
 export const CHAPTERS_6_7: CampaignLevel[] = [CHAPTER_6, CHAPTER_7];
