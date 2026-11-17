@@ -9,17 +9,16 @@ import type { ChallengeDef, HiddenPlacement, RegionDefinition } from './types';
 
 /**
  * Region 1: EMPIRE BASE (DESIGN.md "Conquest"). Everything it uses already exists: the chapter 5 surface-run timeline (defence lines, gun and
- * mortar turrets, shield barriers, turret clusters, empire flybys), the base and surface scenery, the empire fighters, gunships and the three
- * aces (as mini-bosses), Bulwark (the garrison, the milestone boss) and the chapter 7 capital ship (the final boss). What is new is the order,
- * the scaling and the hidden items.
+ * mortar turrets, shield barriers, turret clusters), the base, surface and wilderness scenery of chapters 4 and 5, the empire fighters, gunships and the
+ * three aces (as mini-bosses), Bulwark and Mantis (map bosses) and the chapter 7 capital ship (the final boss). What is new is the order, the scaling,
+ * the random mini-bosses and the hidden items.
  *
- * The run (about 18 minutes at a human pace, see DESIGN.md "Conquest: as built"):
- *   Level 1 "Outer defences": surface run, fighters, surface run, gunships, ace VIPER.
- *   Level 2 "The garrison": surface run, fighters+, surface run, ace CINDER with an escort, BULWARK (milestone boss).
- *   Level 3 "Inner base": surface run, gunships+, surface run, aces RAVEN and VIPER together.
- *   Level 4 "The capital ship": the final boss.
- * A card pick follows every wave, section and boss. Health is restored at the start of each level only (the engine's rule). Scaling: the enemy
- * fire scale of the scroll sections is the one chapter 5 validated for the same window of the timeline (0.5 to 0.6), level 2 on uses the "+" units (a quarter faster guns), formations grow.
+ * The run is a sequence of MAPS (a map is a flow-engine "level": full heal at its start, a card after its boss), about 15 to 25 minutes:
+ *   Map 1 "Base perimeter" (base scenery, easy guns), boss BULWARK.
+ *   Map 2 "Surface defences" (open ground, mid guns), boss MANTIS.
+ *   Map 3 "Frozen wilds" (snow and pines, full guns), boss the CAPITAL SHIP: the run ends when it falls.
+ * Each map is 3 waves (each a scroll section with its own scenery, obstacles and ground defences, with the formation waves chained over it) and a card pick
+ * after each, a seeded chance of a random mini-boss (in place of a wave, or right after one), the map boss, then (but on the last map) a card.
  */
 
 export const EMPIRE_BASE_ID = 'empire-base';
@@ -61,7 +60,7 @@ function backdrop(id: string, theme: string): ScrollLevelDef {
 /**
  * Six placements, three kinds of tell (see src/terrain/hidden.ts). Crates sit off the main lane at a screen edge; caches are wall pieces whose
  * plating has a faint seam and two amber rivets over a sealed room: dig through the plating, shoot the console. `at` is scroll px from the start of
- * the section (180 px/s: 1 s = 180 px).
+ * the section (180 px/s: 1 s = 180 px). Two per map, in the first and the third wave.
  */
 export const EMPIRE_BASE_HIDDEN: HiddenPlacement[] = [
   { id: 'eb-crate-1', level: 'cq-1a', at: T5(26), x: 488, variant: 'crate', reward: { heal: 1 }, label: 'Supply crate opened' },
@@ -75,70 +74,155 @@ export const EMPIRE_BASE_HIDDEN: HiddenPlacement[] = [
 const H = EMPIRE_BASE_HIDDEN;
 export const CQ_SECTIONS: Record<string, ScrollLevelDef> = Object.fromEntries(
   [
-    section('cq-1a', 'Outer fence', 'surfaceBase', 'easy', EASY, 0, 60, 0.5, H),
-    section('cq-1b', 'Perimeter guns', 'surface', 'easy', EASY, 60, 120, 0.5, H),
-    section('cq-2a', 'The yard', 'baseInterior', 'mid', MID, 0, 60, 0.5, H),
-    section('cq-2b', 'Hangar row', 'surfaceBase', 'mid', MID, 60, 120, 0.5, H),
-    section('cq-3a', 'Inner defences', 'baseInterior', 'hard', HARD, 120, 178, 0.45, H),
-    section('cq-3b', 'The last line', 'surfaceBase', 'hard', HARD, 60, 120, 0.5, H),
+    // Map 1, base: the compound, in the dark and then in daylight.
+    section('cq-1a', 'Outer fence', 'baseInterior', 'easy', EASY, 0, 60, 0.5, H),
+    section('cq-1m', 'Motor pool', 'surfaceBase', 'easy', EASY, 120, 178, 0.5, H),
+    section('cq-1b', 'Perimeter guns', 'surfaceBase', 'easy', EASY, 60, 120, 0.5, H),
+    // Map 2, surface: the open ground outside the walls.
+    section('cq-2a', 'The yard', 'surface', 'mid', MID, 0, 60, 0.5, H),
+    section('cq-2m', 'Gun line', 'surface', 'mid', MID, 120, 178, 0.5, H),
+    section('cq-2b', 'Hangar row', 'surface', 'mid', MID, 60, 120, 0.5, H),
+    // Map 3, wilderness: snow and pines, the last stretch before the flagship.
+    section('cq-3a', 'Inner defences', 'surfaceWild', 'hard', HARD, 120, 178, 0.45, H),
+    section('cq-3m', 'Frozen outpost', 'tundraNight', 'hard', HARD, 0, 60, 0.45, H),
+    section('cq-3b', 'The last line', 'surfaceWild', 'hard', HARD, 60, 120, 0.5, H),
   ].map((l) => [l.id, l]),
 );
 
-// --- waves -------------------------------------------------------------------------------------------------------
+// --- waves and maps ----------------------------------------------------------------------------------------------
 
 /**
- * The run is formation waves (src/conquest/waveGen.ts: the Endless wave format and the empire roster, growing with a tier 0 to 5) with the
- * scroll sections as scenery and ground defences underneath: each section carries two timed formation waves of its own and ends only when
- * they are dead (`waitForUnits`), and the flybys of the chapter 5 timeline are gone (no lone ship passing by). Between nodes: a card.
+ * The formation waves (src/conquest/waveGen.ts: the Endless wave format and the empire roster, growing with a tier 0 to 5) run over the scroll
+ * sections (scenery, obstacles and ground defences underneath). A section CHAINS its waves (`ScrollNodeDefinition.chain`): the next wave comes
+ * a couple of seconds after the field is cleared (never earlier than 8 s after the last one), the section ends with a SECTOR CLEAR beat once the last
+ * wave is down and it is far enough in, and it never waits on an empty scroll. The flybys of the chapter 5 timeline are gone.
  */
 const wv = (id: string, name: string, kind: Archetype, tier: number, light = false): WaveDefinition => cqWave({ id, name, kind, tier, light });
-const mini = (id: string, name: string, boss: string, escort: number, tier: number): WaveDefinition => miniBossWave(id, name, boss, escort, tier);
 
-export const CQ_WAVES: WaveDefinition[] = [
-  wv('cq-w1', 'Picket line', 'line', 0),
-  wv('cq-w2', 'Gunship escort', 'escort', 1),
-  wv('cq-w3', 'Strafing run', 'strafers', 1),
-  mini('cq-mb-viper', 'Mini-boss VIPER', 'empire-mb-viper', 3, 1),
-  wv('cq-w4', 'Pincer', 'pincer', 2),
-  wv('cq-w5', 'Siege wing', 'siege', 2),
-  mini('cq-mb-cinder', 'Mini-boss CINDER', 'empire-mb-cinder', 4, 2),
-  wv('cq-w6', 'Vee assault', 'vee', 3),
-  wv('cq-w7', 'Flak battery', 'flak', 3),
-  wv('cq-w8', 'Strafers+', 'strafers', 3),
-  mini('cq-mb-raven', 'Mini-boss RAVEN', 'empire-mb-raven', 5, 4),
+interface MapDef {
+  id: string;
+  name: string;
+  /** Scenery behind the mini-bosses and the boss. */
+  theme: string;
+  /** Wave 1 and 3 of the map: a section with two light waves each; wave 2: a section with one full wave. */
+  a: { section: string; waves: WaveDefinition[] };
+  m: { section: string; waves: WaveDefinition[] };
+  b: { section: string; waves: WaveDefinition[] };
+  bossId: string;
+  bossName: string;
+  /** Mini-boss tier and escort size on this map, and the chance of one appearing. */
+  miniTier: number;
+  miniEscort: number;
+  miniChance: number;
+}
+
+export const CQ_MAPS: MapDef[] = [
+  {
+    id: 'base',
+    name: 'Base perimeter',
+    theme: 'baseInterior',
+    a: { section: 'cq-1a', waves: [wv('cq-1a-a', 'Outer fence: line', 'line', 0, true), wv('cq-1a-b', 'Outer fence: grid', 'grid', 0, true)] },
+    m: { section: 'cq-1m', waves: [wv('cq-1m-a', 'Gunship escort', 'escort', 1)] },
+    b: { section: 'cq-1b', waves: [wv('cq-1b-a', 'Perimeter: vee', 'vee', 0, true), wv('cq-1b-b', 'Perimeter: strafers', 'strafers', 1, true)] },
+    bossId: 'bulwark-components',
+    bossName: 'BULWARK',
+    miniTier: 1,
+    miniEscort: 3,
+    miniChance: 0.6,
+  },
+  {
+    id: 'surface',
+    name: 'Surface defences',
+    theme: 'surface',
+    a: { section: 'cq-2a', waves: [wv('cq-2a-a', 'Yard: grid', 'grid', 1, true), wv('cq-2a-b', 'Yard: pincer', 'pincer', 2, true)] },
+    m: { section: 'cq-2m', waves: [wv('cq-2m-a', 'Siege wing', 'siege', 2)] },
+    b: { section: 'cq-2b', waves: [wv('cq-2b-a', 'Hangar: vee', 'vee', 2, true), wv('cq-2b-b', 'Hangar: grid', 'grid', 2, true)] },
+    bossId: 'mantis',
+    bossName: 'MANTIS',
+    miniTier: 2,
+    miniEscort: 4,
+    miniChance: 0.7,
+  },
+  {
+    id: 'wilds',
+    name: 'Frozen wilds',
+    theme: 'surfaceWild',
+    a: { section: 'cq-3a', waves: [wv('cq-3a-a', 'Inner: line', 'line', 3, true), wv('cq-3a-b', 'Inner: vee', 'vee', 3, true)] },
+    m: { section: 'cq-3m', waves: [wv('cq-3m-a', 'Flak battery', 'flak', 4)] },
+    b: { section: 'cq-3b', waves: [wv('cq-3b-a', 'Last line: grid', 'grid', 4, true), wv('cq-3b-b', 'Strafers+', 'strafers', 4, true)] },
+    bossId: CAPITAL_CONQUEST_ID,
+    bossName: 'CAPITAL SHIP',
+    miniTier: 4,
+    miniEscort: 5,
+    miniChance: 0.8,
+  },
 ];
 
-const waveBy = (id: string): WaveDefinition => CQ_WAVES.find((w) => w.id === id)!;
+/** The chained waves, for the debug list and the tests. */
+export const CQ_WAVES: WaveDefinition[] = CQ_MAPS.flatMap((m) => [...m.a.waves, ...m.m.waves, ...m.b.waves]);
 
-/** Overlay waves for a section (the timed formations): `at` seconds into the section. */
-const overlay = (sectionId: string, items: [number, WaveDefinition][]): void => {
-  const lvl = CQ_SECTIONS[sectionId];
-  lvl.timeline = [...lvl.timeline, ...items.map(([sec, wave]): ScrollEntry => ({ at: T5(sec), kind: 'wave', wave }))].sort((x, y) => x.at - y.at);
-};
-overlay('cq-1a', [[5, wv('cq-1a-a', 'Outer fence: vee', 'vee', 0, true)], [32, wv('cq-1a-b', 'Outer fence: grid', 'grid', 0, true)]]);
-overlay('cq-1b', [[5, wv('cq-1b-a', 'Perimeter: line', 'line', 0, true)], [32, wv('cq-1b-b', 'Perimeter: vee', 'vee', 1, true)]]);
-overlay('cq-2a', [[5, wv('cq-2a-a', 'Yard: grid', 'grid', 1, true)], [32, wv('cq-2a-b', 'Yard: line', 'line', 1, true)]]);
-overlay('cq-2b', [[5, wv('cq-2b-a', 'Hangar: vee', 'vee', 2, true)], [32, wv('cq-2b-b', 'Hangar: grid', 'grid', 2, true)]]);
-overlay('cq-3a', [[5, wv('cq-3a-a', 'Inner: line', 'line', 2, true)], [32, wv('cq-3a-b', 'Inner: vee', 'vee', 2, true)]]);
-overlay('cq-3b', [[5, wv('cq-3b-a', 'Last line: grid', 'grid', 3, true)], [32, wv('cq-3b-b', 'Last line: line', 'line', 3, true)]]);
+const MINIS = [
+  { unit: 'empire-mb-viper', name: 'VIPER' },
+  { unit: 'empire-mb-cinder', name: 'CINDER' },
+  { unit: 'empire-mb-raven', name: 'RAVEN' },
+];
 
 // --- the run -----------------------------------------------------------------------------------------------------
 
-const wave = (id: string): NodeDefinition => ({ type: 'wave', wave: waveBy(id) });
-const scroll = (id: string): NodeDefinition => ({ type: 'scroll', level: CQ_SECTIONS[id], waitForUnits: true });
 const reward: NodeDefinition = { type: 'reward', choices: 3 };
 
-/** Nodes with a card pick after each one (the Endless rhythm). */
-function withRewards(nodes: NodeDefinition[]): NodeDefinition[] {
-  return nodes.flatMap((n) => [n, reward]).slice(0, -1);
+/** One wave of a map: its section with the chained waves (wave 1 and 3: two light waves, wave 2: one full one). */
+function waveNode(m: MapDef, slot: 'a' | 'm' | 'b', n: number): NodeDefinition {
+  const w = m[slot];
+  const single = w.waves.length === 1;
+  return {
+    type: 'scroll',
+    level: CQ_SECTIONS[w.section],
+    chain: { waves: w.waves, first: 3, gap: 2.5, minSpacing: 8, every: 30, minEnd: single ? 0.45 : 0.6 },
+    hud: { kind: 'wave', n, of: 3, title: CQ_SECTIONS[w.section].name },
+  };
 }
 
-const LEVELS: LevelDefinition[] = [
-  { nodes: withRewards([wave('cq-w1'), scroll('cq-1a'), wave('cq-w2'), scroll('cq-1b'), wave('cq-w3'), wave('cq-mb-viper')]), reward: { choices: 3 } },
-  { nodes: withRewards([scroll('cq-2a'), wave('cq-w4'), scroll('cq-2b'), wave('cq-w5'), wave('cq-mb-cinder'), { type: 'boss', bossId: 'bulwark-components', scroll: backdrop('cq-bg-garrison', 'baseInterior') }]), reward: { choices: 3 } },
-  { nodes: withRewards([wave('cq-w6'), scroll('cq-3a'), wave('cq-w7'), scroll('cq-3b'), wave('cq-w8'), wave('cq-mb-raven')]), reward: { choices: 3 } },
-  { nodes: [{ type: 'boss', bossId: CAPITAL_CONQUEST_ID, scroll: backdrop('cq-bg-capital', 'surfaceBase') }] },
-];
+/** The mini-boss fight of map `m` against `mini`: over the map's scenery; `n` = the wave it stands in for or follows. */
+function miniNode(m: MapDef, mini: (typeof MINIS)[number], n: number): NodeDefinition {
+  return {
+    type: 'wave',
+    wave: miniBossWave(`cq-mb-${m.id}-${mini.name.toLowerCase()}`, `Mini-boss ${mini.name}`, mini.unit, m.miniEscort, m.miniTier),
+    scroll: backdrop(`cq-bg-mini-${m.id}`, m.theme),
+    hud: { kind: 'mini', n, of: 3, title: mini.name },
+  };
+}
+
+/** Mini-bosses already drawn in this run (the levels are built in order from map 0: no repeats). */
+let usedMinis: string[] = [];
+
+/**
+ * One map: 3 waves, a card after each, possibly a random mini-boss (the chance grows per map; it takes the place of a wave or comes right after one,
+ * decided by the seeded rng), then the map boss. The level's own reward (a card) follows the boss, except on the last map.
+ */
+export function buildMap(mapIndex: number, rng: () => number): NodeDefinition[] {
+  const m = CQ_MAPS[mapIndex];
+  if (mapIndex === 0) usedMinis = [];
+  const slots: NodeDefinition[][] = [[waveNode(m, 'a', 1)], [waveNode(m, 'm', 2)], [waveNode(m, 'b', 3)]];
+  if (rng() < m.miniChance) {
+    const pool = MINIS.filter((x) => !usedMinis.includes(x.unit));
+    const mini = pool[Math.floor(rng() * pool.length) % pool.length];
+    const at = Math.floor(rng() * 3);
+    const replace = rng() < 0.5;
+    usedMinis.push(mini.unit);
+    if (replace) slots[at] = [miniNode(m, mini, at + 1)];
+    else slots[at].push(miniNode(m, mini, at + 1));
+  }
+  const boss: NodeDefinition = { type: 'boss', bossId: m.bossId, scroll: backdrop(`cq-bg-boss-${m.id}`, m.theme), hud: { kind: 'boss', title: m.bossName } };
+  return [...slots.flatMap((nodes) => [...nodes, reward]), boss];
+}
+
+const LEVELS: LevelDefinition[] = CQ_MAPS.map((m, i) => ({
+  name: m.name,
+  nodes: buildMap(i, () => 1), // the static list: no mini-bosses (the run rolls its own, see `build`)
+  build: (rng, li) => buildMap(li, rng),
+  reward: { choices: 3 },
+}));
 
 export const EMPIRE_BASE_RUN: RunDefinition = { name: 'Conquest: Empire Base', levels: LEVELS };
 
@@ -169,8 +253,8 @@ export const EMPIRE_BASE_CHALLENGES: ChallengeDef[] = [
   {
     id: 'eb-aces',
     name: 'Ace hunter',
-    desc: 'Defeat all three mini-bosses (VIPER, CINDER, RAVEN) in one run.',
-    metric: { kind: 'miniBosses', n: 3 },
+    desc: 'Defeat 2 different mini-bosses (VIPER, CINDER, RAVEN) in one run. They turn up at random.',
+    metric: { kind: 'miniBosses', n: 2 },
     rewards: [{ kind: 'cards', id: 'cq-ace-plating' }],
   },
   {
@@ -194,14 +278,14 @@ export const EMPIRE_BASE_CHALLENGES: ChallengeDef[] = [
 export const EMPIRE_BASE: RegionDefinition = {
   id: EMPIRE_BASE_ID,
   name: 'EMPIRE BASE',
-  blurb: 'The fortress the squadron escaped from: fences, guns and shield barriers, then the garrison and the flagship. One life.',
+  blurb: 'The fortress the squadron escaped from, in three maps: the base, the surface defences, the frozen wilds. A boss ends each map, the flagship ends the run. One life.',
   campaign: 'fallen-peace',
   unlockHint: 'Finish the Fallen Peace campaign.',
-  theme: { scroll: ['surfaceBase', 'surface', 'baseInterior'], accent: '#ff8a5a' },
+  theme: { scroll: ['baseInterior', 'surfaceBase', 'surface', 'surfaceWild', 'tundraNight'], accent: '#ff8a5a' },
   roster: {
     units: ['empire-fighter', 'empire-gunship', 'empire-strafer', 'empire-flak'],
     flybys: ['strafe', 'cross', 'rear', 'drift'],
-    bosses: ['Mini-bosses VIPER, CINDER, RAVEN', 'Bulwark', 'Capital ship'],
+    bosses: ['Mini-bosses VIPER, CINDER, RAVEN', 'Bulwark', 'Mantis', 'Capital ship'],
     hazards: ['defence lines', 'ground turrets', 'shield barriers'],
   },
   run: EMPIRE_BASE_RUN,

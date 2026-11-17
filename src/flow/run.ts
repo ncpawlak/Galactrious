@@ -1,12 +1,13 @@
 import { CampaignFlow } from '../campaign/flow';
 import { regionById, REGIONS } from '../conquest/regions';
+import { drawConquestHud } from '../conquest/hud';
 import { drawConquestResult, RegionScreen, RegionSelectScreen } from '../conquest/screens';
 import { ConquestTracker, type ConquestResult } from '../conquest/tracker';
 import type { RegionDefinition } from '../conquest/types';
 import { cleanLoadout, defaultLoadoutFor, initialSelection } from '../loadouts';
 import { saveStore } from '../save';
 import { DEFAULT_SHIP_ID, SHIP_BY_ID, shipById, SHIPS, type WeaponLoadout } from '../ships';
-import type { FlowNode, NodeContext, NodeDefinition, NodeHost, NodePosition, RunDefinition, RunState } from './node';
+import type { FlowNode, NodeContext, NodeDefinition, NodeHost, NodeHud, NodePosition, RunDefinition, RunState } from './node';
 import { createNode } from './nodes';
 import { CAMPAIGN_BTN, CONQUEST_BTN, ENDLESS_BTN, UNLOCKS_BTN, drawRunOver, drawRunWon, drawTitle } from './screens';
 import { LoadoutScreen, ShipSelectScreen } from './shipScreens';
@@ -44,6 +45,10 @@ export class Run {
   readonly campaign: CampaignFlow;
   private savedSelection: { shipId: string; loadout: WeaponLoadout } | null = null;
   private node: FlowNode | null = null;
+  /** The node lists of the running list's levels as built at the start of the run (a level with `build` rolls its own, seeded; see `LevelDefinition.build`). */
+  private built: NodeDefinition[][] = [];
+  /** Seconds the current node has been running (banners). */
+  private nodeTime = 0;
   private nodeDef: NodeDefinition | null = null;
   private unlocksScreen: UnlocksScreen | null = null;
   private shipScreen: ShipSelectScreen | null = null;
@@ -84,7 +89,19 @@ export class Run {
   private levelNodes(levelIndex = this.state.levelIndex): NodeDefinition[] {
     const level = this.activeDef.levels[levelIndex];
     const last = levelIndex === this.activeDef.levels.length - 1;
-    return level.reward && !last ? [...level.nodes, { type: 'reward', ...level.reward }] : level.nodes;
+    const nodes = this.built[levelIndex] ?? level.nodes;
+    return level.reward && !last ? [...nodes, { type: 'reward', ...level.reward }] : nodes;
+  }
+
+  /** Debug: every level's node list as built for this run, rewards included. */
+  allNodes(): NodeDefinition[][] {
+    return this.activeDef.levels.map((_, i) => this.levelNodes(i));
+  }
+
+  /** Roll the levels that build their nodes from the seed (separate random stream: card draws are not disturbed). */
+  private buildLevels(seed: number): void {
+    const rng = mulberry32((seed ^ 0x5bd1e995) >>> 0);
+    this.built = this.activeDef.levels.map((l, i) => (l.build ? l.build(rng, i) : l.nodes));
   }
 
   private freshState(seed: number): RunState {
@@ -108,6 +125,7 @@ export class Run {
     this.unlockedNames = [];
     this.result = null;
     this.state = this.freshState(seed);
+    this.buildLevels(seed);
     this.tracker = this.region ? new ConquestTracker(this.region, this.host, () => this.state) : null;
     this.host.healFull();
     this.enterNode();
@@ -165,7 +183,7 @@ export class Run {
     const same = defs.filter((d) => d.type === type);
     return {
       level: this.state.levelIndex + 1,
-      levels: this.def.levels.length,
+      levels: this.activeDef.levels.length,
       index: defs.slice(0, this.state.nodeIndex + 1).filter((d) => d.type === type).length,
       count: same.length,
     };
@@ -178,6 +196,7 @@ export class Run {
     this.node = node;
     this.nodeDef = def;
     this.setPhase('node');
+    this.nodeTime = 0;
     const ctx: NodeContext = { host: this.host, run: this.state, position: this.position(defs) };
     node.start(ctx);
     this.tracker?.onNodeStart(def);
@@ -219,6 +238,7 @@ export class Run {
   update(dt: number): void {
     this.phaseTime += dt;
     if (this.phase === 'node') {
+      this.nodeTime += dt;
       this.state.time += dt;
       const node = this.node!;
       node.update(dt);
@@ -386,8 +406,27 @@ export class Run {
         g.textAlign = 'left';
         g.textBaseline = 'alphabetic';
         g.fillStyle = '#6ee7ff';
-        g.fillText(`${this.region ? `${this.region.name} ` : ''}LEVEL ${p.level}/${p.levels} · ${type.toUpperCase()}${p.count > 1 ? ` ${p.index}/${p.count}` : ''}`, 12, 950);
+        if (!this.region) g.fillText(`LEVEL ${p.level}/${p.levels} · ${type.toUpperCase()}${p.count > 1 ? ` ${p.index}/${p.count}` : ''}`, 12, 950);
         g.restore();
+        if (this.region) {
+          const level = this.activeDef.levels[this.state.levelIndex];
+          const hud = (d: NodeDefinition | undefined): NodeHud | undefined => (d && 'hud' in d ? d.hud : undefined);
+          const here = defs[this.state.nodeIndex];
+          // A reward screen shows what comes next; the hud of the next real node.
+          const next = defs.slice(this.state.nodeIndex + 1).find((d) => d.type !== 'reward');
+          const upcoming = hud(next) ?? (this.state.levelIndex < this.activeDef.levels.length - 1 ? { kind: 'wave' as const, n: 1, of: 3, title: 'next map' } : undefined);
+          drawConquestHud(g, {
+            map: p.level,
+            maps: p.levels,
+            mapName: level.name ?? '',
+            hud: hud(here),
+            reward: here.type === 'reward',
+            next: here.type === 'reward' ? upcoming : hud(next),
+            nodeTime: this.nodeTime,
+            firstOfMap: this.state.nodeIndex === 0,
+            boss: here.type === 'boss' ? here.bossId : undefined,
+          });
+        }
         this.tracker?.draw(g);
         break;
       }

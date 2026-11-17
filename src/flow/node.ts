@@ -21,10 +21,22 @@ export type NodeOutcome = 'done' | 'lost';
 
 // --- definitions (pure data, what a RunDefinition holds) ------------------------------------------------
 
+/**
+ * What the Conquest HUD says about a node: which wave of the map it is (`wave`, n of `of`), a random mini-boss fight (`mini`) or the map boss
+ * (`boss`). `title` is the name shown in the banner. Nodes without one (reward screens) take the HUD of the node after them.
+ */
+export interface NodeHud {
+  kind: 'wave' | 'mini' | 'boss';
+  n?: number;
+  of?: number;
+  title?: string;
+}
+
 /** A boss fight against the BossDefinition with this id (src/bosses/index.ts). */
 export interface BossNodeDefinition {
   type: 'boss';
   bossId: string;
+  hud?: NodeHud;
   /** Run the fight over a scrolling level (id in `SCROLL_LEVELS` or an inline definition): background, obstacles, allies, timeline. */
   scroll?: string | ScrollLevelDef;
 }
@@ -33,6 +45,7 @@ export interface BossNodeDefinition {
 export interface WaveNodeDefinition {
   type: 'wave';
   wave: WaveDefinition;
+  hud?: NodeHud;
   /** Run the wave over a scrolling level (id in `SCROLL_LEVELS` or an inline definition). */
   scroll?: string | ScrollLevelDef;
 }
@@ -43,6 +56,14 @@ export interface ScrollNodeDefinition {
   level: string | ScrollLevelDef;
   /** The node also waits for every enemy unit (formation waves in the timeline) to be dead before it ends (Conquest). */
   waitForUnits?: boolean;
+  /**
+   * Formation waves chained over the section (Conquest): they are spawned by the node, not by the timeline, so a quick player is never left
+   * with an empty scroll. Wave 1 comes `first` s in; each next wave comes `gap` s after the field is cleared (but at least `minSpacing` s after
+   * the last spawn) or `every` s after the last spawn, whichever is first. When the last wave is dead and the section is `minEnd` (0..1) of
+   * its length in, the scroll eases down and a short SECTOR CLEAR beat ends the node.
+   */
+  chain?: { waves: WaveDefinition[]; first: number; gap: number; minSpacing: number; every: number; minEnd: number };
+  hud?: NodeHud;
 }
 
 /** A pick-one-of-N upgrade card screen (see nodes/reward.ts, src/upgrades/). */
@@ -73,8 +94,12 @@ export type NodeDefinition =
   | InterludeNodeDefinition;
 
 export interface LevelDefinition {
+  /** Conquest: the map's name (a level is a MAP there). */
+  name?: string;
   /** Played in order. */
   nodes: NodeDefinition[];
+  /** Conquest: builds the node list when the run starts, from the run's seeded random source (random mini-bosses). Replaces `nodes` (kept as the static preview). */
+  build?: (rng: () => number, levelIndex: number) => NodeDefinition[];
   /** The reward offered after the level. Omitted = none. The last level's reward is never shown (the run is won). */
   reward?: Omit<RewardNodeDefinition, 'type'>;
 }
@@ -187,6 +212,8 @@ export interface NodeHost {
   spawnUnit(req: SpawnRequest): void;
   /** Queue a whole wave by id (`WAVE_LIST`), tagging its units. */
   spawnWaveById(id: string, tag?: string): void;
+  /** Queue a wave definition onto the running combat (a scroll section's chained waves). */
+  spawnWave(wave: WaveDefinition, tag?: string): void;
   /** Units (alive, dying or queued) matching a tag and/or unit def id. */
   unitsLeft(match: { tag?: string; unit?: string }): number;
   /** Live cumulative counters (never reset; take deltas). */

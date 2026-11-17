@@ -393,6 +393,7 @@ export class Game {
         if (!def) throw new Error(`campaign spawn: unknown wave "${id}"`);
         spawnWave(this.units, def, unitById, tag);
       },
+      spawnWave: (wave, tag) => void spawnWave(this.units, wave, unitById, tag),
       unitsLeft: (m) => this.units.countMatching(m),
       counters: () => this.combatCounters,
       forceDestroyPlayer: () => this.forceDestroyPlayer(),
@@ -772,7 +773,7 @@ export class Game {
         start: (id = 'empire-base', level = 0, node = 0, seed?: number) => this.run.debugStartConquest(id, level, node, seed),
         jump: (level: number, node: number) => this.run.debugJump(level, node),
         nodes: () =>
-          this.run.activeDef.levels.flatMap((l, li) => [...l.nodes, ...(l.reward && li < this.run.activeDef.levels.length - 1 ? [{ type: 'reward' as const }] : [])].map((n, ni) => `${li}.${ni}: ${n.type}${'bossId' in n ? ' ' + n.bossId : ''}${'wave' in n ? ' ' + n.wave.id : ''}${'level' in n && typeof n.level !== 'string' ? ' ' + n.level.id : ''}`)),
+          this.run.allNodes().flatMap((l, li) => l.map((n, ni) => `${li}.${ni}: ${n.type}${'bossId' in n ? ' ' + n.bossId : ''}${'wave' in n ? ' ' + n.wave.id : ''}${'level' in n && typeof n.level !== 'string' ? ' ' + n.level.id : ''}${'hud' in n && n.hud ? ' [' + n.hud.kind + (n.hud.n ? ' ' + n.hud.n : '') + ']' : ''}`)),
         grantChallenge: (id: string) => {
           for (const r of REGIONS) {
             const c = r.challenges.find((x) => x.id === id);
