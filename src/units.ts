@@ -40,6 +40,11 @@ export interface UnitDefinition {
   attacks: AttackStep[];
   /** Seconds after arriving in the slot before the first shot (default 1; each unit adds a little random jitter). */
   attackDelay?: number;
+  /**
+   * Ground structure (src/terrain: walls, bunker pads): terrain, not an enemy. It does not count as a wave remnant (`remaining`) or a live
+   * target for the autopilot (`live`), and like a flyby it only fires while its centre is on screen. The terrain system moves and removes it.
+   */
+  ground?: boolean;
 }
 
 /** How a unit is placed when it spawns. */
@@ -259,7 +264,7 @@ export class UnitSystem {
 
   /** Alive units (the ones bullets can hit). */
   live(): Unit[] {
-    return this.units.filter((u) => u.state === 'alive');
+    return this.units.filter((u) => u.state === 'alive' && !u.def.ground);
   }
 
   /** Enemy fire rate multiplier (1 = as authored). A scroll level sets it (`ScrollLevelDef.fireScale`). */
@@ -279,7 +284,7 @@ export class UnitSystem {
 
   /** Units alive, dying or still waiting to spawn: the wave ends at 0. */
   remaining(): number {
-    return this.units.length + this.pending.length;
+    return this.units.filter((u) => !u.def.ground).length + this.pending.length;
   }
 
   /**
@@ -322,8 +327,8 @@ export class UnitSystem {
       if (!firing || u.leaving !== null) continue;
       // A chaser holds fire while it has lost sight of the player.
       if (u.chase && !u.chase.canFire()) continue;
-      // A flyby or chaser only shoots while it is on screen.
-      if (u.lifetime !== null || u.chase) {
+      // A flyby, chaser or ground structure only shoots while it is on screen.
+      if (u.lifetime !== null || u.chase || u.def.ground) {
         const c = u.center();
         if (c.x < -10 || c.x > 550 || c.y < -10 || c.y > 970) continue;
       }

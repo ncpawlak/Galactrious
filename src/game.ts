@@ -34,6 +34,7 @@ import { divePath, spawnWave, type WaveDefinition } from './waves';
 import type { RoomHost } from './rooms';
 import { UNIT_LIST, WAVE_LIST, unitById } from './enemies';
 import { flybyPlacement, type FlybyRequest } from './enemies/flyby';
+import type { ShadowCaster } from './terrain/types';
 import { SCROLL_LEVELS, ScrollRunnerImpl, scrollLevelById, type ScrollHost, type ScrollLevelDef } from './scroll';
 
 export interface ShipStats {
@@ -163,6 +164,17 @@ export class Game {
       const u = this.units.spawn(unitById(id), placement);
       return { alive: () => u.state === 'alive' && !u.gone };
     },
+    // Ground structures (src/terrain) are units; they go to the FRONT of the list so flying units draw over them.
+    spawnTerrain: (def, placement) => {
+      const u = this.units.spawn(def, placement);
+      this.units.units.unshift(this.units.units.pop()!);
+      return u;
+    },
+    noteGroundKill: (tag) => {
+      this.combatCounters.kills++;
+      this.combatCounters.killsByTag[tag] = (this.combatCounters.killsByTag[tag] ?? 0) + 1;
+    },
+    shadowCasters: () => this.shadowCasters(),
   };
   /** Campaign: weapons off (chapter 3). Cleared by every `reset`, so a checkpoint restart re-applies it from the objective. */
   private weaponsLocked = false;
@@ -727,6 +739,18 @@ export class Game {
       /** Lock / unlock the player's weapons (no firing from any weapon; the dodge still works). */
       setWeaponsLocked: (on: boolean) => this.setWeaponsLocked(on),
       weaponsLocked: () => this.weaponsLocked,
+      /** Ground defences (src/terrain): tally(tag), spawn(entry) now at the top, structures(), killTurrets() (destroys every live turret). */
+      terrain: {
+        tally: (tag?: string) => this.scroll?.terrain.tally(tag),
+        spawn: (entry: Omit<import('./terrain').TerrainEntry, 'at'>) => this.scroll?.terrain.fire({ at: 0, ...entry } as import('./terrain').TerrainEntry, 0),
+        structures: () => this.scroll?.terrain.structures ?? [],
+        killTurrets: () => {
+          for (const s of this.scroll?.terrain.structures ?? []) {
+            const cs = s.unit.fight.components;
+            for (const c of cs.items) if (c.state === 'active') cs.hit(cs.pos(c).x, cs.pos(c).y, 1e6);
+          }
+        },
+      },
       /** The capital ship: the armour flag (default off) and the engine-room objective event. */
       capital: {
         armourCarvable: (on?: boolean) => {
@@ -1253,7 +1277,24 @@ export class Game {
         this.explode(this.ship.x, this.ship.y, 8);
         this.afterPlayerHit(o.damage, true);
       }
+      // Walls (src/terrain): same contact rules as an obstacle.
+      const wd = this.state === 'playing' ? this.scroll.terrain.touch(this.ship.x, this.ship.y, this.hitbox) : 0;
+      if (wd > 0 && !this.godMode && this.health.hit(wd, this.dodge.invulnerable)) {
+        this.explode(this.ship.x, this.ship.y, 8);
+        this.afterPlayerHit(wd, true);
+      }
     }
+  }
+
+  /** The ship and the flying units, as casters of shadows for the ground background (src/terrain/shadows.ts). */
+  private shadowCasters(): ShadowCaster[] {
+    const out: ShadowCaster[] = [{ x: this.ship.x, y: this.ship.y, size: 20, kind: 'ship' }];
+    for (const u of this.units.units) {
+      if (u.def.ground || u.state !== 'alive' || u.lifetime === null) continue;
+      const c = u.center();
+      out.push({ x: c.x, y: c.y, size: Math.max(14, u.boss.width / 2), kind: 'flyer' });
+    }
+    return out;
   }
 
   /** The ship was hit and the damage landed: destroyed when the hull is gone. */
