@@ -259,6 +259,8 @@ export interface NodeHost {
   takeKey(): string | null;
   /** Where the pointer currently is (hover highlight), or null if it has not been seen. */
   pointer(): { x: number; y: number } | null;
+  /** Where the pointer is while it is held down (a drag or swipe), or null when it is up. */
+  pointerHeld(): { x: number; y: number } | null;
 }
 
 export interface FlowNode {

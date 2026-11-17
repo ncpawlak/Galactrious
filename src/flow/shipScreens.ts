@@ -1,12 +1,21 @@
 import { H, W } from '../config';
-import { auxById, AUX_DEFS, MAIN_DEFS, mainById, type WeaponDef } from '../weapons';
-import { auxSlotsOf, cleanLoadout, defaultLoadoutFor, weaponAvailable } from '../loadouts';
-import { drawShipLook, SHIPS, shipById, shipUnlocked, type WeaponLoadout } from '../ships';
+import { auxById, AUX_DEFS, MAIN_DEFS, type MainDef, type WeaponDef } from '../weapons';
+import { cleanLoadout, defaultLoadoutFor, isNewShip, isNewWeapon, weaponAvailable } from '../loadouts';
+import { saveStore } from '../save';
+import { drawShipLook, SHIPS, shipUnlocked, type ShipDefinition, type WeaponLoadout } from '../ships';
 import { drawCentered } from './screens';
 import type { NodeHost } from './node';
 
+/**
+ * The ship builder: ONE screen for Endless and Conquest (DESIGN.md "Ship builder screen (Endless and Conquest)").
+ * Header with the body and arrows, the hero model, a stats strip, one MAIN and three AUX slots, BACK / DEFAULT / START, and a
+ * bottom sheet that lists every weapon for the tapped slot (locked ones as silhouettes with their requirement).
+ */
+
 const MONO = 'ui-monospace, Consolas, monospace';
 const LOCKOUT = 0.25; // the press that opened a screen cannot act on it
+const SWIPE = 50; // px of horizontal travel that counts as a swipe on the model
+const DRAG = 10; // px of vertical travel that turns a press in the weapon sheet into a scroll
 
 interface Btn {
   x: number;
@@ -54,180 +63,163 @@ function wrap2(s: string, n: number): [string, string] {
   return [s.slice(0, at), s.slice(at).trim()];
 }
 
-/** A weapon's icon: a ring in its colour with its initial. */
-function weaponIcon(g: CanvasRenderingContext2D, def: WeaponDef | undefined, x: number, y: number, r: number, dim = false): void {
+/** A padlock centred at (x, y), `s` px tall. */
+function lockIcon(g: CanvasRenderingContext2D, x: number, y: number, s: number, color = '#ff8a5a'): void {
   g.save();
-  g.globalAlpha = dim ? 0.4 : 1;
-  g.fillStyle = 'rgba(5, 6, 13, 0.8)';
+  g.translate(x, y);
+  g.fillStyle = color;
+  g.strokeStyle = color;
+  g.lineWidth = Math.max(2, s * 0.12);
+  const bw = s * 0.7;
+  const bh = s * 0.5;
+  g.fillRect(-bw / 2, -bh / 2 + s * 0.12, bw, bh);
+  g.beginPath();
+  g.arc(0, -bh / 2 + s * 0.12, bw * 0.3, Math.PI, 0);
+  g.stroke();
+  g.fillStyle = '#05060d';
+  g.fillRect(-s * 0.05, s * 0.05, s * 0.1, s * 0.18);
+  g.restore();
+}
+
+/** The NEW marker: a green dot. */
+function newDot(g: CanvasRenderingContext2D, x: number, y: number, r = 7): void {
+  g.save();
+  g.fillStyle = '#4ade80';
+  g.strokeStyle = '#05060d';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.arc(x, y, r, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
+  g.restore();
+}
+
+/** A weapon's icon: a ring in its colour with its initial; `silhouette` = a locked weapon (black disc, grey ring, a padlock). */
+function weaponIcon(g: CanvasRenderingContext2D, def: WeaponDef | undefined, x: number, y: number, r: number, silhouette = false): void {
+  g.save();
+  g.fillStyle = silhouette ? '#000' : 'rgba(5, 6, 13, 0.8)';
   g.beginPath();
   g.arc(x, y, r, 0, Math.PI * 2);
   g.fill();
   g.lineWidth = 3;
-  g.strokeStyle = def?.color ?? '#3a4560';
+  g.strokeStyle = silhouette ? '#3a4560' : (def?.color ?? '#3a4560');
   g.stroke();
-  g.fillStyle = '#e8ecf8';
-  g.font = `bold ${Math.round(r * 0.9)}px ${MONO}`;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText(def ? def.name[0] : '-', x, y + 1);
+  if (silhouette) lockIcon(g, x, y, r * 1.1);
+  else {
+    g.fillStyle = '#e8ecf8';
+    g.font = `bold ${Math.round(r * 0.9)}px ${MONO}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(def ? def.name[0] : '-', x, y + 1);
+  }
   g.restore();
 }
 
-const weaponName = (id: string): string => (mainById(id).id === id ? mainById(id).name : (auxById(id)?.name ?? id));
+const weaponDef = (id: string): WeaponDef | undefined => (id === '' ? undefined : (MAIN_DEFS.find((d) => d.id === id) ?? auxById(id)));
 
 // ------------------------------------------------------------------------------------------------------------
-// Ship select
+// Layout
 
-const SHIP_ROW = { x: 30, y0: 140, w: W - 60, h: 190, gap: 12, visible: 3 };
-const SHIP_BACK: Btn = { x: 30, y: 856, w: 220, h: 56 };
-const SHIP_NEXT: Btn = { x: W - 250, y: 856, w: 220, h: 56 };
+const ARROW_L: Btn = { x: 14, y: 22, w: 84, h: 84 };
+const ARROW_R: Btn = { x: W - 98, y: 22, w: 84, h: 84 };
+const MODEL_AREA: Btn = { x: 0, y: 112, w: W, h: 330 };
+const MODEL = { x: W / 2, y: 268, scale: 5.4 };
+const STATS_Y = 468;
+const MAIN_BOX: Btn = { x: 30, y: 542, w: W - 60, h: 92 };
+const AUX_W = 150;
+const auxBox = (i: number): Btn => ({ x: 30 + i * (AUX_W + 15), y: 650, w: AUX_W, h: 118 });
+const BACK: Btn = { x: 30, y: 856, w: 150, h: 56 };
+const RESET: Btn = { x: 195, y: 856, w: 150, h: 56 };
+const START: Btn = { x: 360, y: 856, w: 150, h: 56 };
+const SHEET_H = 640;
+const SHEET_TOP = H - SHEET_H;
+const SHEET_LIST_Y = 60; // list starts this far below the sheet top
+const ROW_H = 72;
 
-export type ScreenResult = 'back' | 'next' | null;
+const slotBox = (i: number): Btn => (i === 0 ? MAIN_BOX : auxBox(i - 1));
+const SLOT_NAMES = ['MAIN', 'AUX 1', 'AUX 2', 'AUX 3'];
 
-/** Endless step 1: pick a ship (look, stats, weapons; locked ships show how to unlock them). */
-export class ShipSelectScreen {
-  index: number;
-  private t = 0;
+export type BuilderResult = 'back' | 'start' | null;
 
-  constructor(
-    shipId: string,
-    private readonly subtitle = 'Endless',
-  ) {
-    this.index = Math.max(0, SHIPS.findIndex((s) => s.id === shipId));
-  }
-
-  get ship() {
-    return SHIPS[this.index];
-  }
-
-  private get first(): number {
-    return Math.max(0, Math.min(SHIPS.length - SHIP_ROW.visible, this.index - (SHIP_ROW.visible - 1)));
-  }
-
-  private rowY(slot: number): number {
-    return SHIP_ROW.y0 + slot * (SHIP_ROW.h + SHIP_ROW.gap);
-  }
-
-  update(dt: number, host: NodeHost): ScreenResult {
-    this.t += dt;
-    const tap = host.takeTap();
-    const key = host.takeKey();
-    if (this.t < LOCKOUT) return null;
-    if (key === 'ArrowUp' && this.index > 0) this.index--;
-    if (key === 'ArrowDown' && this.index < SHIPS.length - 1) this.index++;
-    if (key === 'Escape') return 'back';
-    if ((key === 'Enter' || key === 'Space') && shipUnlocked(this.ship)) return 'next';
-    if (!tap) return null;
-    if (hit(SHIP_BACK, tap)) return 'back';
-    if (hit(SHIP_NEXT, tap) && shipUnlocked(this.ship)) return 'next';
-    for (let k = 0; k < SHIP_ROW.visible && this.first + k < SHIPS.length; k++) {
-      const y = this.rowY(k);
-      if (hit({ x: SHIP_ROW.x, y, w: SHIP_ROW.w, h: SHIP_ROW.h }, tap)) this.index = this.first + k;
-    }
-    return null;
-  }
-
-  draw(g: CanvasRenderingContext2D): void {
-    g.save();
-    g.fillStyle = 'rgba(5, 6, 13, 0.88)';
-    g.fillRect(0, 0, W, H);
-    g.restore();
-    drawCentered(g, 'SELECT SHIP', 70, `bold 36px ${MONO}`, '#ffd21f');
-    drawCentered(g, this.subtitle, 104, `15px ${MONO}`, '#6ee7ff');
-    for (let k = 0; k < SHIP_ROW.visible && this.first + k < SHIPS.length; k++) {
-      const i = this.first + k;
-      const s = SHIPS[i];
-      const open = shipUnlocked(s);
-      const x = SHIP_ROW.x;
-      const y = this.rowY(k);
-      const sel = i === this.index;
-      g.save();
-      g.fillStyle = open ? '#0b1424' : '#080d18';
-      g.fillRect(x, y, SHIP_ROW.w, SHIP_ROW.h);
-      g.lineWidth = sel ? 4 : 2;
-      g.strokeStyle = sel ? '#6ee7ff' : '#26324d';
-      g.strokeRect(x + 1, y + 1, SHIP_ROW.w - 2, SHIP_ROW.h - 2);
-      g.globalAlpha = open ? 1 : 0.3;
-      drawShipLook(g, s.look, x + 76, y + SHIP_ROW.h / 2 + 4, 2.6);
-      g.restore();
-      const tx = x + 150;
-      text(g, open ? s.name : `${s.name}  (locked)`, tx, y + 36, `bold 22px ${MONO}`, open ? '#ffffff' : '#8a93a8');
-      const [d1, d2] = wrap2(s.desc, 38);
-      text(g, d1, tx, y + 58, `12px ${MONO}`, '#b6c2e0');
-      if (d2) text(g, clip(d2, 38), tx, y + 74, `12px ${MONO}`, '#b6c2e0');
-      const b = s.baseStats;
-      text(g, `HULL ${b.maxHealth}  SPEED ${b.speed}`, tx, y + 104, `bold 13px ${MONO}`, '#6ee7ff');
-      text(g, `DODGE ${b.dodgeCooldown}s  HITBOX ${b.hitbox}px`, tx, y + 122, `bold 13px ${MONO}`, '#6ee7ff');
-      text(g, `MAIN ${weaponName(s.startingWeapons.main)}`, tx, y + 148, `12px ${MONO}`, '#ffd21f');
-      text(g, clip(`AUX  ${s.startingWeapons.aux.map(weaponName).join(', ')}`, 37), tx, y + 166, `12px ${MONO}`, '#7dff9a');
-      if (!open) text(g, clip(`LOCKED: ${s.unlockHint ?? 'unknown'}`, 44), tx, y + 184, `bold 12px ${MONO}`, '#ff8a5a');
-    }
-    if (SHIPS.length > SHIP_ROW.visible) drawCentered(g, `ship ${this.index + 1}/${SHIPS.length}  (up/down)`, 800, `12px ${MONO}`, '#8fa0c8');
-    drawCentered(g, 'tap a ship, then CONTINUE   (keys: up/down, enter, esc)', 836, `12px ${MONO}`, '#8fa0c8');
-    button(g, SHIP_BACK, 'BACK', '#ffffff');
-    button(g, SHIP_NEXT, 'CONTINUE', '#4ade80', shipUnlocked(this.ship));
-  }
+/** A row of the weapon sheet. */
+interface SheetRow {
+  def: WeaponDef;
+  open: boolean;
+  isNew: boolean;
 }
 
-// ------------------------------------------------------------------------------------------------------------
-// Loadout builder
-
-const SLOT_Y = 126;
-const SLOT_H = 84;
-const SLOT_W = 112;
-const SLOT_GAP = 10;
-const POOL_Y0 = 262;
-const POOL_H = 62;
-const POOL_GAP = 6;
-const LB_BACK: Btn = { x: 30, y: 856, w: 150, h: 56 };
-const LB_RESET: Btn = { x: 195, y: 856, w: 150, h: 56 };
-const LB_START: Btn = { x: 360, y: 856, w: 150, h: 56 };
-
-const slotX = (i: number): number => 30 + i * (SLOT_W + SLOT_GAP);
-const SLOT_LABELS = ['MAIN', 'AUX 1', 'AUX 2', 'AUX 3'];
-
-/** Endless step 2: choose the main weapon and three aux weapons from the unlocked ones, starting from the ship's own. */
-export class LoadoutScreen {
-  /** Slot ids: index 0 = main, 1..3 = aux. */
-  private slots: string[];
-  private focus = 0;
+/** Endless and Conquest: choose the body and its weapons on one screen. */
+export class ShipBuilderScreen {
+  private index: number;
+  /** Per body: slot ids, index 0 = main, 1..3 = aux, '' = empty. Edits survive switching bodies while the screen is open. */
+  private readonly slots = new Map<string, string[]>();
+  /** Open weapon sheet: the slot it fills, slide-in progress, scroll, the rows (a snapshot, so NEW dots stay for this visit). */
+  private sheet: { slot: number; t: number; scroll: number; rows: SheetRow[]; cursor: number } | null = null;
+  private press: { x: number; y: number; scroll: number; moved: boolean; area: 'model' | 'sheet' } | null = null;
+  private pressLast = { x: 0, y: 0 };
+  /** Bodies that were NEW when first shown on this visit (they are marked seen at once, but keep their dot until you leave the screen). */
+  private readonly newThisVisit = new Set<string>();
   private t = 0;
   private flash = '';
   private flashT = 0;
 
   constructor(
-    private readonly shipId: string,
-    start: WeaponLoadout,
+    shipId: string,
+    private readonly subtitle = 'Endless',
+    /** Last-used loadout of the body the screen opens on (the run's selection). */
+    start?: WeaponLoadout,
   ) {
-    const l = cleanLoadout(start, shipId);
-    const d = defaultLoadoutFor(shipId);
-    this.slots = [l.main, ...Array.from({ length: auxSlotsOf(shipId) }, (_, i) => l.aux[i] ?? d.aux[i])].filter((id): id is string => !!id);
+    this.index = Math.max(0, SHIPS.findIndex((s) => s.id === shipId));
+    if (start) this.slots.set(SHIPS[this.index].id, this.fromLoadout(start));
+    this.view();
   }
 
+  get ship(): ShipDefinition {
+    return SHIPS[this.index];
+  }
+
+  /** The loadout in the slots now (empty aux slots dropped). */
   get loadout(): WeaponLoadout {
-    return { main: this.slots[0], aux: this.slots.slice(1) };
+    const s = this.current;
+    return { main: s[0], aux: s.slice(1).filter((id) => id !== '') };
   }
 
-  private pool(): WeaponDef[] {
-    return (this.focus === 0 ? MAIN_DEFS : AUX_DEFS).filter((d) => !d.stashed);
-  }
-
-  private poolY(i: number): number {
-    return POOL_Y0 + i * (POOL_H + POOL_GAP);
-  }
-
-  /** Put `id` in the focused slot (an aux already in another aux slot swaps places). Locked weapons are refused with a message. */
-  private assign(def: WeaponDef): void {
-    if (!weaponAvailable(def, this.shipId)) {
-      this.say(def.unlockHint ?? 'locked');
-      return;
+  private get current(): string[] {
+    let s = this.slots.get(this.ship.id);
+    if (!s) {
+      const last = saveStore.current.loadouts?.[this.ship.id];
+      s = this.fromLoadout(last ?? defaultLoadoutFor(this.ship.id));
+      this.slots.set(this.ship.id, s);
     }
-    const f = this.focus;
-    if (f > 0) {
-      const other = this.slots.findIndex((id, i) => i > 0 && i !== f && id === def.id);
-      if (other >= 0) this.slots[other] = this.slots[f];
+    return s;
+  }
+
+  /** Four slot ids from a loadout: unknown or unavailable weapons fall back to the body's preset for that slot (or empty). */
+  private fromLoadout(l: WeaponLoadout): string[] {
+    const id = SHIPS[this.index].id;
+    const clean = cleanLoadout(l, id);
+    const d = defaultLoadoutFor(id);
+    const ok = (w: string | undefined): w is string => !!w && !!weaponDef(w) && weaponAvailable(weaponDef(w)!);
+    const main = ok(clean.main) ? clean.main : d.main;
+    const aux: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const w = clean.aux[i];
+      aux.push(ok(w) && !aux.includes(w) ? w : '');
     }
-    this.slots[f] = def.id;
+    return [main, ...aux];
+  }
+
+  /** The body on screen is being viewed: clear its NEW flag (kept as a dot until this visit ends). */
+  private view(): void {
+    const s = this.ship;
+    if (isNewShip(s)) this.newThisVisit.add(s.id);
+    if (shipUnlocked(s)) saveStore.markSeen('ships', s.id);
+  }
+
+  private step(dir: number): void {
+    this.index = (this.index + dir + SHIPS.length) % SHIPS.length;
+    this.sheet = null;
+    this.view();
   }
 
   private say(s: string): void {
@@ -235,95 +227,291 @@ export class LoadoutScreen {
     this.flashT = 2.2;
   }
 
-  /** Up/down: step the focused slot to the previous/next available weapon. */
-  private cycle(dir: number): void {
-    const pool = this.pool();
-    let i = pool.findIndex((d) => d.id === this.slots[this.focus]);
-    for (let n = 0; n < pool.length; n++) {
-      i = (i + dir + pool.length) % pool.length;
-      if (weaponAvailable(pool[i], this.shipId)) {
-        this.assign(pool[i]);
-        return;
-      }
-    }
+  private openSheet(slot: number): void {
+    const defs = (slot === 0 ? MAIN_DEFS : AUX_DEFS).filter((d) => !d.stashed);
+    const rows: SheetRow[] = defs.map((def) => ({ def, open: weaponAvailable(def), isNew: isNewWeapon(def) }));
+    rows.sort((a, b) => Number(b.open) - Number(a.open) || a.def.name.localeCompare(b.def.name));
+    const cur = this.current[slot];
+    this.sheet = { slot, t: 0, scroll: 0, rows, cursor: Math.max(0, rows.findIndex((r) => r.def.id === cur)) };
+    for (const r of rows) if (r.open) saveStore.markSeen('weapons', r.def.id);
   }
 
-  update(dt: number, host: NodeHost): 'back' | 'start' | null {
+  /** Put the row's weapon in the sheet's slot (an aux already in another aux slot swaps places), close the sheet. */
+  private choose(row: SheetRow): void {
+    const sh = this.sheet!;
+    if (!row.open) {
+      this.say(row.def.requirement ?? row.def.unlockHint ?? 'locked');
+      return;
+    }
+    const s = this.current;
+    if (sh.slot > 0) {
+      const other = s.findIndex((id, i) => i > 0 && i !== sh.slot && id === row.def.id);
+      if (other >= 0) s[other] = s[sh.slot];
+    }
+    s[sh.slot] = row.def.id;
+    this.sheet = null;
+  }
+
+  private sheetMax(): number {
+    const sh = this.sheet!;
+    return Math.max(0, sh.rows.length * ROW_H - (SHEET_H - SHEET_LIST_Y - 12));
+  }
+
+  private rowAt(y: number): SheetRow | null {
+    const sh = this.sheet!;
+    const i = Math.floor((y - SHEET_TOP - SHEET_LIST_Y + sh.scroll) / ROW_H);
+    return y >= SHEET_TOP + SHEET_LIST_Y && i >= 0 && i < sh.rows.length ? sh.rows[i] : null;
+  }
+
+  update(dt: number, host: NodeHost): BuilderResult {
     this.t += dt;
     this.flashT -= dt;
+    if (this.sheet) this.sheet.t = Math.min(1, this.sheet.t + dt * 6);
     const tap = host.takeTap();
     const key = host.takeKey();
+    const held = host.pointerHeld();
     if (this.t < LOCKOUT) return null;
-    if (key === 'ArrowLeft') this.focus = (this.focus + this.slots.length - 1) % this.slots.length;
-    if (key === 'ArrowRight') this.focus = (this.focus + 1) % this.slots.length;
-    if (key === 'ArrowUp') this.cycle(-1);
-    if (key === 'ArrowDown') this.cycle(1);
-    if (key === 'Escape') return 'back';
-    if (key === 'Enter') return 'start';
+    // An open press (a swipe on the model or a scroll in the sheet) ends when the pointer is released.
+    if (this.press && !tap) {
+      if (held) this.drag(held);
+      else this.release();
+    }
+    if (key) {
+      const r = this.onKey(key);
+      if (r) return r;
+    }
     if (!tap) return null;
-    if (hit(LB_BACK, tap)) return 'back';
-    if (hit(LB_START, tap)) return 'start';
-    if (hit(LB_RESET, tap)) {
-      const d = defaultLoadoutFor(this.shipId);
-      this.slots = [d.main, ...d.aux];
+    if (this.sheet) {
+      if (tap.y < SHEET_TOP) this.sheet = null;
+      else {
+        this.press = { x: tap.x, y: tap.y, scroll: this.sheet.scroll, moved: false, area: 'sheet' };
+        this.pressLast = { x: tap.x, y: tap.y };
+        if (!held) this.release(); // a quick tap: pressed and let go inside one frame
+      }
       return null;
     }
-    for (let i = 0; i < this.slots.length; i++) if (hit({ x: slotX(i), y: SLOT_Y, w: SLOT_W, h: SLOT_H }, tap)) this.focus = i;
-    this.pool().forEach((def, i) => {
-      if (hit({ x: 30, y: this.poolY(i), w: W - 60, h: POOL_H }, tap)) this.assign(def);
-    });
+    if (hit(BACK, tap)) return 'back';
+    if (hit(START, tap) && shipUnlocked(this.ship)) return 'start';
+    if (hit(RESET, tap)) {
+      this.slots.set(this.ship.id, this.fromLoadout(defaultLoadoutFor(this.ship.id)));
+      return null;
+    }
+    if (hit(ARROW_L, tap)) this.step(-1);
+    else if (hit(ARROW_R, tap)) this.step(1);
+    else if (hit(MODEL_AREA, tap)) {
+      this.press = { x: tap.x, y: tap.y, scroll: 0, moved: false, area: 'model' };
+      this.pressLast = { x: tap.x, y: tap.y };
+      if (!held) this.press = null;
+    } else {
+      for (let i = 0; i < 4; i++) if (hit(slotBox(i), tap)) this.openSheet(i);
+    }
     return null;
   }
 
+  private drag(p: { x: number; y: number }): void {
+    const pr = this.press!;
+    this.pressLast = p;
+    if (pr.area === 'sheet' && Math.abs(p.y - pr.y) > DRAG) pr.moved = true;
+    if (pr.area === 'sheet' && pr.moved && this.sheet) this.sheet.scroll = Math.max(0, Math.min(this.sheetMax(), pr.scroll - (p.y - pr.y)));
+  }
+
+  private release(): void {
+    const pr = this.press;
+    this.press = null;
+    if (!pr) return;
+    if (pr.area === 'model') {
+      const dx = this.pressLast.x - pr.x;
+      if (Math.abs(dx) > SWIPE) this.step(dx < 0 ? 1 : -1); // swipe left = next body
+    } else if (!pr.moved && this.sheet) {
+      const row = this.rowAt(pr.y);
+      if (row) this.choose(row);
+    }
+  }
+
+  private onKey(key: string): BuilderResult {
+    const sh = this.sheet;
+    if (sh) {
+      if (key === 'Escape') this.sheet = null;
+      else if (key === 'ArrowUp') sh.cursor = Math.max(0, sh.cursor - 1);
+      else if (key === 'ArrowDown') sh.cursor = Math.min(sh.rows.length - 1, sh.cursor + 1);
+      else if (key === 'Enter' || key === 'Space') this.choose(sh.rows[sh.cursor]);
+      else this.slotKey(key);
+      if (this.sheet) {
+        const top = sh.cursor * ROW_H;
+        const view = SHEET_H - SHEET_LIST_Y - 12;
+        sh.scroll = Math.max(0, Math.min(this.sheetMax(), Math.max(top + ROW_H - view, Math.min(sh.scroll, top))));
+      }
+      return null;
+    }
+    if (key === 'ArrowLeft') this.step(-1);
+    else if (key === 'ArrowRight') this.step(1);
+    else if (key === 'Escape') return 'back';
+    else if ((key === 'Enter' || key === 'Space') && shipUnlocked(this.ship)) return 'start';
+    else this.slotKey(key);
+    return null;
+  }
+
+  private slotKey(key: string): void {
+    const m = /^(?:Digit|Numpad)([1-4])$/.exec(key);
+    if (m) this.openSheet(+m[1] - 1);
+  }
+
+  // ----------------------------------------------------------------------------------------------------------
+  // Drawing
+
   draw(g: CanvasRenderingContext2D): void {
     g.save();
-    g.fillStyle = 'rgba(5, 6, 13, 0.9)';
+    g.fillStyle = 'rgba(5, 6, 13, 0.92)';
     g.fillRect(0, 0, W, H);
     g.restore();
-    const ship = shipById(this.shipId);
-    drawCentered(g, 'LOADOUT', 62, `bold 36px ${MONO}`, '#ffd21f');
-    drawCentered(g, `${ship.name}: 1 main + ${this.slots.length - 1} aux`, 94, `15px ${MONO}`, '#6ee7ff');
-    drawShipLook(g, ship.look, W - 60, 66, 1.3);
-    // Slots.
-    for (let i = 0; i < this.slots.length; i++) {
-      const id = this.slots[i];
-      const def = i === 0 ? mainById(id) : auxById(id);
-      const x = slotX(i);
+    const ship = this.ship;
+    const open = shipUnlocked(ship);
+    const slots = this.current;
+
+    // Header: arrows and the body's name.
+    const otherNew = SHIPS.some((s, i) => i !== this.index && isNewShip(s));
+    this.arrow(g, ARROW_L, '<', otherNew);
+    this.arrow(g, ARROW_R, '>', otherNew);
+    text(g, ship.name.toUpperCase(), W / 2, 66, `bold 34px ${MONO}`, open ? '#ffffff' : '#8a93a8', 'center');
+    if (this.newThisVisit.has(ship.id)) newDot(g, W / 2 + (ship.name.length * 20.5) / 2 + 14, 48);
+    drawCentered(g, `${this.subtitle}   ·   body ${this.index + 1}/${SHIPS.length}`, 94, `13px ${MONO}`, '#6ee7ff');
+
+    // Hero model on a soft panel (room under it for skins later).
+    g.save();
+    const grad = g.createRadialGradient(MODEL.x, MODEL.y, 20, MODEL.x, MODEL.y, 230);
+    grad.addColorStop(0, '#16223f');
+    grad.addColorStop(1, 'rgba(11, 20, 36, 0)');
+    g.fillStyle = grad;
+    g.fillRect(0, MODEL_AREA.y, W, MODEL_AREA.h);
+    if (open) drawShipLook(g, ship.look, MODEL.x, MODEL.y, MODEL.scale);
+    else {
+      g.shadowColor = '#5a6fa8';
+      g.shadowBlur = 14;
+      drawShipLook(g, ship.look, MODEL.x, MODEL.y, MODEL.scale, true);
+    }
+    g.restore();
+    if (open) {
+      const [d1, d2] = wrap2(ship.desc, 56);
+      drawCentered(g, d1, d2 ? 412 : 424, `12px ${MONO}`, '#8fa0c8');
+      if (d2) drawCentered(g, clip(d2, 60), 430, `12px ${MONO}`, '#8fa0c8');
+    } else {
+      lockIcon(g, MODEL.x, MODEL.y, 74);
+      drawCentered(g, 'LOCKED', 410, `bold 16px ${MONO}`, '#ff8a5a');
+      const [r1, r2] = wrap2(ship.requirement ?? ship.unlockHint ?? 'unknown', 40);
+      drawCentered(g, r1, 430, `bold 14px ${MONO}`, '#ffd2b8');
+      if (r2) drawCentered(g, r2, 448, `bold 14px ${MONO}`, '#ffd2b8');
+    }
+
+    // Stats strip.
+    const b = ship.baseStats;
+    const main = weaponDef(slots[0]) as MainDef | undefined;
+    const fire = main ? `x${(main.rateMul).toFixed(1)}` : '-';
+    const stats: [string, string][] = [['HULL', String(b.maxHealth)], ['SPEED', String(b.speed)], ['FIRE', fire]];
+    stats.forEach(([k, v], i) => {
+      const x = 30 + i * 163;
       g.save();
       g.fillStyle = '#0b1424';
-      g.fillRect(x, SLOT_Y, SLOT_W, SLOT_H);
-      g.lineWidth = i === this.focus ? 4 : 2;
-      g.strokeStyle = i === this.focus ? '#6ee7ff' : '#26324d';
-      g.strokeRect(x + 1, SLOT_Y + 1, SLOT_W - 2, SLOT_H - 2);
+      g.fillRect(x, STATS_Y, 154, 50);
+      g.strokeStyle = '#26324d';
+      g.lineWidth = 2;
+      g.strokeRect(x + 1, STATS_Y + 1, 152, 48);
       g.restore();
-      text(g, SLOT_LABELS[i], x + SLOT_W / 2, SLOT_Y + 16, `bold 11px ${MONO}`, i === 0 ? '#ffd21f' : '#7dff9a', 'center');
-      weaponIcon(g, def, x + SLOT_W / 2, SLOT_Y + 44, 16);
-      text(g, clip(def?.name ?? '-', 12), x + SLOT_W / 2, SLOT_Y + 76, `bold 12px ${MONO}`, '#ffffff', 'center');
-    }
-    // Pool for the focused slot.
-    drawCentered(g, this.focus === 0 ? 'MAIN WEAPON' : `AUX ${this.focus} WEAPON`, 236, `bold 14px ${MONO}`, '#8fa0c8');
-    this.pool().forEach((def, i) => {
-      const y = this.poolY(i);
-      const open = weaponAvailable(def, this.shipId);
-      const here = this.slots[this.focus] === def.id;
-      const elsewhere = this.focus > 0 ? this.slots.findIndex((id, k) => k > 0 && k !== this.focus && id === def.id) : -1;
-      g.save();
-      g.fillStyle = open ? '#0b1424' : '#080d18';
-      g.fillRect(30, y, W - 60, POOL_H);
-      g.lineWidth = here ? 3 : 1;
-      g.strokeStyle = here ? '#4ade80' : '#26324d';
-      g.strokeRect(30.5, y + 0.5, W - 61, POOL_H - 1);
-      g.restore();
-      weaponIcon(g, def, 62, y + POOL_H / 2, 16, !open);
-      text(g, open ? def.name : '???', 92, y + 26, `bold 17px ${MONO}`, open ? '#ffffff' : '#6b7488');
-      text(g, clip(open ? def.desc : (def.unlockHint ?? 'locked'), 52), 92, y + 46, `12px ${MONO}`, open ? '#b6c2e0' : '#8fa0c8');
-      const tag = !open ? 'LOCKED' : here ? 'EQUIPPED' : elsewhere >= 0 ? `IN AUX ${elsewhere}` : '';
-      if (tag) text(g, tag, W - 42, y + 26, `bold 12px ${MONO}`, !open ? '#ff8a5a' : here ? '#4ade80' : '#8fa0c8', 'right');
+      text(g, k, x + 77, STATS_Y + 18, `bold 11px ${MONO}`, '#8fa0c8', 'center');
+      text(g, v, x + 77, STATS_Y + 42, `bold 20px ${MONO}`, '#6ee7ff', 'center');
     });
-    if (this.flashT > 0) drawCentered(g, clip(this.flash, 54), 830, `bold 13px ${MONO}`, '#ff8a5a');
-    else drawCentered(g, 'tap a slot, then a weapon   (keys: left/right slot, up/down weapon, enter start)', 830, `11px ${MONO}`, '#8fa0c8');
-    button(g, LB_BACK, 'BACK', '#ffffff');
-    button(g, LB_RESET, 'DEFAULT', '#ff8a5a');
-    button(g, LB_START, 'START', '#4ade80');
+
+    // Weapon slots.
+    for (let i = 0; i < 4; i++) this.drawSlot(g, i, slots[i]);
+    if (this.flashT > 0) drawCentered(g, clip(this.flash, 54), 818, `bold 13px ${MONO}`, '#ff8a5a');
+    else drawCentered(g, '< > or swipe: body   tap a slot: weapon   (keys: 1-4, enter, esc)', 818, `11px ${MONO}`, '#8fa0c8');
+    button(g, BACK, 'BACK', '#ffffff');
+    button(g, RESET, 'DEFAULT', '#ff8a5a');
+    button(g, START, 'START', '#4ade80', open);
+
+    if (this.sheet) this.drawSheet(g);
+  }
+
+  private arrow(g: CanvasRenderingContext2D, b: Btn, label: string, dot: boolean): void {
+    g.save();
+    g.fillStyle = '#0b1424';
+    g.fillRect(b.x, b.y, b.w, b.h);
+    g.strokeStyle = '#26324d';
+    g.lineWidth = 2;
+    g.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
+    g.restore();
+    text(g, label, b.x + b.w / 2, b.y + b.h / 2 + 14, `bold 44px ${MONO}`, '#6ee7ff', 'center');
+    if (dot) newDot(g, b.x + b.w - 12, b.y + 12);
+  }
+
+  private drawSlot(g: CanvasRenderingContext2D, i: number, id: string): void {
+    const b = slotBox(i);
+    const def = weaponDef(id);
+    const focus = this.sheet?.slot === i;
+    g.save();
+    g.fillStyle = '#0b1424';
+    g.fillRect(b.x, b.y, b.w, b.h);
+    g.lineWidth = focus ? 4 : 2;
+    g.strokeStyle = focus ? '#6ee7ff' : '#26324d';
+    g.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
+    g.restore();
+    const label = i === 0 ? '#ffd21f' : '#7dff9a';
+    if (i === 0) {
+      text(g, 'MAIN', b.x + 14, b.y + 22, `bold 12px ${MONO}`, label);
+      weaponIcon(g, def, b.x + 52, b.y + 56, 24);
+      text(g, def?.name ?? 'empty', b.x + 94, b.y + 52, `bold 22px ${MONO}`, def ? '#ffffff' : '#6b7488');
+      if (def) text(g, clip(def.desc, 40), b.x + 94, b.y + 74, `12px ${MONO}`, '#b6c2e0');
+    } else {
+      text(g, SLOT_NAMES[i], b.x + b.w / 2, b.y + 22, `bold 12px ${MONO}`, label, 'center');
+      weaponIcon(g, def, b.x + b.w / 2, b.y + 60, 24);
+      text(g, def ? clip(def.name, 14) : 'empty', b.x + b.w / 2, b.y + 106, `bold 14px ${MONO}`, def ? '#ffffff' : '#6b7488', 'center');
+    }
+    text(g, '▾', b.x + b.w - 14, b.y + 22, `bold 14px ${MONO}`, '#6ee7ff', 'right');
+  }
+
+  private drawSheet(g: CanvasRenderingContext2D): void {
+    const sh = this.sheet!;
+    const ease = 1 - (1 - sh.t) ** 3;
+    const top = SHEET_TOP + (1 - ease) * SHEET_H;
+    g.save();
+    g.fillStyle = `rgba(5, 6, 13, ${0.6 * ease})`;
+    g.fillRect(0, 0, W, SHEET_TOP);
+    g.fillStyle = '#0a1120';
+    g.fillRect(0, top, W, SHEET_H);
+    g.strokeStyle = '#6ee7ff';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(0, top + 1.5);
+    g.lineTo(W, top + 1.5);
+    g.stroke();
+    g.fillStyle = '#26324d';
+    g.fillRect(W / 2 - 30, top + 10, 60, 5);
+    g.restore();
+    const title = sh.slot === 0 ? 'MAIN WEAPON' : `AUX ${sh.slot} WEAPON`;
+    drawCentered(g, `${title}  ·  ${this.ship.name}`, top + 42, `bold 16px ${MONO}`, sh.slot === 0 ? '#ffd21f' : '#7dff9a');
+    g.save();
+    g.beginPath();
+    g.rect(0, top + SHEET_LIST_Y, W, SHEET_H - SHEET_LIST_Y);
+    g.clip();
+    const cur = this.current;
+    sh.rows.forEach((row, i) => {
+      const y = top + SHEET_LIST_Y + i * ROW_H - sh.scroll;
+      if (y + ROW_H < top || y > H) return;
+      const here = cur[sh.slot] === row.def.id;
+      const elsewhere = sh.slot > 0 ? cur.findIndex((id, k) => k > 0 && k !== sh.slot && id === row.def.id) : -1;
+      g.fillStyle = row.open ? '#0b1424' : '#080d18';
+      g.fillRect(24, y, W - 48, ROW_H - 6);
+      g.lineWidth = here ? 3 : i === sh.cursor ? 2 : 1;
+      g.strokeStyle = here ? '#4ade80' : i === sh.cursor ? '#6ee7ff' : '#26324d';
+      g.strokeRect(24.5, y + 0.5, W - 49, ROW_H - 7);
+      weaponIcon(g, row.def, 62, y + (ROW_H - 6) / 2, 22, !row.open);
+      text(g, row.def.name, 96, y + 28, `bold 18px ${MONO}`, row.open ? '#ffffff' : '#8a93a8');
+      if (row.open) text(g, clip(row.def.desc, 44), 96, y + 50, `12px ${MONO}`, '#b6c2e0');
+      else text(g, clip(row.def.requirement ?? row.def.unlockHint ?? 'locked', 44), 96, y + 50, `bold 12px ${MONO}`, '#ff8a5a');
+      const tag = !row.open ? 'LOCKED' : here ? 'EQUIPPED' : elsewhere >= 0 ? `SWAP AUX ${elsewhere}` : '';
+      if (tag) text(g, tag, W - 40, y + 28, `bold 12px ${MONO}`, !row.open ? '#ff8a5a' : here ? '#4ade80' : '#8fa0c8', 'right');
+      if (row.isNew) newDot(g, 38, y + 14, 6);
+    });
+    g.restore();
+    if (this.flashT > 0) drawCentered(g, clip(this.flash, 54), H - 14, `bold 13px ${MONO}`, '#ff8a5a');
   }
 }

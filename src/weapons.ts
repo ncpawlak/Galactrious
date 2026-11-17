@@ -28,10 +28,10 @@ interface WeaponBase {
   unlock?: string;
   /** Shown in the loadout builder while locked. */
   unlockHint?: string;
+  /** Short unlock requirement shown in the ship builder while locked. */
+  requirement?: string;
   /** Stashed for later: defined and usable through the debug loadout, but hidden from every select screen and never available to a player. */
   stashed?: boolean;
-  /** The weapon is NOT granted just because an unlocked ship starts with it: it needs its own unlock flag (or that ship, see `weaponAvailable`). */
-  shipOnly?: boolean;
 }
 
 /** An auto-firing aux weapon: fires on its own timer. */
@@ -234,6 +234,7 @@ const AUX: AuxDef[] = [
     color: '#ff6bd6',
     unlock: 'lance',
     unlockHint: 'Unlock the Warden ship.',
+    requirement: 'Unlock the Warden (defeat the first boss)',
     cooldown: (s) => s('lance.cooldown', WEAPONS.lance.cooldown),
     fire: (c) => {
       const l = WEAPONS.lance;
@@ -248,6 +249,7 @@ const AUX: AuxDef[] = [
     color: '#e0f0ff',
     unlock: 'blades',
     unlockHint: 'Unlock the Warden ship.',
+    requirement: 'Unlock the Warden (defeat the first boss)',
     cooldown: (s) => s('blades.cooldown', WEAPONS.blades.cooldown),
     fire: (c) => {
       const b = WEAPONS.blades;
@@ -262,6 +264,7 @@ const AUX: AuxDef[] = [
     color: '#ff78dc',
     unlock: 'swarm',
     unlockHint: 'Unlock the Wisp ship.',
+    requirement: 'Unlock the Wisp (clear an Endless run)',
     cooldown: (s) => s('swarm.cooldown', WEAPONS.swarm.cooldown),
     fire: (c) => {
       const w = WEAPONS.swarm;
@@ -295,7 +298,7 @@ const AUX: AuxDef[] = [
     color: '#ff5a4a',
     unlock: 'flak',
     unlockHint: 'Complete Fallen Peace with every chapter on gold.',
-    shipOnly: true,
+    requirement: 'Finish Fallen Peace, all chapters gold',
     cooldown: (s) => s('flak.cooldown', WEAPONS.flak.cooldown),
     fire: (c) => {
       const r = WEAPONS.flak;
@@ -357,6 +360,7 @@ const MAIN: MainDef[] = [
     color: '#ff9f43',
     unlock: 'scatter',
     unlockHint: 'Unlock the Warden ship.',
+    requirement: 'Unlock the Warden (defeat the first boss)',
     ...MAINS.scatter,
     bullet: { color: '#ffc27a', w: 3, h: 6 },
   },
@@ -368,6 +372,7 @@ const MAIN: MainDef[] = [
     color: '#c77dff',
     unlock: 'needle',
     unlockHint: 'Unlock the Wisp ship.',
+    requirement: 'Unlock the Wisp (clear an Endless run)',
     ...MAINS.needle,
     bullet: { color: '#e9c8ff', w: 2, h: 14 },
   },
@@ -379,7 +384,7 @@ const MAIN: MainDef[] = [
     color: '#ff2d9a',
     unlock: 'pulse-orb',
     unlockHint: 'Complete Fallen Peace with every chapter on gold.',
-    shipOnly: true,
+    requirement: 'Finish Fallen Peace, all chapters gold',
     ...MAINS.pulse,
     bullet: { color: '#ff2d9a', w: 12, h: 12, orb: 'aimed' },
   },

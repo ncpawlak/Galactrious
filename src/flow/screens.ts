@@ -29,7 +29,7 @@ export const CAMPAIGN_BTN = { x: W / 2 - 140, y: 506, w: 280, h: 60 };
 export const CONQUEST_BTN = { x: W / 2 - 140, y: 582, w: 280, h: 60 };
 export const UNLOCKS_BTN = { x: W / 2 - 140, y: 680, w: 280, h: 56 };
 
-function titleButton(g: CanvasRenderingContext2D, b: { x: number; y: number; w: number; h: number }, label: string, color: string, sub?: string): void {
+function titleButton(g: CanvasRenderingContext2D, b: { x: number; y: number; w: number; h: number }, label: string, color: string, sub?: string, isNew = false): void {
   g.save();
   g.fillStyle = '#0b1424';
   g.fillRect(b.x, b.y, b.w, b.h);
@@ -39,16 +39,28 @@ function titleButton(g: CanvasRenderingContext2D, b: { x: number; y: number; w: 
   g.restore();
   drawCentered(g, label, b.y + (sub ? 28 : b.h / 2 + 6), 'bold 20px monospace', color);
   if (sub) drawCentered(g, sub, b.y + 48, '12px monospace', color);
+  if (isNew) {
+    // NEW dot: something unlocked that the ship builder has not shown yet.
+    g.save();
+    g.fillStyle = '#4ade80';
+    g.strokeStyle = '#05060d';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(b.x + b.w - 10, b.y + 10, 8, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    g.restore();
+  }
 }
 
-export function drawTitle(g: CanvasRenderingContext2D, t: number, levels: number, conquestSub = 'a long run, one region'): void {
+export function drawTitle(g: CanvasRenderingContext2D, t: number, levels: number, conquestSub = 'a long run, one region', isNew = false): void {
   dim(g, 0.35);
   drawCentered(g, 'GALACTRIOUS', 250, 'bold 56px monospace', '#ffd21f');
   drawCentered(g, 'carve the bosses', 292, '18px monospace', '#6ee7ff');
   drawCentered(g, `${levels} levels  /  waves, then a boss  /  one life`, 340, '14px monospace', '#8fa0c8');
-  titleButton(g, ENDLESS_BTN, 'ENDLESS [ENTER]', '#ffd21f', Math.floor(t * 2) % 2 === 0 ? 'tap to choose ship and loadout' : undefined);
+  titleButton(g, ENDLESS_BTN, 'ENDLESS [ENTER]', '#ffd21f', Math.floor(t * 2) % 2 === 0 ? 'tap to choose ship and loadout' : undefined, isNew);
   titleButton(g, CAMPAIGN_BTN, 'CAMPAIGN [C]', '#6ee7ff', 'story levels, medals');
-  titleButton(g, CONQUEST_BTN, 'CONQUEST [Q]', '#ff8a5a', conquestSub);
+  titleButton(g, CONQUEST_BTN, 'CONQUEST [Q]', '#ff8a5a', conquestSub, isNew);
   titleButton(g, UNLOCKS_BTN, 'UNLOCKS [U]', '#6ee7ff');
   drawCentered(g, 'move: drag / arrows / WASD    dodge: Shift / X / button', 860, '12px monospace', '#8fa0c8');
   drawCentered(g, 'debug: [Z] one-boss test mode', 880, '12px monospace', '#5b6a8c');
