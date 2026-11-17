@@ -3,6 +3,7 @@ import type { ScrollHost } from '../scroll/types';
 import type { Unit } from '../units';
 import { buildStructure, countTurrets, planEntry, type Follow, type PlannedStructure } from './structures';
 import { GROUND, resetGround } from './shadows';
+import { BarrierSystem } from './barriers';
 import { GROUND_TAG, isTerrainEntry, type TerrainEntry } from './types';
 
 /** Contact damage of a wall to the ship (the ship has 5 hull by default; a bullet is 1). Never an instant kill. */
@@ -43,6 +44,9 @@ export interface TurretTally {
  */
 export class TerrainSystem {
   readonly structures: Structure[] = [];
+  /** Indestructible energy barriers (src/terrain/barriers.ts). */
+  readonly barriers = new BarrierSystem();
+  private clock = 0;
   /** Lifetime counters by tag. */
   private readonly spawned: Record<string, number> = {};
   private readonly destroyed: Record<string, number> = {};
@@ -55,6 +59,7 @@ export class TerrainSystem {
 
   clear(): void {
     this.structures.length = 0;
+    this.barriers.clear();
     for (const k of Object.keys(this.spawned)) delete this.spawned[k];
     for (const k of Object.keys(this.destroyed)) delete this.destroyed[k];
     this.planned = {};
@@ -75,12 +80,16 @@ export class TerrainSystem {
       this.tallyTag = e.tag ?? GROUND_TAG;
       return;
     }
+    if (e.kind === 'barrier') {
+      this.barriers.fire(e as import('./types').BarrierEntry, lag);
+      return;
+    }
     const spawn = this.host.spawnTerrain;
     if (!spawn) {
       console.warn('terrain: the scroll host cannot spawn terrain (ScrollHost.spawnTerrain missing)');
       return;
     }
-    const tag = (e as Exclude<TerrainEntry, { kind: 'turretTally' }>).tag ?? GROUND_TAG;
+    const tag = (e as Exclude<TerrainEntry, { kind: 'turretTally' | 'barrier' }>).tag ?? GROUND_TAG;
     for (const plan of planEntry(e)) {
       const follow: Follow = { y: lag - plan.dy };
       const def = buildStructure(plan, follow);
@@ -94,6 +103,8 @@ export class TerrainSystem {
   }
 
   update(dt: number, speed: number): void {
+    this.clock += dt;
+    this.barriers.update(dt, speed);
     const casters = this.host.shadowCasters?.();
     GROUND.casters = casters ?? [];
     GROUND.pieces.length = 0;
@@ -131,6 +142,8 @@ export class TerrainSystem {
    * rubble, else 0. Pads (the bunkers) are low and do not hurt.
    */
   touch(x: number, y: number, r: number, damage = WALL_DAMAGE): number {
+    const bd = this.barriers.touch(x, y, r);
+    if (bd > 0) return bd;
     for (const s of this.structures) {
       if (s.plan.kind !== 'wall') continue;
       const b = s.unit.boss;
@@ -149,6 +162,7 @@ export class TerrainSystem {
 
   /** The turret tally on the HUD (only when a `turretTally` entry switched it on). */
   draw(ctx: CanvasRenderingContext2D): void {
+    this.barriers.draw(ctx, this.clock);
     if (!this.tallyOn) return;
     const t = this.tally(this.tallyTag);
     const done = t.planned > 0 && t.destroyed >= t.planned;

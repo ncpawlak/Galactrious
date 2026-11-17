@@ -71,7 +71,7 @@ export const FP4_OUTER: ScrollLevelDef = {
   name: 'The outer fence',
   length: T4(55),
   speed: SPEED4,
-  theme: 'baseNight',
+  theme: 'tundraNight',
   stealth: {
     lights: OUTER_LIGHTS,
     // The first roof sits over the pod's start, so the first seconds are dark.
@@ -113,7 +113,7 @@ export const FP4_YARD: ScrollLevelDef = {
   name: 'The hangar yard',
   length: YARD_LENGTH,
   speed: SPEED4,
-  theme: 'baseNight',
+  theme: 'baseInterior',
   stealth: {
     lights: YARD_LIGHTS,
     covers: [
@@ -162,8 +162,10 @@ export interface SurfaceTune {
   gap0: number;
   gapNarrow: number;
   lineBase: number;
+  /** Indestructible energy barriers between the defence lines. */
+  barriers: boolean;
 }
-export const SURFACE_TUNE: SurfaceTune = { every: TURRET_EVERY, flyEvery: 22, flyCount: 0.6, fire: [0.6, 0.6, 0.5], lineK: 3.5, mortars: 1, strafe: true, cap: 0.6, gap0: 150, gapNarrow: 55, lineBase: 10.5 };
+export const SURFACE_TUNE: SurfaceTune = { every: TURRET_EVERY, flyEvery: 13, flyCount: 0.6, fire: [0.6, 0.6, 0.5], lineK: 3.5, mortars: 1, strafe: true, cap: 0.6, gap0: 150, gapNarrow: 55, lineBase: 10.5, barriers: true };
 const REAR = 'empire-fighter-rear';
 const STRAFER = 'empire-strafer';
 
@@ -218,6 +220,19 @@ export function surfaceTimeline(tune: SurfaceTune = SURFACE_TUNE): ScrollEntry[]
         else if (kind === 2) out.push({ at: T5(between), kind: 'wall', x: 120 + Math.round(r() * 300), width: 140 + Math.round(r() * 60), turrets: p < 0.4 ? 1 : 2, fireEvery: TURRET_EVERY });
         else out.push({ at: T5(between), kind: 'turretCluster', x: 150 + Math.round(r() * 240), count: 2 + Math.floor(p * 3), layout: 'row', spacing: 110, fireEvery: TURRET_EVERY });
       }
+      // An indestructible energy barrier halfway between two lines (never in the first line's slot): it leaves 170 to 190 px open on one side, in
+      // the middle, or on both sides of a central island, so the ship must fly around it. Not in a section's tail, and not near the last line.
+      const bt = t + 6.2;
+      if (tune.barriers && lineNo >= 1 && !inTail(bt) && bt < SURFACE_SECONDS - 20) {
+        const v = lineNo % 4;
+        const at = T5(bt);
+        if (v === 0) out.push({ at, kind: 'barrier', x: 170, width: 380, seed: lineNo });
+        else if (v === 1) out.push({ at, kind: 'barrier', x: 370, width: 380, seed: lineNo });
+        else if (v === 2) {
+          out.push({ at, kind: 'barrier', x: 80, width: 200, seed: lineNo });
+          out.push({ at, kind: 'barrier', x: 460, width: 200, seed: lineNo + 50 });
+        } else out.push({ at, kind: 'barrier', x: 270, width: 200, seed: lineNo });
+      }
       lineNo++;
     }
     t += tune.lineBase - tune.lineK * p; // 10.5 s apart at the start, 8.4 s once the difficulty plateaus
@@ -233,7 +248,7 @@ export function surfaceTimeline(tune: SurfaceTune = SURFACE_TUNE): ScrollEntry[]
     // Nothing arrives in the first 8 s of a section (the seam fade has just ended).
     for (const sec of SURFACE_SECTIONS) if (tf >= sec - 0.01 - (sec === 178 ? 58 : 60) && tf < sec - (sec === 178 ? 58 : 60) + 8) tf = sec - (sec === 178 ? 58 : 60) + 8;
     const p = tf / SURFACE_SECONDS;
-    const n = tf < 120 ? 1 : 2; // one ship per pass in the first two sections, two in the last (flyCount is kept for tuning sweeps)
+    const n = tf < 60 ? 1 : 2; // one ship per pass in the first minute, two after (flyCount is kept for tuning sweeps)
     void tune.flyCount;
     const x = 90 + Math.round(r() * 360);
     const spec = !tune.strafe && k % 4 === 2 ? 1 : k % 4;
@@ -263,7 +278,7 @@ function section(i: 0 | 1 | 2, full: ScrollEntry[] = FULL_TIMELINE, tune: Surfac
     name: `Surface run ${'ABC'[i]}`,
     length: T5(t1 - t0),
     speed: SPEED5,
-    theme: 'surface',
+    theme: ['surfaceBase', 'surface', 'surfaceWild'][i],
     fireScale: tune.fire[i],
     // No `turretTally` entry: the campaign HUD already shows the bonus count for the whole run (a per-section tally would disagree with it).
     timeline,

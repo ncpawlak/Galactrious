@@ -4,3 +4,4 @@ export type { PlannedStructure } from './structures';
 export { TerrainSystem, WALL_DAMAGE } from './system';
 export type { TurretTally } from './system';
 export * from './types';
+export { BarrierSystem, BARRIER_DAMAGE } from './barriers';

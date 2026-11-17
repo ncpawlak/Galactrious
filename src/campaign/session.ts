@@ -394,7 +394,7 @@ export class CampaignSession {
       g.translate(-fly.x, -fly.y);
       this.handler.draw(g, env);
       g.restore();
-    } else this.handler.draw(g, env);
+    } else if (!this.cine?.hidesHud) this.handler.draw(g, env); // a cinematic that hides the HUD also hides the objective's zone circle, hold ring and warnings
     this.cine?.draw(g);
     if (this.cine?.hidesHud) {
       this.drawSubtitles(g);

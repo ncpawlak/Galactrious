@@ -106,9 +106,22 @@ export interface TurretTallyEntry {
   tag?: string;
 }
 
-export type TerrainEntry = WallEntry | WallLineEntry | TurretEntry | TurretClusterEntry | TurretTallyEntry;
+/**
+ * An indestructible ENERGY BARRIER (a beam between two pylons) centred at screen `x`, `width` px long. Nothing destroys it; player shots stop on
+ * it; touching it scrapes the hull like a wall. The author leaves a gap of at least 150 px (the level must stay passable).
+ */
+export interface BarrierEntry {
+  at: number;
+  kind: 'barrier';
+  x: number;
+  width: number;
+  damage?: number;
+  seed?: number;
+}
 
-export const TERRAIN_KINDS = ['wall', 'wallLine', 'turret', 'turretCluster', 'turretTally'] as const;
+export type TerrainEntry = WallEntry | WallLineEntry | TurretEntry | TurretClusterEntry | TurretTallyEntry | BarrierEntry;
+
+export const TERRAIN_KINDS = ['wall', 'wallLine', 'turret', 'turretCluster', 'turretTally', 'barrier'] as const;
 
 export function isTerrainEntry(e: { kind: string }): e is TerrainEntry {
   return (TERRAIN_KINDS as readonly string[]).includes(e.kind);
