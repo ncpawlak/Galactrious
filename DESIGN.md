@@ -696,6 +696,7 @@ Status: **design only**, agreed with the owner. It replaces the two-screen flow 
 - Slots start filled with the body's **preset loadout**, so START is one tap away. The last used loadout per body stays remembered (existing `saveStore.setLastLoadout`).
 
 ### Skins and awards
+**Deferred: skins are out of scope for the first build of this screen** (tracked as a GitHub issue, 'Ship skins as awards'). The first build has no skin arrows and no skins; the layout leaves room for them under the model. This section is the plan for that later work.
 - A **skin** is a palette (and, where it helps, trim) variant of a body. A body always has a **default skin**, unlocked from the start.
 - **Skins are awards.** Each locked skin names its requirement in the UI. They are tied to Campaign, Conquest and Endless results. First slice, kept small (1 or 2 per mode, adding more is a data change):
   - **Campaign:** a skin for finishing "Fallen Peace"; a gold skin for finishing it with all gold medals.
