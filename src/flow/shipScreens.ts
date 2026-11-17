@@ -469,14 +469,14 @@ export class ShipBuilderScreen {
     if (this.hasSkinArrows) this.drawSkinNav(g, ship, skin);
     if (open) {
       const [d1, d2] = wrap2(ship.desc, 56);
-      drawCentered(g, d1, d2 ? 412 : 424, `12px ${MONO}`, '#8fa0c8');
-      if (d2) drawCentered(g, clip(d2, 60), 430, `12px ${MONO}`, '#8fa0c8');
+      drawCentered(g, d1, d2 ? 421 : 432, `12px ${MONO}`, '#8fa0c8');
+      if (d2) drawCentered(g, clip(d2, 60), 438, `12px ${MONO}`, '#8fa0c8');
     } else {
       lockIcon(g, MODEL.x, MODEL.y, 74);
-      drawCentered(g, 'LOCKED', 410, `bold 16px ${MONO}`, '#ff8a5a');
+      drawCentered(g, 'LOCKED', 422, `bold 16px ${MONO}`, '#ff8a5a');
       const [r1, r2] = wrap2((bodyOpen ? skin.requirement : ship.requirement) ?? ship.unlockHint ?? 'unknown', 40);
-      drawCentered(g, r1, 430, `bold 14px ${MONO}`, '#ffd2b8');
-      if (r2) drawCentered(g, r2, 448, `bold 14px ${MONO}`, '#ffd2b8');
+      drawCentered(g, r1, 440, `bold 14px ${MONO}`, '#ffd2b8');
+      if (r2) drawCentered(g, r2, 457, `bold 14px ${MONO}`, '#ffd2b8');
     }
 
     // Stats strip.
