@@ -213,3 +213,33 @@ A **wave** is data: which units appear, in what formation, on what entrance path
 4. Level script: the 3 levels, wave pacing.
 5. Upgrade cards: stat cards and the tag hooks.
 6. Elemental effects: burn first.
+
+### Flow engine: as built (step 2)
+Status: **built**. Playable end to end with placeholders: title -> 3 x (3 stub waves, boss, reward) -> run complete; death anywhere -> run over -> title.
+
+Files (`src/flow/`):
+- `node.ts`: the contract. `RunDefinition { name, levels }`, `LevelDefinition { nodes, reward? }`, `NodeDefinition` (union: `boss`, `wave`, `reward`, reserved `level`, `interlude`), `RunState`, `FlowNode`, `NodeHost`.
+- `run.ts`: the `Run` state machine (`title | node | over | won`). Walks the level's nodes, then its reward (not after the last level), heals fully on entering a new level, starts a new seeded `RunState` on `start()`.
+- `defaultRun.ts`: `DEFAULT_RUN`: levels end on `bulwark-components`, `bulwark-rooms`, `mantis` (pacing guess, retune with the waves), reward after levels 1 and 2.
+- `nodes/`: `boss.ts` (wraps `BossFight` via the host, no behaviour change), `wave.ts` (**stub**), `reward.ts` (**stub**), `index.ts` (`createNode`, the only place node types are wired).
+- `screens.ts`: title, run over, run complete.
+
+The node interface:
+```ts
+interface FlowNode {
+  start(ctx: NodeContext): void;      // ctx = { host, run: RunState, position }
+  update(dt: number): void;
+  outcome(): 'done' | 'lost' | null;  // the engine advances on 'done', ends the run on 'lost'
+  draw(g: CanvasRenderingContext2D): void; // 540x960; combat nodes draw nothing, the game draws the scene
+  end?(): void;                       // cleanup
+}
+```
+A node reaches the game only through `NodeHost` (`startBossFight`, `combatResult`, `endCombat`, `healFull`, `takeTap`, `takeKey`, `ship`), implemented by `Game.makeNodeHost`. Nodes never see each other. To add a type: a definition in the `NodeDefinition` union, a class, one `case` in `createNode`.
+
+**For the units-and-waves work:** replace the body of `nodes/wave.ts` and extend `WaveNodeDefinition` in `node.ts`. A wave node needs combat without a boss, so extend `NodeHost` (e.g. `startCombat()` that turns the ship, weapons and bullets on with no boss; a way to read "ship destroyed") and the `Game` side in `makeNodeHost`/`update`/`render`; `combat` in `Game` is the flag that switches the combat sim on. The engine (`run.ts`) should not need changes.
+
+Game integration (`src/game.ts`, small): `mode: 'run' | 'boss'`. **Run mode is the default.** The old one-boss mode, which all the debug tooling and `game.debug.simulate` use, is `?mode=boss` in the URL, and `[Z]` toggles between the two at runtime (to run: title; to boss: a fresh fight). In boss mode the sim path is unchanged (restart on death, `[R]`, `[B]`, ...). In run mode `[B]` and `[R]` are ignored during combat and every key is ignored outside combat except `[\`]`. `?seed=N` fixes the run seed (the reward draw uses it). Health carries across nodes inside a level and is restored on entering a new level.
+
+Stubbed / not built: real waves (placeholder screen, 1.2 s then done); reward cards (five placeholder cards, three drawn by the seed, the pick is pushed to `RunState.upgrades`, no effect, `Upgrade.modifiers` and `RunState.loadout` are the empty places for them); `level` and `interlude` node types (reserved, `createNode` throws); run persistence.
+
+Not verified: no human playtest; the scripted `hull25` measurement was not compared against `main` in the same session (single boss-mode run on Bulwark rooms gave 37.2 s with the merged weapons, the 47.0 s in the regrowth note predates them); touch input on the title and reward screens was only checked through keyboard events and scripted calls.
