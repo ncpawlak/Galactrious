@@ -211,6 +211,8 @@ export class Boss {
   sinceHit = 99;
   /** Optional hull regrowth (set by BossFight when the definition opts in). */
   regrowth: Regrowth | null = null;
+  /** Extra regrowths driven by `repair` rooms (src/roomFunctions.ts); updated and drawn like `regrowth`. */
+  readonly extraRegrowth: Regrowth[] = [];
   /** Component drawing: after layer `li` is drawn (embedded parts), and after all layers (surface parts). */
   layerHook: ((ctx: CanvasRenderingContext2D, li: number, ox: number, oy: number) => void) | null = null;
   topHook: ((ctx: CanvasRenderingContext2D, ox: number, oy: number) => void) | null = null;
@@ -295,6 +297,7 @@ export class Boss {
     }
 
     this.regrowth?.update(dt);
+    for (const r of this.extraRegrowth) r.update(dt);
 
     for (const f of this.fragments) {
       f.age += dt;
@@ -642,12 +645,14 @@ export class Boss {
     // Back to front; each layer casts a shadow onto everything beneath it.
     ctx.drawImage(this.layers[last].canvas, ox, oy);
     this.regrowth?.drawGlow(ctx, last, ox, oy);
+    for (const r of this.extraRegrowth) r.drawGlow(ctx, last, ox, oy);
     this.layerHook?.(ctx, last, ox, oy);
     if (!this.defeated || this.coreDeadFor < CORE_DEATH_TIME) this.drawCore(ctx, ox, oy);
     for (let i = last - 1; i >= 0; i--) {
       ctx.drawImage(this.layers[i].shadow, ox, oy);
       ctx.drawImage(this.layers[i].canvas, ox, oy);
       this.regrowth?.drawGlow(ctx, i, ox, oy);
+      for (const r of this.extraRegrowth) r.drawGlow(ctx, i, ox, oy);
       this.layerHook?.(ctx, i, ox, oy);
     }
     this.topHook?.(ctx, ox, oy);

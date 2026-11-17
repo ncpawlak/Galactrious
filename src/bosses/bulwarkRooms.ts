@@ -15,7 +15,7 @@ import type { BossDefinition } from './types';
  *  - Reactor control (round the core, 2): powers the nose guns. Exposed: a volley and a smaller ring.
  *  - Fuel store (hangar, 3): `explodeOnDisable`: it blows up when its last console goes, and the blast
  *    reaches the reactor tank, which chains on into the reactor consoles.
- * Drones (a later room effect) are not built yet.
+ * Each room's function is a catalog entry (`functions`, see src/roomFunctions.ts): power, shield, power, reactor.
  */
 
 export function createBulwarkRooms(): BossSpec {
@@ -43,7 +43,7 @@ export const BULWARK_ROOMS: RoomSpec[] = [
     id: 'weapons',
     name: 'Weapons control',
     function: 'Wing guns',
-    powers: ['wing-guns'],
+    functions: [{ kind: 'power', targets: ['wing-guns'] }],
     consoles: [{ anchor: 'weaponsA' }, { anchor: 'weaponsB' }, { anchor: 'weaponsC' }],
     onExposed: [
       { kind: 'attack', pattern: aimedShot, count: 3, gap: 0.3 },
@@ -54,6 +54,7 @@ export const BULWARK_ROOMS: RoomSpec[] = [
     id: 'shield',
     name: 'Shield projector',
     function: 'Core shield',
+    functions: [{ kind: 'shield' }],
     consoles: [{ anchor: 'shieldA' }, { anchor: 'shieldB' }],
     onExposed: [{ kind: 'pulse', radius: 170, damage: 1 }],
   },
@@ -61,7 +62,7 @@ export const BULWARK_ROOMS: RoomSpec[] = [
     id: 'reactor',
     name: 'Reactor control',
     function: 'Nose guns',
-    powers: ['nose-guns'],
+    functions: [{ kind: 'power', targets: ['nose-guns'] }],
     consoles: [{ anchor: 'reactorA' }, { anchor: 'reactorB' }],
     onExposed: [
       { kind: 'attack', pattern: directVolley, count: 2, gap: 0.5 },
@@ -74,7 +75,7 @@ export const BULWARK_ROOMS: RoomSpec[] = [
     function: 'Hangar fuel',
     consoles: [{ anchor: 'fuelA' }, { anchor: 'fuelB' }, { anchor: 'fuelC' }],
     onExposed: [{ kind: 'attack', pattern: aimedShot, count: 2, gap: 0.4 }],
-    explodeOnDisable: { radius: 110 },
+    functions: [{ kind: 'reactor', blast: { radius: 110 } }],
   },
 ];
 

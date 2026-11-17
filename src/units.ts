@@ -8,10 +8,11 @@ import type { BossDefinition } from './bosses/types';
 import type { Movement } from './movement';
 import { still } from './movement';
 import type { Point } from './hazards';
+import type { RoomHost, RoomSpec } from './rooms';
 
 /**
  * Enemy units (DESIGN.md "Enemy units are small bosses"): a `UnitDefinition` is a slimmed-down `BossDefinition`
- * (one phase, no rooms, no regrowth) and every live unit runs on a `BossFight`, so carving, anchoring, components,
+ * (one phase, at most one small room, no regrowth) and every live unit runs on a `BossFight`, so carving, anchoring, components,
  * attack scripts, blasts and debris are the boss pipeline unchanged. `UnitSystem` owns the units alive at once, their
  * spawn queue, their attack timers and their death.
  */
@@ -24,6 +25,8 @@ export interface UnitDefinition {
   layout: () => BossSpec;
   mirror?: boolean;
   components?: ComponentSpec[];
+  /** One small room (catalog function, see src/roomFunctions.ts): its consoles are embedded in the last layer, so you dig to them. Big units only. */
+  rooms?: RoomSpec[];
   /** Core armor rules. Default for units: none (the core takes full damage once a bullet reaches it). */
   coreArmor?: CoreArmorSpec;
   /** The unit dies when this share (0..1) of its layer pixels is gone, even if the core still stands. Default 0.6 small, 0.75 big. */
@@ -90,6 +93,7 @@ export function toBossDefinition(def: UnitDefinition, p: UnitPlacement, attackDe
     spawn: { x: p.slot.x, y: p.slot.y - spec.height / 2 },
     mirror: def.mirror,
     components: def.components,
+    rooms: def.rooms,
     coreArmor: def.coreArmor ?? { min: 1 },
     phases: [{ name: 'unit', movement: placementMovement(def, p), attacks: def.attacks, attackDelay: eT + attackDelay }],
   };
@@ -145,6 +149,7 @@ export class Unit {
     this.dyingFor = 0;
     this.fight.boss.core.hp = 0;
     this.fight.components.silenceAll();
+    this.fight.rooms.halted = true;
   }
 
   get dyingTime(): number {
@@ -167,6 +172,8 @@ export class UnitSystem {
   time = 0;
   /** Debug: draw hit areas, bounding boxes and hp. */
   debug = false;
+  /** Where units' room functions fire and launch drones (set by the game). */
+  roomHost: RoomHost | null = null;
   /** Called when a unit starts dying (the game explodes it). */
   onDeath: ((u: Unit) => void) | null = null;
   private counter = 0;
@@ -190,6 +197,7 @@ export class UnitSystem {
     const jitter = ((this.counter++ * 0.6180339887) % 1) * 1.4;
     const u = new Unit(def, placement, jitter, this.ship);
     u.fight.components.debug = this.debug;
+    u.fight.rooms.host = this.roomHost;
     this.units.push(u);
     return u;
   }
@@ -229,7 +237,7 @@ export class UnitSystem {
       if (!p) continue;
       const src = u.sched.lastSource;
       const sources = src ? u.fight.components.fireFrom(src) : u.fight.components.fireFromAny();
-      for (const s of sources) attacks.firePattern(p, s.origin, p.aimAtPlayer ? player : s.target, s.alive);
+      for (const s of sources) attacks.firePattern(p, s.origin, p.aimAtPlayer && !s.dumb ? player : s.target, s.alive);
     }
     if (this.units.some((u) => u.gone)) this.units = this.units.filter((u) => !u.gone);
   }

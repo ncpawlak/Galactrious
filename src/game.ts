@@ -22,7 +22,8 @@ import type { FlowNode, NodeContext } from './flow/node';
 import { Loadout } from './upgrades/stats';
 import { Sweep, WeaponSystem, effectiveChain, nearBox, type Combatant } from './weapons';
 import { UnitSystem, type Unit } from './units';
-import { spawnWave, type WaveDefinition } from './waves';
+import { divePath, spawnWave, type WaveDefinition } from './waves';
+import type { RoomHost } from './rooms';
 import { UNIT_LIST, WAVE_LIST, unitById } from './enemies';
 
 export interface ShipStats {
@@ -99,6 +100,12 @@ export class Game {
   /** False in wave nodes: the dormant boss fight is not updated, drawn, targeted or shown in the HUD. */
   private bossActive = true;
   private readonly units = new UnitSystem(this.ship);
+  /** Where room functions fire, drop hazards and launch drones: the boss's rooms and every unit's room. */
+  private readonly roomHost: RoomHost = {
+    fire: (p, o, alive) => this.attacks.firePattern(p, o, this.ship, alive),
+    hazard: (h) => this.attacks.spawnHazard(h),
+    spawnUnit: (id, from) => this.launchDrone(id, from),
+  };
   /** Everything the player's shots can hit this frame: the live boss plus live units (refreshed once per update). */
   private targetList: BossFight[] = [];
   private readonly weapons: WeaponSystem = new WeaponSystem({
@@ -173,6 +180,7 @@ export class Game {
     this.input = new Input(canvas);
     this.fight = this.makeFight();
     this.units.onDeath = (u) => this.onUnitDeath(u);
+    this.units.roomHost = this.roomHost;
 
     for (let i = 0; i < 90; i++) {
       this.stars.push({
@@ -387,7 +395,7 @@ export class Game {
     const fight = new BossFight(def);
     fight.components.target = this.ship;
     this.attacks.sources = fight.components;
-    fight.rooms.host = { fire: (p, o, alive) => this.attacks.firePattern(p, o, this.ship, alive), hazard: (h) => this.attacks.spawnHazard(h) };
+    fight.rooms.host = this.roomHost;
     this.attacks.setScript(fight.makeScheduler());
     fight.onPhaseChange = (phase) => {
       this.attacks.setScript(fight.makeScheduler());
@@ -418,6 +426,20 @@ export class Game {
     const cur = this.fight.movementOverride;
     const i = cur ? MOVEMENT_PRESETS.indexOf(cur) : -1;
     this.fight.setMovementOverride(i + 1 < MOVEMENT_PRESETS.length ? MOVEMENT_PRESETS[i + 1] : null);
+  }
+
+  /** A `spawner` room launches a unit: it flies from the room to a slot below it, then dives like the wave drones. Capping is the room's job. */
+  private launchDrone(id: string, from: { x: number; y: number }): { alive(): boolean } {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const slot = { x: Math.max(40, Math.min(W - 40, from.x + side * (40 + Math.random() * 90))), y: Math.min(360, from.y + 70 + Math.random() * 70) };
+    const ease = (k: number) => k * k * (3 - 2 * k);
+    const u = this.units.spawn(unitById(id), {
+      slot,
+      entrance: (k) => ({ x: from.x + (slot.x - from.x) * ease(k), y: from.y + (slot.y - from.y) * ease(k) }),
+      entranceTime: 0.9,
+      dive: { first: 2 + Math.random() * 2, every: 6, time: 3.2, path: divePath(slot, 1) },
+    });
+    return { alive: () => u.state === 'alive' && !u.gone };
   }
 
   private spawnDebugUnit(id: string, x: number, y: number): void {
@@ -1016,6 +1038,7 @@ export class Game {
     this.drawUnits();
     this.attacks.drawBossDim(ctx);
     if (this.bossActive) this.fight.components.drawFx(ctx);
+    if (this.bossActive) this.fight.rooms.drawCues(ctx);
     if (this.bossActive && this.fight.components.debug) this.fight.components.drawDebug(ctx);
     this.drawBullets();
     this.weapons.draw(ctx);
@@ -1053,6 +1076,7 @@ export class Game {
       if (dying) ctx.globalAlpha = Math.max(0, 1 - u.dyingFor / u.dyingTime);
       u.fight.boss.render(ctx);
       u.fight.components.drawFx(ctx);
+      u.fight.rooms.drawCues(ctx);
       ctx.globalAlpha = 1;
       if (this.showDebug && this.units.debug && !dying) {
         const b = u.fight.boss;

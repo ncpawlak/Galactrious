@@ -165,7 +165,7 @@ export class Attacks {
 
   /** A turret's own aim is its barrel; lobbed patterns (`aimAtPlayer`) land on the player instead. */
   private fireFromSources(p: AttackPattern, srcs: FireSource[], player: Point): void {
-    for (const s of srcs) this.firePattern(p, s.origin, p.aimAtPlayer ? player : s.target, s.alive);
+    for (const s of srcs) this.firePattern(p, s.origin, p.aimAtPlayer && !s.dumb ? player : s.target, s.alive);
   }
 
   /**

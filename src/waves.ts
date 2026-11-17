@@ -172,7 +172,7 @@ function entranceWaypoints(kind: EntranceKind, slot: Point, side: 1 | -1): Point
 }
 
 /** A dive out of the slot and back: a teardrop swinging toward screen centre. Offsets from the slot centre. */
-function divePath(slot: Point, depth: number): (u: number) => Point {
+export function divePath(slot: Point, depth: number): (u: number) => Point {
   const s = slot.x < W / 2 ? 1 : -1;
   const reach = Math.min(depth * 400, 720 - slot.y);
   const k = reach / 400;
