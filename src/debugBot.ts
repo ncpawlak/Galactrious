@@ -68,12 +68,15 @@ export function dodgeTarget(w: BotWorld): { x: number; y: number } {
         const reach = Math.hypot(o.w, o.h) / 2 + 60;
         if (Math.abs(x - o.x) > reach + 240 || Math.abs(y - o.y) > reach + 260) continue;
         const oy = o.y;
+        const ox = o.x;
         for (const t of [0, 0.15, 0.3, 0.5, 0.7]) {
-          o.y = oy + (o.rise > 0 ? -o.rise : w.scrollSpeed + o.vy) * t;
+          o.y = oy + (o.rise > 0 ? -o.rise : w.scrollSpeed * (o.crossV !== 0 ? 0.3 : 1) + o.vy) * t;
+          o.x = ox + o.crossV * t;
           if (o.touches(x, y, hb + 14)) risk += 80 / (t + 0.25);
           else if (o.touches(x, y, hb + 40)) risk += 5;
         }
         o.y = oy;
+        o.x = ox;
       }
       const wantX = w.goal ? w.goal.x : w.wantX;
       const wantY = w.goal ? w.goal.y : w.wantY;

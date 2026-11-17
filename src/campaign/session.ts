@@ -383,7 +383,18 @@ export class CampaignSession {
   draw(g: CanvasRenderingContext2D): void {
     if (this.result || !this.started) return;
     const env = this.env();
-    this.handler.draw(g, env);
+    const fly = this.cine?.gateFly;
+    if (fly) {
+      // The jump gate recedes as the ship falls away from it: it shrinks toward its centre, drifts up and fades.
+      g.save();
+      g.globalAlpha = Math.max(0, 1 - fly.k * 1.05);
+      const sc = 1 - 0.88 * fly.k;
+      g.translate(fly.x, fly.y - 150 * fly.k);
+      g.scale(sc, sc);
+      g.translate(-fly.x, -fly.y);
+      this.handler.draw(g, env);
+      g.restore();
+    } else this.handler.draw(g, env);
     this.cine?.draw(g);
     if (this.cine?.hidesHud) {
       this.drawSubtitles(g);

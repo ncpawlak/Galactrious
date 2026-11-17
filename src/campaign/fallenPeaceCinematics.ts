@@ -4,7 +4,7 @@
  *  - `FP1_BREAK_OFF` + `FP1_APPROACH`: the dogfight ends, the fighters fly away and the capital ship descends, invincible, with commentary.
  *  - `FP1_EXIT`: the engine room blows up (cosmetic), the ship turns 180 and flies off the bottom of the screen.
  *  - `FP2_SHOT_DOWN`: a projectile hits the ship at the jump gate, it burns and falls toward the planet, fade to black.
- *  - `FP3_CRASH`: the ship hits a ridge and skids down the slope, whiteout, black.
+ *  - `FP3_CRASH`: the ship hits a mountain side and tumbles down it in a spray of snow, whiteout, black.
  * All times are seconds from the start of the cinematic; coordinates are the 540x960 screen.
  */
 import type { Cinematic } from './cinematic';
@@ -80,6 +80,8 @@ export const FP2_SHOT_DOWN: Cinematic = {
   id: 'fp2-shot-down',
   duration: 10.2,
   lock: { input: true, weapons: true, enemies: 'hold', invulnerable: true },
+  // The gate (270, 340) flies away as the ship falls: it starts to recede with the fall and is a dot by the fade to black.
+  gateFly: { t: 1.55, duration: 6.5, x: 270, y: 340 },
   world: [
     { t: 0.0, do: 'scrollSpeed', speed: 60, ease: 4 },
     { t: 1.0, do: 'projectile', from: [470, -40], duration: 0.55, color: '#ff8a3a', hit: true },
@@ -105,9 +107,10 @@ export const FP2_SHOT_DOWN: Cinematic = {
 };
 
 /**
- * The crash: the ship flies into a ridge at the top of the screen and skids down the slope in a spray of snow and sparks, the world
- * stops, a snowfall whiteout rolls in and then it goes black. The slope sweeps in from the top and settles with its surface on the
- * `line`; the ship hits that line at (330, 470) and slides along it toward the lower left.
+ * The crash: the ship flies into a mountain side at the top of the screen and, like the chapter 2 fall, tumbles away (turning and
+ * shrinking) but now DOWN the snow slope, bouncing, with snow shooting up around it. Then the world stops, a snowfall whiteout rolls
+ * in and it goes black. The slope sweeps in from the top and settles with its surface on the `line`; the ship hits that line at
+ * (330, 470) and tumbles along it toward the lower left. Cosmetic only.
  */
 export const FP3_CRASH: Cinematic = {
   id: 'fp3-crash',
@@ -117,23 +120,31 @@ export const FP3_CRASH: Cinematic = {
     { t: 0.0, do: 'weather', intensity: 1, ease: 2 },
     { t: 1.5, do: 'scrollSpeed', speed: 0, ease: 1.4 },
     { t: 1.7, do: 'explosion', x: 330, y: 470, radius: 46, shake: 1, ring: true },
-    { t: 1.7, do: 'trail', kind: 'sparks', duration: 2.6, rate: 70 },
-    { t: 1.7, do: 'trail', kind: 'snow', duration: 3.8, rate: 80 },
+    // Snow thrown up around the ship the whole way down, with sparks at the start.
+    { t: 1.7, do: 'trail', kind: 'powder', duration: 5, rate: 300 },
+    { t: 1.7, do: 'trail', kind: 'snow', duration: 4, rate: 60 },
+    { t: 1.7, do: 'trail', kind: 'sparks', duration: 1.6, rate: 50 },
+    { t: 1.7, do: 'trail', kind: 'smoke', duration: 4.5, rate: 30 },
+    // Bounces off the slope: a puff and a shake each.
+    { t: 2.5, do: 'explosion', x: 255, y: 520, radius: 26, shake: 0.6 },
+    { t: 3.5, do: 'explosion', x: 170, y: 556, radius: 24, shake: 0.5 },
+    { t: 4.5, do: 'explosion', x: 95, y: 590, radius: 20, shake: 0.4 },
     { t: 1.8, do: 'shake', amount: 0.8 },
-    { t: 2.6, do: 'shake', amount: 0.5 },
   ],
   props: [{ t: 0.2, do: 'slope', line: [0, 618, 540, 375], enter: 1.5 }],
   ship: [
     { t: 0.2 },
     { t: 1.7, x: 330, y: 470, rot: -0.25, ease: 'in' },
-    { t: 2.1, x: 300, y: 484, rot: -1.5, ease: 'out' },
-    { t: 5.4, x: 70, y: 590, rot: -2.35, ease: 'out' },
+    { t: 2.5, x: 255, y: 512, rot: -2.2, scale: 1.05, ease: 'out' },
+    { t: 3.5, x: 170, y: 546, rot: -4.6, scale: 0.85, ease: 'inOut' },
+    { t: 4.5, x: 95, y: 582, rot: -6.9, scale: 0.65, ease: 'inOut' },
+    { t: 6.2, x: -20, y: 640, rot: -10.2, scale: 0.35, ease: 'out' },
   ],
   overlays: [
     { t: 1.7, layer: 'impact', kind: 'vignette', color: 'rgba(170,20,10,0.95)', to: 0.7, duration: 0.15 },
     { t: 1.9, layer: 'impact', kind: 'vignette', color: 'rgba(170,20,10,0.95)', to: 0, duration: 1.6 },
-    { t: 4.6, layer: 'white', color: '#f4f8ff', to: 1, duration: 2.6 },
-    { t: 7.4, layer: 'black', color: '#000000', to: 1, duration: 1.8 },
+    { t: 5.0, layer: 'white', color: '#f4f8ff', to: 1, duration: 2.6 },
+    { t: 7.6, layer: 'black', color: '#000000', to: 1, duration: 1.8 },
   ],
   radio: [
     { t: 0.3, speaker: 'SYSTEM', text: 'IMPACT IMMINENT. BRACE.' },
@@ -141,4 +152,3 @@ export const FP3_CRASH: Cinematic = {
   ],
   skippableAfter: 2,
 };
-

@@ -4,7 +4,7 @@ import type { Upgrade } from '../flow/node';
 import { TAG_IDS, type TagSet } from '../tags';
 import { CARD_BY_ID, CARDS } from './cards';
 import { isUnlocked } from '../save';
-import { shipBase } from '../ships';
+import { shipBase, shipById } from '../ships';
 import type { CardDef } from './model';
 
 /**
@@ -91,12 +91,15 @@ export class Loadout {
   readonly count: number;
   /** The ship's base values for the ship stats (max hull, speed, hitbox, dodge cooldown); everything else uses `STATS[..].base`. */
   private readonly shipStats: Record<string, number>;
+  /** Campaign ship tuning: stat multipliers applied last (`ShipStats.statMul`). */
+  private readonly shipMul: Record<string, number>;
 
   constructor(
     readonly upgrades: readonly Upgrade[],
     readonly shipId?: string,
   ) {
     this.shipStats = shipBase(shipId ?? '');
+    this.shipMul = shipId ? (shipById(shipId).baseStats.statMul ?? {}) : {};
     this.count = upgrades.length;
     for (const u of upgrades) {
       this.stacks.set(u.id, (this.stacks.get(u.id) ?? 0) + 1);
@@ -109,7 +112,7 @@ export class Loadout {
 
   /** Effective value of a stat. `base` defaults to the stat's own base; pass one for a live-adjusted base (debug damage). */
   get(stat: string, base: number = this.shipStats[stat] ?? STATS[stat]?.base() ?? 0): number {
-    return (base + (this.add.get(stat) ?? 0)) * (this.mul.get(stat) ?? 1);
+    return (base + (this.add.get(stat) ?? 0)) * (this.mul.get(stat) ?? 1) * (this.shipMul[stat] ?? 1);
   }
 
   /** The tags a weapon's shots carry (`<weapon>.tag.<id>` stacks), or undefined when none. */

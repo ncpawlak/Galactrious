@@ -101,7 +101,8 @@ export const FP3_LENGTH = 36000;
 
 /** Shared lane so a path always exists through both the peaks and the debris. */
 const lane = (width: number, amp: number, period: number) => ({ lane: { x: 270, width }, laneDrift: { amp, period } });
-const FROM_BELOW: ObstacleField['edge'] = [{ edge: 'bottom', weight: 3 }, { edge: 'sides', weight: 1 }];
+/** Debris sweeps across from the left or right edge (never from below: the player's finger covers the bottom of the screen). */
+const FROM_SIDES: ObstacleField['edge'] = 'cross';
 
 export const FP3_FREEFALL: ScrollLevelDef = {
   id: 'fp3-freefall',
@@ -120,23 +121,23 @@ export const FP3_FREEFALL: ScrollLevelDef = {
     { at: 26000, kind: 'setWeather', intensity: 0.9, ease: 6 },
     { at: 31000, kind: 'setWeather', intensity: 1, ease: 5 },
     // A. Sparse debris from below, a wide free lane (0 to 5000 px, 21 s at 240 px/s). No peaks yet.
-    { at: 300, kind: 'field', to: 5000, density: 2.6, shapes: [{ shape: 'debris-s', weight: 3 }, { shape: 'debris-m', weight: 2 }], motions: ['rise', 'rise-tumble'], edge: 'bottom', ...lane(260, 40, 3000), seed: 201, damage: 1 },
+    { at: 300, kind: 'field', to: 5000, density: 2.6, shapes: [{ shape: 'debris-s', weight: 3 }, { shape: 'debris-m', weight: 2 }], motions: ['cross', 'cross-tumble'], edge: FROM_SIDES, ...lane(260, 40, 3000), seed: 201, damage: 1 },
     // B. Bigger debris from below and a few side drifters; the first peaks come from the top (5000 to 11000, 280 px/s).
     { at: 5000, kind: 'speed', speed: 280, ease: 2 },
-    { at: 5300, kind: 'field', to: 11000, density: 3.6, shapes: [{ shape: 'debris-m', weight: 3 }, { shape: 'debris-l', weight: 1.5 }], motions: ['rise', 'rise-tumble', 'rise-fast'], edge: FROM_BELOW, ...lane(210, 60, 2800), seed: 202, damage: 1 },
+    { at: 5300, kind: 'field', to: 11000, density: 3.2, shapes: [{ shape: 'debris-m', weight: 3 }, { shape: 'debris-l', weight: 1.5 }], motions: ['cross', 'cross-tumble', 'cross-fast'], edge: FROM_SIDES, ...lane(210, 60, 2800), seed: 202, damage: 1 },
     { at: 5600, kind: 'field', to: 11000, density: 1.5, shapes: [{ shape: 'peak-s', weight: 2 }, { shape: 'peak-m', weight: 1 }], motions: ['straight'], edge: 'top', ...lane(220, 60, 2800), seed: 203, damage: 1 },
     // C. Ranges join in (11000 to 18000, 320 px/s).
     { at: 11000, kind: 'speed', speed: 320, ease: 2 },
-    { at: 11300, kind: 'field', to: 18000, density: 4.6, shapes: [{ shape: 'debris-m' }, { shape: 'debris-l' }, { shape: 'debris-s', weight: 0.6 }], motions: ['rise', 'rise-tumble', 'rise-fast'], edge: FROM_BELOW, ...lane(170, 80, 2600), seed: 204, damage: 1 },
+    { at: 11300, kind: 'field', to: 18000, density: 3.8, shapes: [{ shape: 'debris-m' }, { shape: 'debris-l' }, { shape: 'debris-s', weight: 0.6 }], motions: ['cross', 'cross-tumble', 'cross-fast'], edge: FROM_SIDES, ...lane(170, 80, 2600), seed: 204, damage: 1 },
     { at: 11600, kind: 'field', to: 18000, density: 2.2, shapes: [{ shape: 'peak-s' }, { shape: 'peak-m', weight: 1.4 }, { shape: 'range-m', weight: 1 }], motions: ['straight'], edge: 'top', ...lane(180, 80, 2600), seed: 205, damage: 1 },
     // D. Tight fields, snowy ranges: the sky turns arctic (18000 to 26000, 360 px/s).
     { at: 18000, kind: 'speed', speed: 360, ease: 2 },
     { at: 18000, kind: 'theme', theme: 'arctic', fade: 6 },
-    { at: 18300, kind: 'field', to: 26000, density: 5.6, shapes: [{ shape: 'debris-m' }, { shape: 'debris-l', weight: 1.4 }, { shape: 'debris-xl', weight: 0.5 }], motions: ['rise', 'rise-tumble', 'rise-fast'], edge: FROM_BELOW, ...lane(140, 90, 2400), seed: 206, damage: 1 },
+    { at: 18300, kind: 'field', to: 26000, density: 4.4, shapes: [{ shape: 'debris-m' }, { shape: 'debris-l', weight: 1.4 }, { shape: 'debris-xl', weight: 0.5 }], motions: ['cross', 'cross-tumble', 'cross-fast'], edge: FROM_SIDES, ...lane(140, 90, 2400), seed: 206, damage: 1 },
     { at: 18600, kind: 'field', to: 26000, density: 3, shapes: [{ shape: 'peak-m' }, { shape: 'peak-l', weight: 0.8 }, { shape: 'range-m', weight: 1.2 }, { shape: 'range-l', weight: 0.6 }], motions: ['straight'], edge: 'top', ...lane(150, 90, 2400), seed: 207, damage: 1 },
     // E. The range: tightest and fastest, in a violent storm (26000 to 33000, 400 px/s).
     { at: 26000, kind: 'speed', speed: 400, ease: 2 },
-    { at: 26300, kind: 'field', to: 33000, density: 6.4, shapes: [{ shape: 'debris-l' }, { shape: 'debris-xl', weight: 0.8 }, { shape: 'debris-m' }], motions: ['rise', 'rise-tumble', 'rise-fast'], edge: FROM_BELOW, ...lane(125, 100, 2200), seed: 208, damage: 1 },
+    { at: 26300, kind: 'field', to: 33000, density: 5, shapes: [{ shape: 'debris-l' }, { shape: 'debris-xl', weight: 0.8 }, { shape: 'debris-m' }], motions: ['cross', 'cross-tumble', 'cross-fast'], edge: FROM_SIDES, ...lane(125, 100, 2200), seed: 208, damage: 1 },
     { at: 26600, kind: 'field', to: 33000, density: 3.6, shapes: [{ shape: 'peak-l' }, { shape: 'range-m', weight: 1.2 }, { shape: 'range-l', weight: 1 }, { shape: 'peak-m', weight: 0.8 }], motions: ['straight'], edge: 'top', ...lane(130, 100, 2200), seed: 209, damage: 1 },
     // F. The last stretch: nothing left in the way, the ground rushes up. The cinematic (the objective's outro) plays the crash.
     { at: 33000, kind: 'speed', speed: 440, ease: 2 },
