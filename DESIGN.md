@@ -676,6 +676,47 @@ The first three rewards are the three gated cards that already existed (`demoCar
 - The hidden item tells are subtle by design and were checked on screen at one scale only; any carving can find a cache by accident. The wave formations and ace placements are first guesses.
 - The boss backdrop is a slow `scroll` level with no entries; Bulwark was not designed for a scrolling floor (it looks fine), nothing else was tuned for it.
 
+## Ship builder screen (Endless and Conquest) (design, not built)
+Status: **design only**, agreed with the owner. It replaces the two-screen flow (`ShipSelectScreen` list, then `LoadoutScreen` slots in `src/flow/shipScreens.ts`) with **one screen**. It is used by **Endless and Conquest only**; Campaign chapters keep their preset ships and loadouts.
+
+### Layout (540x960 portrait, top to bottom)
+1. **Header:** the ship body's name with `<` `>` arrows to change the body (swipe on the model works too). Keyboard: left/right.
+2. **Hero ship model** in the centre, large.
+   - **Locked bodies** are drawn as a **black silhouette of the real shape** with a **lock icon** over it and the **unlock requirement** as text below (for example "Finish Fallen Peace").
+   - **Skin arrows** (`<` `>` at the model's sides) cycle that body's skins, with the skin's name and position dots. **Locked skins** show the same silhouette, lock and requirement treatment and can be viewed but not equipped.
+3. **Stats strip:** hull, speed and fire for the body (as on the current ship select).
+4. **Weapon slots** under the model: one wide **MAIN** box and **three AUX** boxes (every body has 1 main + 3 aux slots, including the Empire fighter; the number of weapons a body uses in the campaign does not limit the model). Each box shows the weapon's icon and name, or "empty".
+5. **Footer:** BACK, DEFAULT (resets slots to the body's preset loadout and the default skin), START.
+
+### Choosing a weapon
+- Tapping a slot opens a **bottom sheet** (slides up) listing weapons for that slot type: main weapons for MAIN, aux weapons for AUX. Tap a row (or scroll the list and tap) and the slot fills and the sheet closes. Tapping outside, or back/esc, closes it unchanged.
+- **Every weapon is listed.** Unlocked weapons first, sorted by name; **locked weapons** follow, drawn as **silhouetted icons with a lock icon and their unlock requirement**; they cannot be selected.
+- Each row shows the icon, name and a one-line description; the weapon currently in the slot is marked.
+- **Any weapon on any ship.** A weapon is available to every body once it is unlocked (the loadout is not limited to the body's own weapons). A weapon already in another aux slot **swaps** with the chosen slot.
+- Slots start filled with the body's **preset loadout**, so START is one tap away. The last used loadout per body stays remembered (existing `saveStore.setLastLoadout`).
+
+### Skins and awards
+- A **skin** is a palette (and, where it helps, trim) variant of a body. A body always has a **default skin**, unlocked from the start.
+- **Skins are awards.** Each locked skin names its requirement in the UI. They are tied to Campaign, Conquest and Endless results. First slice, kept small (1 or 2 per mode, adding more is a data change):
+  - **Campaign:** a skin for finishing "Fallen Peace"; a gold skin for finishing it with all gold medals.
+  - **Conquest:** a skin for clearing a region (Empire Base first); one for completing a region's challenge set.
+  - **Endless:** a skin for reaching a level milestone (milestones to be set; Endless has no awards yet).
+- **Delta-Rookie:** it stays the campaign's own ship (story, preset loadout). In the builder it shows as the **Vanguard's "Rookie" skin**, unlocked by finishing the campaign. (Open: the owner has not confirmed this; the alternative is to leave it a separate body.)
+- Skin data lives with the ship definitions (`src/ships.ts`): `skins: { id, name, palette, unlock }[]`. The unlock reasons are shown on the locked screen and the Unlocks screen.
+
+### NEW markers
+- A **NEW dot** appears on a body, skin or weapon that has been unlocked but not seen: on the arrows or name for a body or skin, on the row for a weapon, and on the title's mode entry that leads to the builder.
+- The save gets a per-item `seen` flag; viewing the item (the body or skin centred on screen, the weapon sheet opened) marks it seen. This needs a **save version bump** and a migration (existing unlocked items count as seen).
+
+### Data and code notes
+- Add the locked-item requirement text to the ship, skin and weapon definitions (a `requirement` string next to the existing unlock hint).
+- Silhouettes: the ship model is drawn from its layout; locked bodies draw it with a single black fill and no detail. Locked weapon icons do the same with the existing `weaponIcon` helper (a `silhouette` flag).
+- The slot data model is unchanged (`{ main, aux: [3] }`); only the UI and skin selection are new. `Run.select` takes the chosen body, skin and loadout.
+- Keep keyboard support: arrows change body, `[`/`]` or up/down change skin, 1 to 4 open a slot, enter starts, esc goes back.
+
+### Open
+Skin names and the exact award thresholds; Endless milestones; whether Delta-Rookie becomes a skin; a live weapon preview on the model (optional, not in v1).
+
 ## Combat range
 
 Close weapons (Scatter ~80 px, Blades, Lance, Needler) need the ship near the enemies, so the field is tuned both ways:
