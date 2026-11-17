@@ -7,11 +7,13 @@
  *
  * Version 2 added `lastLoadout`. Version 3 added `campaign` (boss snapshots) and `MedalRecord.bonus`. Version 4 changed the Fallen Peace rewards (empire ship for any medals; Pulse Orbs and Energy Bomb for all gold; Laser and Energy Wave stashed).
  *
+ * Version 5 added `conquest` (unlocked regions, completed challenges and best results per region); a v4 save that already owns the Empire Fighter (Campaign 1 finished) gets the Empire Base region.
+ *
  * To add a new field: add it to `SaveData`, give it a default in `defaults()`, bump `SAVE_VERSION` and add a step to `MIGRATIONS`.
  */
 
 export const SAVE_KEY = 'galactrious.save';
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export type UnlockKind = 'cards' | 'ships' | 'weapons';
 export type Medal = 'bronze' | 'silver' | 'gold';
@@ -43,11 +45,27 @@ export interface LastLoadout {
   aux: string[];
 }
 
+/** Best results of one Conquest region (all-time bests, each kept independently). */
+export interface ConquestBest {
+  kills?: number;
+  timeSec?: number;
+  hidden?: number;
+  cleared?: boolean;
+}
+
+/** Conquest progress (src/conquest): region ids unlocked, challenge ids completed per region, bests per region. */
+export interface ConquestProgress {
+  regions: string[];
+  challenges: Record<string, string[]>;
+  best: Record<string, ConquestBest>;
+}
+
 export interface SaveData {
   version: number;
   unlocks: Record<UnlockKind, string[]>;
   medals: Record<string, MedalRecord>;
   campaign: CampaignProgress;
+  conquest: ConquestProgress;
   lastLoadout?: LastLoadout;
   stats?: { runs?: number; bossesKilled?: number };
 }
@@ -56,7 +74,7 @@ const KINDS: UnlockKind[] = ['cards', 'ships', 'weapons'];
 const MEDAL_RANK: Record<Medal, number> = { bronze: 1, silver: 2, gold: 3 };
 
 export function defaults(): SaveData {
-  return { version: SAVE_VERSION, unlocks: { cards: [], ships: [], weapons: [] }, medals: {}, campaign: { snapshots: {} } };
+  return { version: SAVE_VERSION, unlocks: { cards: [], ships: [], weapons: [] }, medals: {}, campaign: { snapshots: {} }, conquest: { regions: [], challenges: {}, best: {} } };
 }
 
 /** MIGRATIONS[n] upgrades a version-n blob to version n+1. Empty until the format first changes. */
@@ -71,6 +89,13 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => Record<string, 
     const medals = (d.medals ?? {}) as Record<string, { best?: unknown } | undefined>;
     const gold = ['fp-1', 'fp-2', 'fp-3', 'fp-4', 'fp-5', 'fp-6', 'fp-7'].every((id) => medals[id]?.best === 'gold');
     if (gold) d.unlocks = { ...u, weapons: [...new Set([...weapons, 'pulse-orb', 'flak'])] };
+    return d;
+  },
+  4: (d) => {
+    // v5: `conquest`. Campaign 1 finished (the empire ship was its reward) unlocks the Empire Base region.
+    const u = (d.unlocks ?? {}) as Record<string, unknown>;
+    const ships = Array.isArray(u.ships) ? (u.ships as unknown[]) : [];
+    if (ships.includes('empire-fighter')) d.conquest = { regions: ['empire-base'], challenges: {}, best: {} };
     return d;
   },
 };
@@ -113,6 +138,27 @@ function normalize(raw: unknown): SaveData | null {
       const r = rec as Record<string, unknown> | null;
       if (r && typeof r === 'object' && typeof r.levelId === 'string' && typeof r.bossId === 'string' && r.data && typeof r.data === 'object') {
         out.campaign.snapshots[slot] = { levelId: r.levelId, bossId: r.bossId, data: r.data };
+      }
+    }
+  }
+  const cq = d.conquest as Record<string, unknown> | undefined;
+  if (cq && typeof cq === 'object') {
+    if (Array.isArray(cq.regions)) out.conquest.regions = [...new Set(cq.regions.filter((x): x is string => typeof x === 'string'))];
+    const ch = cq.challenges;
+    if (ch && typeof ch === 'object' && !Array.isArray(ch)) {
+      for (const [id, list] of Object.entries(ch as Record<string, unknown>)) if (Array.isArray(list)) out.conquest.challenges[id] = [...new Set(list.filter((x): x is string => typeof x === 'string'))];
+    }
+    const bs = cq.best;
+    if (bs && typeof bs === 'object' && !Array.isArray(bs)) {
+      for (const [id, rec] of Object.entries(bs as Record<string, unknown>)) {
+        if (!rec || typeof rec !== 'object') continue;
+        const r = rec as Record<string, unknown>;
+        const b: ConquestBest = {};
+        if (typeof r.kills === 'number' && Number.isFinite(r.kills)) b.kills = r.kills;
+        if (typeof r.timeSec === 'number' && Number.isFinite(r.timeSec)) b.timeSec = r.timeSec;
+        if (typeof r.hidden === 'number' && Number.isFinite(r.hidden)) b.hidden = r.hidden;
+        if (r.cleared === true) b.cleared = true;
+        out.conquest.best[id] = b;
       }
     }
   }
@@ -205,6 +251,41 @@ export class SaveStore {
   /** Remember the last ship and loadout the player started a run with. */
   setLastLoadout(l: LastLoadout): void {
     this.data.lastLoadout = { ship: l.ship, main: l.main, aux: [...l.aux] };
+    this.save();
+  }
+
+  isRegionUnlocked(regionId: string): boolean {
+    return this.data.conquest.regions.includes(regionId);
+  }
+
+  /** Unlock a Conquest region; returns true when it was new. */
+  unlockRegion(regionId: string): boolean {
+    if (this.isRegionUnlocked(regionId)) return false;
+    this.data.conquest.regions.push(regionId);
+    this.save();
+    return true;
+  }
+
+  challengesDone(regionId: string): readonly string[] {
+    return this.data.conquest.challenges[regionId] ?? [];
+  }
+
+  /** Mark a Conquest challenge completed (saved at once, so a death later in the run cannot lose it); true when it was new. */
+  completeChallenge(regionId: string, challengeId: string): boolean {
+    const list = (this.data.conquest.challenges[regionId] ??= []);
+    if (list.includes(challengeId)) return false;
+    list.push(challengeId);
+    this.save();
+    return true;
+  }
+
+  /** Keep the best of each figure of a Conquest run. */
+  recordConquestBest(regionId: string, r: ConquestBest): void {
+    const b = (this.data.conquest.best[regionId] ??= {});
+    if (r.kills !== undefined && r.kills > (b.kills ?? 0)) b.kills = r.kills;
+    if (r.timeSec !== undefined && r.timeSec > (b.timeSec ?? 0)) b.timeSec = r.timeSec;
+    if (r.hidden !== undefined && r.hidden > (b.hidden ?? 0)) b.hidden = r.hidden;
+    if (r.cleared) b.cleared = true;
     this.save();
   }
 

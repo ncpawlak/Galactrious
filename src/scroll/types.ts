@@ -241,6 +241,8 @@ export interface ScrollHost {
   spawnTerrain?(def: UnitDefinition, placement: UnitPlacement): Unit;
   /** A ground turret was destroyed: the game counts it for `destroyAll { tag }`. */
   noteGroundKill?(tag: string): void;
+  /** A Conquest hidden item was found (its crate burst or its cache console was shot): `id` from the `hidden` entry, and where. */
+  noteHidden?(id: string, x: number, y: number): void;
   /** Where shadows fall on the ground (the ship and the flying units), for the surface background. */
   shadowCasters?(): ShadowCaster[];
 }

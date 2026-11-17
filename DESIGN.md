@@ -563,14 +563,14 @@ Decisions: rooms **react in the middle of the fight** (a Repair room heals while
 3. Mode select on the title; the current run becomes Endless.
 4. Campaign vertical slice: one campaign, `objective` node, timers, checkpoints, medals, the first unlock.
 5. Allies and squad objectives (when decided).
-6. Conquest.
+6. Conquest. **Slice 1 built** (Empire Base, see "Conquest").
 Alongside, independent: the room function catalog (can run next to steps 1-2).
 
 ### Open questions
 - Squad/ally behaviour; (Conquest death rule decided: permadeath, see "Conquest"); whether ships change handling; number of campaigns/levels; how many weapon variants per ship.
 
-## Conquest (design, not built)
-Status: **design only**, agreed with the owner. Conquest is the third mode (after Endless and Campaign). The Conquest death rule from the roadmap is now decided: **permadeath**.
+## Conquest (slice 1 built: Empire Base; see "As built" at the end of this section)
+Status: **slice 1 built** (first pass, bot-measured, not human-playtested). Design agreed with the owner. Conquest is the third mode (after Endless and Campaign). The Conquest death rule from the roadmap is now decided: **permadeath**.
 
 ### What it is
 A **long but finite run** (target **15 to 25 minutes**) built from waves, bosses and short scroll sections, like Endless in feel, but set in one **region** that comes from a campaign: its look, enemies, hazards and bosses. Each run has **challenges** (kills, survival time, hidden items, boss feats) that **unlock things permanently**. It reuses the flow engine (`Run` nodes `wave`, `boss`, `reward`, `scroll`), the scroll themes and obstacles, the card pool, the loadout builder (1 main + 3 aux), the save system and the objective and medal framework. What is new is the **region definition**, the **challenge layer** and the **hidden items**.
@@ -611,6 +611,53 @@ Tuning is by bot runs and the owner's playtest, as with the campaign.
 
 ### Open
 The exact challenge numbers and rewards per challenge; the node list pacing and boss order; the number of hidden items and their placements; how many regions and which campaigns come next (a second campaign will define the next region).
+
+### As built: Conquest slice 1 (Empire Base)
+Status: **built**: title CONQUEST [Q] -> region select -> region screen (challenges with saved progress) -> ship select -> loadout -> a 4-level, 28-node run -> result screen. Permadeath. Everything about a region is data in `src/conquest/`; the flow engine, nodes, scroll runner and terrain system are reused with small additions.
+
+**Files.** `src/conquest/types.ts` (`RegionDefinition { id, name, blurb, campaign, unlockHint, theme, roster, run, challenges, hidden }`, `ChallengeDef { id, name, desc, metric, rewards }`, `HiddenPlacement`), `regions.ts` (`REGIONS`, `unlockRegionsFor(campaignId)`), `empireBase.ts` (the region), `tracker.ts` (`ConquestTracker`, the per-run measurement), `screens.ts` (region select, region screen, result screen). Also `src/terrain/hidden.ts` (the hidden structures), `src/bosses/capitalShipConquest.ts` (the final boss), `src/upgrades/conquestCards.ts` (2 reward cards). To add a region: write a `RegionDefinition` and add it to `REGIONS`; set its `campaign` id and finishing that campaign unlocks it (`unlockRegionsFor`, called in `campaign/session.ts`).
+
+**The Empire Base run** (`EMPIRE_BASE_RUN`; a card pick after every node; a full heal at the start of each level; **+1 hull after every cleared wave or scroll stage**, the "field repairs", `REPAIR_HULL` in `tracker.ts`):
+- Level 1 "Outer defences": scroll `cq-1a`, wave Picket line, scroll `cq-1b`, wave Gunship escort, wave Fighter swarm, wave Ace VIPER (mini-boss with 4 fighters).
+- Level 2 "The garrison": scroll `cq-2a`, wave Lancer wing (the "+" units), wave Pincer, scroll `cq-2b`, wave Ace CINDER, **Bulwark (`bulwark-components`, the milestone boss)** over a base backdrop.
+- Level 3 "Inner base": scroll `cq-3a`, wave Bastion wing, wave Siege wing, scroll `cq-3b`, wave Aces RAVEN and VIPER.
+- Level 4: **the capital ship** (`capital-ship-conquest`), the final boss. Winning it wins the run.
+
+The six scroll sections are 60 s windows of the chapter 5 surface-run timeline (`surfaceTimeline`: defence lines with gaps, gun and mortar turrets, turret clusters, shield barriers, empire flybys: rear, cross, strafe, flak drift) in three difficulty variants (`lineBase` 12.5 / 11 / 10.5 s between lines) with the themes `surfaceBase`, `surface` and `baseInterior`. Their `fireScale` is the value chapter 5 validated for the same window of the timeline (0.55, 0.55, 0.6, 0.6, 0.5, 0.6). Waves use the empire fighter and gunship (the "+" variants, guns a quarter faster, from level 2) and the three aces as mini-bosses. The capital ship is the chapter 7 definition with the armour carvable from the start and its density halved (`ARMOUR_SCALE` 0.5 in `capitalShipConquest.ts`, the one knob; the campaign definitions are untouched); its core needs both rooms (shield projector, weapons control) down; six gun housings.
+
+**Challenges** (`EMPIRE_BASE_CHALLENGES`, five; each is saved the moment its metric is met, so a later death cannot take it back). The metric kinds `kills`, `time`, `hidden`, `clear`, `bossNoDamage`, `bossTurrets` and `bossRoom` are all implemented in the tracker; Empire Base uses the first four and `bossTurrets`.
+
+| Challenge | Metric | Reward |
+|---|---|---|
+| Scrap the fleet | 150 enemies defeated in one run | card Overclocked Chain (`demo-chain-overclock`) |
+| Hold the line | survive 10 minutes (the run clock) | card Ablative Plating (`demo-ablative-plating`) |
+| Eyes open | find 3 hidden items in one run | card Supercharged Gauss (`demo-gauss-supercharge`) |
+| Disarm the flagship | destroy all six gun housings of the capital ship | card Gunsmith's Coil (`cq-gunsmith-coil`) |
+| Fall of the base | clear the run | card Salvaged Reactor (`cq-salvaged-reactor`) |
+
+The first three rewards are the three gated cards that already existed (`demoCards.ts`, reworded for Conquest); the last two are new, small cards on existing stat keys. Rewards are `UnlockSpec`s, so a challenge can award ships, weapons or cards through the same flags; the Unlocks screen shows the cards. **Kills** counts units and ground turrets (hidden items and flybys that leave do not count); a perfect-aim god-mode bot makes 189 in a clear, so the threshold is 150 (the design's example of 200 was out of reach).
+
+**Hidden items** (`HiddenEntry`, a new terrain timeline entry; `src/terrain/hidden.ts`): six placements, one per scroll section, alternating two kinds. A **crate** is a 44 px cargo crate off the main lane at a screen edge: its hit area is concealed (`ComponentSpec.concealed`), it never shoots, one amber lamp on its lid flickers now and then (the tell, drawn by `TerrainSystem.draw`), and it bursts open on the first hit. A **cache** is a 120 px wall piece with a secret room: the plating shows a faint seam rectangle and two amber rivets over a lit bay with an embedded console; carve the plating away and shoot the console (about a second of chain gun fire). Found = the console or crate component is destroyed: the terrain system calls `ScrollHost.noteHidden(id, x, y)` (gold burst, counted under `killsByTag['hidden:<id>']`, never a kill). A crate heals 1 to 2 hull, a cache gives a random card (`HiddenReward`); the tracker applies it and shows a toast. Placements are data in `EMPIRE_BASE_HIDDEN` (`level` = the section id, `at` = scroll px).
+
+**Run flow and save.** `Run` gained phases `regions` and `region`, `region` / `tracker` / `result` fields and `activeDef` (the region's list while a region is chosen, else Endless); Endless is unchanged (`region` is null; the Warden and Wisp ship unlocks stay Endless only). `ConquestTracker` is created in `Run.start`, told about node starts and ends (boss feats) and updated every node frame; a death or the end calls `finish`, which records the bests and returns the result shown by `drawConquestResult`; leaving a run half way (`toTitle`) also records the bests. **Save version 5** adds `conquest { regions, challenges, best }` (`isRegionUnlocked`, `unlockRegion`, `completeChallenge`, `challengesDone`, `recordConquestBest`); the v4 to v5 migration gives the Empire Base region to a save that already owns the Empire Fighter (Campaign 1 finished), so existing saves are handled. New saves get the region when `CampaignSession.finish` completes the last level of the campaign.
+
+**Other changes.** `NodeHost.healBy(n)`; `Game` implements `noteHidden`; `ScrollNode` draws a thin progress bar along the bottom for an inline level (it printed DIST text over the level label); `ShipSelectScreen` takes a subtitle ("Conquest: EMPIRE BASE"); the three older gated cards lost their "DEMO:" wording.
+
+**Debug** (`game.debug.conquest`, run mode): `unlockRegion(id?)`, `start(regionId?, level?, node?, seed?)` (menus skipped), `jump(level, node)`, `nodes()` (the list as `level.node: type id`), `grantChallenge(id)` (completes it and awards its unlocks), `tracker()` (kills, found, toasts), `result()`, `setTime(s)` (the run clock, to test "survive 10 minutes"). `[Q]` opens Conquest on the title. Use `?nosave` for scripted runs.
+
+**Measured** (in-app browser, `game.update(1/60)` without rendering; the bot is the debug `dodge` autopilot, an aimbot, picking cards 1, 2, 3 in turn):
+- A whole run with god mode (final content, seed 21): **693 s (11.6 min)**, **189 kills**, no deaths, Scrap the fleet, Hold the line and Fall of the base earned (the first draft, with smaller waves, took 709 s and made 171 kills). The bot clears waves in 12 to 30 s and bosses in 35 to 70 s; the six sections are fixed at 60 s each (6 min of the run); the card screens add about 2.2 s each. **A human will take longer on the waves and bosses: the estimate is 16 to 20 minutes** (the target was 15 to 25); that is an estimate, not a measurement.
+- Bosses without god mode (dodge bot, no damage taken in any run): Bulwark 51 s with no cards, 29 s with 12; capital ship 69 to 75 s with no cards when the bot happens to open the rooms (it aims only at the core and timed out in about a third of the seeds, because the core needs both rooms down); a directed dig (shield room, weapons room, then the core, god mode) took 69 s with no cards and 39 s with 12.
+- Checked by script: a crate found by shooting it (hull and toast), a cache found by carving (card granted), a death after the 10-minute mark saved Hold the line and unlocked its card (the result screen lists it, the save holds it), the capital ship feat Disarm the flagship and the run win (result screen), the `bossNoDamage` and `bossRoom` metrics on a synthetic region, a v4 save migrating with the region unlocked, the menus by keyboard (title, regions, region, ship, loadout, start), and that Endless is unchanged.
+
+**Not done / not verified.**
+- **No human playtest.** The fairness of the six scroll sections is not measured. My gap-seeking dodge bot took 3 to 5 of 5 hull per section, but the same bot takes 6, 10 and 11 hits on the shipped chapter 5 sections (which the chapter's own non-aiming bot passed at 0.9 to 2.1 hits), so that bot says nothing absolute. What protects the player: chapter 5's validated `fireScale` per window, +1 hull after every stage, a full heal each level, heal crates and cards. If the owner finds the sections hard, lower the `fire` argument of `section(...)` in `empireBase.ts`, or raise `REPAIR_HULL`.
+- The thresholds (150 kills, 10:00, 3 of 6 hidden) are bot-derived guesses; a human's dig time on the capital ship is unknown (bot 39 to 75 s).
+- **Cosmetics are not built** (there is no cosmetic unlock kind or palette selector); only cards are awarded. No ship or weapon is awarded by Empire Base: the existing ones are tied to the Endless and campaign milestones, and the stashed Laser and Energy Wave stay stashed. This is the content gap: Conquest wants about one ship, two weapons and a cosmetic set per region (issue #60 tracks new weapons).
+- One region only, so the region list is one row and does not scroll. The Unlocks screen still lists cards and weapons only (no region or challenge view).
+- Touch: the new screens use the same tap targets as the existing menus but were only driven by keyboard and scripted calls. The result screen and toasts were looked at at 540 x 960 in the in-app browser only.
+- The hidden item tells are subtle by design and were checked on screen at one scale only; any carving can find a cache by accident. The wave formations and ace placements are first guesses.
+- The boss backdrop is a slow `scroll` level with no entries; Bulwark was not designed for a scrolling floor (it looks fine), nothing else was tuned for it.
 
 ## Combat range
 

@@ -283,6 +283,7 @@ export class ScrollRunnerImpl implements ScrollRunner {
       case 'turretCluster':
       case 'turretTally':
       case 'barrier':
+      case 'hidden':
         this.terrain.fire(e, lag);
         break;
     }

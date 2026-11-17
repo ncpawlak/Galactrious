@@ -4,7 +4,8 @@ import type { Unit } from '../units';
 import { buildStructure, countTurrets, planEntry, type Follow, type PlannedStructure } from './structures';
 import { GROUND, resetGround } from './shadows';
 import { BarrierSystem } from './barriers';
-import { GROUND_TAG, isTerrainEntry, type TerrainEntry } from './types';
+import { buildHidden, hiddenTag, planHidden } from './hidden';
+import { GROUND_TAG, HIDDEN_PREFIX, isTerrainEntry, type HiddenEntry, type TerrainEntry } from './types';
 
 /** Contact damage of a wall to the ship (the ship has 5 hull by default; a bullet is 1). Never an instant kill. */
 export const WALL_DAMAGE = 1;
@@ -23,6 +24,8 @@ export interface Structure {
   follow: Follow;
   plan: PlannedStructure;
   turrets: TurretRef[];
+  /** A Conquest hidden item: its id, and where its tell lamp sits (px from the structure's top-left). Not set on ordinary structures. */
+  hidden?: { id: string; lamp: { x: number; y: number }; found: boolean };
 }
 
 export interface TurretTally {
@@ -91,7 +94,11 @@ export class TerrainSystem {
       console.warn('terrain: the scroll host cannot spawn terrain (ScrollHost.spawnTerrain missing)');
       return;
     }
-    const tag = (e as Exclude<TerrainEntry, { kind: 'turretTally' | 'barrier' }>).tag ?? GROUND_TAG;
+    if (e.kind === 'hidden') {
+      this.fireHidden(e, lag, spawn);
+      return;
+    }
+    const tag = (e as Exclude<TerrainEntry, { kind: 'turretTally' | 'barrier' | 'hidden' }>).tag ?? GROUND_TAG;
     for (const plan of planEntry(e)) {
       const follow: Follow = { y: lag - plan.dy };
       const def = buildStructure(plan, follow);
@@ -102,6 +109,16 @@ export class TerrainSystem {
       this.structures.push({ unit, follow, plan, turrets });
       this.spawned[tag] = (this.spawned[tag] ?? 0) + turrets.length;
     }
+  }
+
+  private fireHidden(e: HiddenEntry, lag: number, spawn: NonNullable<ScrollHost['spawnTerrain']>): void {
+    const look = planHidden(e);
+    const follow: Follow = { y: lag - look.plan.dy };
+    const def = buildHidden(e, look, follow);
+    const unit = spawn.call(this.host, def, { slot: { x: look.plan.cx, y: -look.height / 2 - 8 } });
+    unit.boss.groundKeep = GROUND_KEEP_PIXELS;
+    unit.boss.coreColor = [38, 40, 52];
+    this.structures.push({ unit, follow, plan: look.plan, turrets: [{ id: 't0', tag: hiddenTag(e), counted: false }], hidden: { id: e.id, lamp: look.lamp, found: false } });
   }
 
   update(dt: number, speed: number): void {
@@ -124,6 +141,12 @@ export class TerrainSystem {
         const c = s.unit.fight.components.items.find((it) => it.spec.id === t.id);
         if (c && c.state !== 'active') {
           t.counted = true;
+          if (t.tag.startsWith(HIDDEN_PREFIX)) {
+            if (s.hidden) s.hidden.found = true;
+            const c = s.unit.center();
+            this.host.noteHidden?.(t.tag.slice(HIDDEN_PREFIX.length), c.x, c.y);
+            continue;
+          }
           this.destroyed[t.tag] = (this.destroyed[t.tag] ?? 0) + 1;
           this.host.noteGroundKill?.(t.tag);
         }
@@ -165,6 +188,28 @@ export class TerrainSystem {
   /** The turret tally on the HUD (only when a `turretTally` entry switched it on). */
   draw(ctx: CanvasRenderingContext2D): void {
     this.barriers.draw(ctx, this.clock);
+    // The tell of a hidden item that has not been found: a short amber glint on its lamp, every couple of seconds (never while it is off screen).
+    for (let i = 0; i < this.structures.length; i++) {
+      const s = this.structures[i];
+      const h = s.hidden;
+      if (!h || h.found || s.unit.gone) continue;
+      const b = s.unit.boss;
+      if (b.y < -b.height || b.y > H) continue;
+      const k = Math.max(0, Math.sin(this.clock * 2.4 + i * 1.7)) ** 10;
+      if (k < 0.04) continue;
+      const x = b.x + h.lamp.x;
+      const y = b.y + h.lamp.y;
+      ctx.save();
+      ctx.globalAlpha = 0.85 * k;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, 11);
+      g.addColorStop(0, 'rgba(255, 214, 120, 1)');
+      g.addColorStop(1, 'rgba(255, 150, 40, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - 11, y - 11, 22, 22);
+      ctx.fillStyle = '#fff2c0';
+      ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3);
+      ctx.restore();
+    }
     if (!this.tallyOn) return;
     const t = this.tally(this.tallyTag);
     const done = t.planned > 0 && t.destroyed >= t.planned;

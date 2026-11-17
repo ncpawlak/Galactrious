@@ -1,3 +1,4 @@
+import { CONQUEST_CARDS } from './conquestCards';
 import { DEMO_LOCKED_CARDS } from './demoCards';
 import type { CardDef } from './model';
 
@@ -69,7 +70,8 @@ export const CARDS: CardDef[] = [
   { id: 'dodge-cooldown', name: 'Quick Thrusters', group: 'Ship', desc: 'Dodge recharges 20% faster.', maxStacks: 3, modifiers: [{ stat: 'dodge.cooldown', op: 'mul', value: 0.8 }] },
   { id: 'ship-speed', name: 'Engines', group: 'Ship', desc: 'Ship moves 12% faster.', maxStacks: 3, weight: 0.8, modifiers: [{ stat: 'ship.speed', op: 'mul', value: 1.12 }] },
   { id: 'ship-hitbox', name: 'Compact Hull', group: 'Ship', desc: 'Smaller hitbox: bullets must be closer to hurt you.', maxStacks: 2, weight: 0.6, rarity: 'rare', modifiers: [{ stat: 'ship.hitbox', op: 'mul', value: 0.8 }] },
-  ...DEMO_LOCKED_CARDS, // DEMO locked cards (gating proof); remove with demoCards.ts
+  ...DEMO_LOCKED_CARDS, // gated cards; the first three Conquest (Empire Base) rewards, see demoCards.ts
+  ...CONQUEST_CARDS,
 ];
 
 export const CARD_BY_ID = new Map(CARDS.map((c) => [c.id, c]));
