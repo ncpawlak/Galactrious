@@ -58,6 +58,8 @@ export type WorldEvent = { t: number } & (
   | { do: 'weather'; intensity: number; ease?: number }
   /** Units (all, or by tag) stop shooting, break off and fly away; they do not count as kills. */
   | { do: 'dismissUnits'; tag?: string }
+  /** Swap the player's ship (the pod becomes the commandeered fighter). A listed state change: it applies on skip too. */
+  | { do: 'setShip'; ship: string }
 );
 
 /** One keyframe of a wingman's path (cinematic seconds). `x`/`y` are absolute screen px; `dx`/`dy` are offsets from the ship's LIVE position (formation flying). */
@@ -95,6 +97,8 @@ export type Prop = { t: number } & (
   | { do: 'scope'; until: number; label: string }
   /** A pulsing callsign beacon on the ship (green rings and a label) from this time on. */
   | { do: 'beacon'; label: string; until?: number }
+  /** Custom scenery: `draw(g, time)` is called every frame from `t` on (time = seconds since the cinematic began). Chapters 4 and 5 paint the wreck and the hangar this way. */
+  | { do: 'draw'; draw: (g: CanvasRenderingContext2D, time: number) => void }
 );
 
 export interface Overlay {
@@ -145,6 +149,8 @@ export interface Cinematic {
   radio?: RadioLine[];
   /** Seconds before a tap or Esc may skip it (default 1.2). `false` = not skippable. */
   skippableAfter?: number | false;
+  /** Release the ship pose when the cinematic ends (an intro that hands the ship back to the player). Default: keep it (an outro that sends the ship away). */
+  releasePose?: boolean;
   /** What happens at the end: 'continue' (default: the next objective, or the result after the last one) or 'result' (end the level now). */
   then?: 'continue' | 'result';
 }
@@ -180,6 +186,8 @@ export interface CinematicHost {
   setWeather(intensity: number, ease: number): void;
   /** Scenery drawn between the background and the ship (a slope the ship skids along). null clears it. */
   setScenery(draw: ((g: CanvasRenderingContext2D) => void) | null): void;
+  /** Swap the player's ship by id (campaign ship ids included). */
+  setShip(id: string): void;
 }
 
 // --- runner ----------------------------------------------------------------------------------------------------
@@ -391,6 +399,9 @@ export class CinematicRunner {
       case 'dismissUnits':
         this.host.dismissUnits(e.tag);
         break;
+      case 'setShip':
+        this.host.setShip(e.ship);
+        break;
     }
   }
 
@@ -438,6 +449,7 @@ export class CinematicRunner {
     if (this.done) return;
     this.done = true;
     this.host.setScenery(null);
+    if (this.def.releasePose) this.host.setPose(null);
     // The pose is released when the session ends the cinematic (it may keep it until the objective swap); the boss lead-in stays at its last offset.
     this.host.end();
   }
@@ -535,6 +547,7 @@ export class CinematicRunner {
     for (const p of this.def.props ?? []) {
       if (this.time < p.t) continue;
       if (p.do === 'slope') this.drawSlope(g, p, this.time);
+      else if (p.do === 'draw') p.draw(g, this.time);
       else if (p.do === 'wingmen') {
         for (const w of p.wings) {
           const pos = this.wingAt(w, ship);

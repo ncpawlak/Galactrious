@@ -136,7 +136,26 @@ export interface ScrollObjective extends ObjectiveBase {
   type: 'scroll';
 }
 
-export type ObjectiveDefinition = ScrollObjective | DestroyObjective | ReachObjective | SurviveObjective | EscapeObjective | BossFightObjective;
+/**
+ * Stealth (src/stealth): get to `zone` (the hangar circle) and hold `hold` s while a PATROL countdown runs. When it reaches zero a
+ * patrol wave (a line of lamps) sweeps the whole screen; the player must be inside a cover zone or inside `zone` when it passes, or the
+ * attempt fails (restarts the objective, counts as a death). Needs `scroll` with a level that has a `stealth` block (the cover zones
+ * and lights live there). The sweep repeats every `countdown` s while the objective runs.
+ */
+export interface PatrolWaveObjective extends ObjectiveBase {
+  type: 'patrolWave';
+  zone: Zone;
+  /** The zone (the hangar) only exists once the scroll distance reaches this many px (default: from the start). */
+  zoneAtDistance?: number;
+  /** Stay in the zone this many seconds (default 0 = touch it). */
+  hold?: number;
+  /** Seconds from the start of the attempt to the first sweep, and between sweeps. */
+  countdown: number;
+  /** Seconds one sweep takes to cross the screen (default 3.5) and the direction (default 'down'). */
+  sweep?: { seconds?: number; direction?: 'down' | 'up' };
+}
+
+export type ObjectiveDefinition = PatrolWaveObjective | ScrollObjective | DestroyObjective | ReachObjective | SurviveObjective | EscapeObjective | BossFightObjective;
 export type ObjectiveType = ObjectiveDefinition['type'];
 
 /** Per-attempt counters the bonus criteria read (see session.ts). */

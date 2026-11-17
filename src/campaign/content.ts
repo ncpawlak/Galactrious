@@ -4,10 +4,12 @@
  * "Fallen Peace" lives in `fallenPeace.ts` (chapters 1 to 3 built; 4 to 7 come later). "Framework Test" is the two-objective
  * level that proves the framework end to end.
  */
+import { DEBUG_CAMPAIGNS } from '../stealth/testLevel';
 import { FINALE_TEST } from '../finale/finaleTest';
 import { FALLEN_PEACE } from './fallenPeace';
 import { CHAPTERS_6_7 } from './fallenPeace67';
 import type { CampaignDefinition, CampaignLevel } from './types';
+import { TERRAIN_TEST_CAMPAIGN } from '../terrain/surfaceTest';
 
 // Chapters 6 and 7 are built in fallenPeace67.ts and appended here (after whatever the main file lists).
 FALLEN_PEACE.levels.push(...CHAPTERS_6_7);
@@ -51,10 +53,11 @@ export const FRAMEWORK_TEST: CampaignDefinition = {
   completionUnlock: { kind: 'cards', id: 'campaign-test-framework', label: 'TEST UNLOCK: Framework Test' },
 };
 
-export const CAMPAIGNS: CampaignDefinition[] = [FALLEN_PEACE, FRAMEWORK_TEST, FINALE_TEST];
+export const CAMPAIGNS: CampaignDefinition[] = [FALLEN_PEACE, FRAMEWORK_TEST, TERRAIN_TEST_CAMPAIGN, FINALE_TEST];
 
 export function findLevel(levelId: string): { campaign: CampaignDefinition; level: CampaignLevel; index: number } | null {
-  for (const campaign of CAMPAIGNS) {
+  // Debug campaigns (stealth test) are found by id but not listed in the menu.
+  for (const campaign of [...CAMPAIGNS, ...DEBUG_CAMPAIGNS]) {
     const index = campaign.levels.findIndex((l) => l.id === levelId);
     if (index >= 0) return { campaign, level: campaign.levels[index], index };
   }

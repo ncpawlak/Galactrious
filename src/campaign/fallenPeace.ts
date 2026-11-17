@@ -18,6 +18,7 @@ import { CAPITAL_SHIP_ID } from '../bosses/capitalShip';
 import { FALLEN_PEACE_UNLOCKS } from '../finale/unlocks';
 import { STREAM_SECONDS } from '../enemies/empireWaves';
 import { FP1_APPROACH, FP1_BREAK_OFF, FP1_EXIT, FP2_SHOT_DOWN, FP3_CRASH } from './fallenPeaceCinematics';
+import { FALLEN_PEACE_45_LEVELS } from './fallenPeace45';
 import type { Beat, CampaignDefinition, CampaignLevel } from './types';
 
 /** The preset Delta rookie ship and loadout: no builder, no cards. */
@@ -162,7 +163,7 @@ export const FALLEN_PEACE: CampaignDefinition = {
     'The mission: fight through the dogfight, reach the enemy command ship and blow up its engine room. Then bring everyone home.',
     'It will not go to plan.',
   ],
-  levels: [CHAPTER_1, CHAPTER_2, CHAPTER_3],
+  levels: [CHAPTER_1, CHAPTER_2, CHAPTER_3, ...FALLEN_PEACE_45_LEVELS],
   // The real reward, granted when the last level (chapter 7) completes: the empire fighter, the Laser and the Energy Wave.
   unlocks: FALLEN_PEACE_UNLOCKS,
 };

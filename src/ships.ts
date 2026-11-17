@@ -34,6 +34,10 @@ export interface ShipStats {
   hitbox: number;
   /** Highest y (px from the top) the ship may fly to; lower = closer to the enemies. Omitted = `TUNING.shipMinY`. */
   minY?: number;
+  /** Keyboard acceleration, px/s^2 (the ship eases to its speed and coasts to a stop). Omitted = instant, like every other ship. The pointer follow rate is also softened. */
+  accel?: number;
+  /** Scale on the dodge dash distance (default 1). */
+  dodgeScale?: number;
 }
 
 export interface WeaponLoadout {
@@ -53,6 +57,8 @@ export interface ShipDefinition {
   unlock?: string;
   /** Shown on the select screen while locked: how to get it. */
   unlockHint?: string;
+  /** No guns at all: firing and the weapon rings are off (the escape pod). */
+  noWeapons?: boolean;
   /**
    * Empire technology (the commandeered empire fighter): its weapons fire on the empire's own frequency, so the capital ship's
    * armour can be hit (src/finale/armour.ts, `armourResonance`). Omitted = false.
@@ -168,6 +174,31 @@ export const CAMPAIGN_SHIPS: ShipDefinition[] = [
     startingWeapons: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] },
   },
 ];
+
+/**
+ * The escape pod (chapter 4, stealth): campaign only. Half the hitbox, 2 hull, slow to speed up and turn round, shorter dodge, no
+ * weapons (`noWeapons`: the rings are hidden, firing is off). A small egg-shaped capsule in the Delta palette with a tiny engine glow.
+ */
+export const ESCAPE_POD_ID = 'escape-pod';
+CAMPAIGN_SHIPS.push({
+  id: ESCAPE_POD_ID,
+  name: 'Escape pod',
+  desc: 'A tiny lifeboat. No weapons, two hull, a very small hitbox.',
+  look: {
+    hull: { color: DELTA.trim, points: [[0, -11], [5, -6], [6, 3], [4, 9], [-4, 9], [-6, 3], [-5, -6]] },
+    details: [
+      { color: DELTA.mid, points: [[0, -11], [5, -6], [6, 3], [3, 3], [2, -7]] },
+      { color: DELTA.dark, points: [[-4, 9], [4, 9], [3, 6], [-3, 6]] },
+      { color: DELTA.hull, points: [[-6, 3], [-8, 8], [-4, 7]] },
+      { color: DELTA.hull, points: [[6, 3], [8, 8], [4, 7]] },
+    ],
+    cockpit: { color: '#9ff6ff', x: -2, y: -6, w: 4, h: 5 },
+    flame: { color: DELTA.flame, x: -1, y: 9, w: 2, len: 2, flicker: 3 },
+  },
+  baseStats: { maxHealth: 2, speed: 300, dodgeCooldown: 3, hitbox: 3, accel: 1100, dodgeScale: 0.55 },
+  startingWeapons: { main: 'chain', aux: [] },
+  noWeapons: true,
+});
 
 export const SHIP_BY_ID = new Map([...SHIPS, ...CAMPAIGN_SHIPS].map((s) => [s.id, s]));
 

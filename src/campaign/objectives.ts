@@ -6,6 +6,7 @@
  */
 import { H, W } from '../config';
 import type { NodeHost } from '../flow/node';
+import { PatrolWaveHandler } from '../stealth/patrolWave';
 import type { BossFightObjective, DestroyObjective, EscapeObjective, ObjectiveDefinition, ObjectiveType, ReachObjective, ScrollObjective, SurviveObjective, Zone } from './types';
 
 export interface ObjectiveEnv {
@@ -30,7 +31,7 @@ export interface ObjectiveHandler {
 
 export const inZone = (z: Zone, x: number, y: number): boolean => ('r' in z ? Math.hypot(x - z.x, y - z.y) <= z.r : x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h);
 
-function drawZone(g: CanvasRenderingContext2D, z: Zone, color: string, t: number, fill = 0.12): void {
+export function drawZone(g: CanvasRenderingContext2D, z: Zone, color: string, t: number, fill = 0.12): void {
   g.save();
   g.strokeStyle = color;
   g.fillStyle = color;
@@ -94,8 +95,27 @@ function drawGate(g: CanvasRenderingContext2D, z: Zone, t: number): void {
   g.restore();
 }
 
-function zoneCenter(z: Zone): { x: number; y: number } {
+export function zoneCenter(z: Zone): { x: number; y: number } {
   return 'r' in z ? { x: z.x, y: z.y } : { x: z.x + z.w / 2, y: z.y + z.h / 2 };
+}
+
+/** The hold progress ring around a zone (a circle ring, or a bar under a rectangle): `frac` 0..1 of the hold done. */
+export function drawHoldRing(g: CanvasRenderingContext2D, z: Zone, frac: number, color = '#6ee7ff'): void {
+  if (frac <= 0) return;
+  g.save();
+  g.strokeStyle = color;
+  g.lineWidth = 6;
+  g.lineCap = 'round';
+  g.globalAlpha = 0.95;
+  g.beginPath();
+  if ('r' in z) {
+    g.arc(z.x, z.y, z.r + 9, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, frac));
+  } else {
+    g.moveTo(z.x, z.y + z.h + 9);
+    g.lineTo(z.x + z.w * Math.min(1, frac), z.y + z.h + 9);
+  }
+  g.stroke();
+  g.restore();
 }
 
 // --- destroy --------------------------------------------------------------------------------------------
@@ -167,6 +187,7 @@ class ReachHandler implements ObjectiveHandler {
 
   draw(g: CanvasRenderingContext2D, env: ObjectiveEnv): void {
     drawZone(g, this.def.zone, '#6ee7ff', env.time, 0.1 + 0.15 * Math.min(1, this.held / Math.max(0.01, this.def.hold ?? 1)));
+    if ((this.def.hold ?? 0) > 0) drawHoldRing(g, this.def.zone, this.held / (this.def.hold ?? 1));
     const c = zoneCenter(this.def.zone);
     g.save();
     g.fillStyle = '#6ee7ff';
@@ -351,8 +372,23 @@ export const OBJECTIVE_FACTORIES: Factories = {
   escape: (d) => new EscapeHandler(d),
   bossFight: (d) => new BossFightHandler(d),
   scroll: (d) => new ScrollHandler(d),
+  patrolWave: (d) => new PatrolWaveHandler(d),
 };
 
+/**
+ * Hands the searchlight detections of the running scroll level (src/stealth) to the campaign's `detections` counter, whatever the
+ * objective type: wraps every handler, so a stealth level can use `reach`, `survive`, `patrolWave` or any other.
+ */
+function withStealthCounter(h: ObjectiveHandler): ObjectiveHandler {
+  const update = h.update.bind(h);
+  h.update = (dt, env) => {
+    const n = env.host.scroll()?.stealth?.takeDetections() ?? 0;
+    if (n > 0) env.bump('detections', n);
+    update(dt, env);
+  };
+  return h;
+}
+
 export function createObjective(def: ObjectiveDefinition): ObjectiveHandler {
-  return (OBJECTIVE_FACTORIES[def.type] as (d: ObjectiveDefinition) => ObjectiveHandler)(def);
+  return withStealthCounter((OBJECTIVE_FACTORIES[def.type] as (d: ObjectiveDefinition) => ObjectiveHandler)(def));
 }

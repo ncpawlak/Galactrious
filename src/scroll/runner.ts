@@ -1,7 +1,9 @@
 import { W } from '../config';
+import { StealthSystem } from '../stealth/system';
 import { AllySystem } from './allies';
 import { ScrollBackground } from './background';
 import { isRockShape, mulberry32, ObstacleSystem, SIZES } from './obstacles';
+import { TerrainSystem } from '../terrain/system';
 import type { MotionPreset, ObstacleField, ObstacleSpawn, ScrollEntry, ScrollEvent, ScrollHost, ScrollLevelDef, ScrollRunner } from './types';
 
 type EdgeChoice = 'top' | 'bottom' | 'left' | 'right';
@@ -92,7 +94,11 @@ export function compileTimeline(entries: ScrollEntry[]): Exclude<ScrollEntry, Ob
 export class ScrollRunnerImpl implements ScrollRunner {
   readonly obstacles = new ObstacleSystem();
   readonly allies = new AllySystem();
+  /** Carvable walls, defence lines and ground turrets (src/terrain); its entries are fired from the timeline like any other. */
+  readonly terrain: TerrainSystem;
   background: ScrollBackground | null = null;
+  /** Searchlights, cover and detection when the level has a `stealth` block. */
+  stealth: StealthSystem | null = null;
   def: ScrollLevelDef | null = null;
   distance = 0;
   onEvent: ((e: ScrollEvent) => void) | null = null;
@@ -110,7 +116,9 @@ export class ScrollRunnerImpl implements ScrollRunner {
   /** Debug: hold the scroll (distance and obstacles stop; everything else keeps running). */
   paused = false;
 
-  constructor(private readonly host: ScrollHost) {}
+  constructor(private readonly host: ScrollHost) {
+    this.terrain = new TerrainSystem(host);
+  }
 
   get speed(): number {
     return this.curSpeed;
@@ -138,7 +146,10 @@ export class ScrollRunnerImpl implements ScrollRunner {
     this.easeLeft = 0;
     this.obstacles.clear();
     this.allies.clear();
+    this.terrain.clear();
+    this.terrain.setTimeline(this.timeline);
     this.log.length = 0;
+    this.stealth = def.stealth ? new StealthSystem(this.host, def.stealth) : null;
     this.background = new ScrollBackground(def.theme, def.weather ?? 0);
     this.background.onThunder = (s) => this.onThunder?.(s);
     this.background.setSkyFlip(!!def.skyFlip);
@@ -174,6 +185,7 @@ export class ScrollRunnerImpl implements ScrollRunner {
     this.distance = target;
     this.fireDue(target);
     this.obstacles.update(0, 0);
+    this.terrain.update(0, 0);
   }
 
   update(dt: number): void {
@@ -189,8 +201,10 @@ export class ScrollRunnerImpl implements ScrollRunner {
     this.distance = Math.min(this.def.length, this.distance + v * dt);
     this.fireDue(this.distance);
     this.obstacles.update(dt, v);
+    this.terrain.update(dt, v);
     this.allies.update(dt);
     this.background?.update(dt, v);
+    this.stealth?.update(dt, this.distance);
     if (!wasDone && this.done) this.emit('level-end');
   }
 
@@ -259,16 +273,25 @@ export class ScrollRunnerImpl implements ScrollRunner {
       case 'event':
         this.emit(e.name, e.data);
         break;
+      case 'wall':
+      case 'wallLine':
+      case 'turret':
+      case 'turretCluster':
+      case 'turretTally':
+        this.terrain.fire(e, lag);
+        break;
     }
   }
 
   drawBackground(ctx: CanvasRenderingContext2D): void {
     this.background?.draw(ctx, this.distance, this.curSpeed);
     this.allies.draw(ctx);
+    this.stealth?.drawGround(ctx);
   }
 
   drawObstacles(ctx: CanvasRenderingContext2D): void {
     this.obstacles.draw(ctx);
+    this.terrain.draw(ctx);
   }
 
   draw(ctx: CanvasRenderingContext2D): void {
