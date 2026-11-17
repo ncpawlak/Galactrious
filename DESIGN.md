@@ -408,3 +408,82 @@ Close weapons (Scatter ~80 px, Blades, Lance, Needler) need the ship near the en
 - **Waves**: `WaveDefinition.lower` (px, optional) shifts every formation slot down in `spawnWave`. Currently level 1 +60, level 2 +80, level 3 +100 (`src/enemies/waveContent.ts`). Entrance paths and dives are derived from the shifted slot.
 - **Bosses**: `lowered(dy, movement)` (`src/movement.ts`) holds a phase `dy` px below the spawn point while the movement plays; the phase blend eases the drop. Used in later phases: Mantis Frenzy +40 / Overdrive +70, Bulwark (both variants) Pressure +40 / Enrage +70, demo-phased phase 2 +40. The default demo boss is unchanged.
 - Not changed: HP, damage, attack timings and projectile speeds. If a closer wave is unfair, reduce its `lower` first.
+
+## Campaign 1: "Fallen Peace" (design, not built)
+Status: **design only**, agreed with the owner. The first campaign, built in three slices on top of the roadmap (see "Roadmap: game modes..."). Slice 1 is chapters 1 to 3.
+
+### Story
+Delta squadron is in a large dogfight above the planet Orini. The player is a rookie pilot of Delta squad. Mission: fight through the dogfight, reach the enemy command ship, and disable its engines by blowing up the engine room. Then retreat through another dogfight, but get shot down and fall through Orini's arctic atmosphere (dodging debris and mountain peaks). Crash behind enemy lines, find an enemy base, commandeer an enemy ship and fly away. Cross the planet's surface shooting turrets, wall defences and air squadrons. Escape into the atmosphere and reunite with the squad, who are in disbelief that the player is in an enemy ship. Finish off the now-disabled command ship with the squad in a boss fight that includes dogfighting, then fly off in victory.
+**Unlock on completing the campaign (gold):** the enemy ship, a new main weapon **Laser**, and a new aux weapon **Energy Wave** (replaces the earlier idea of an electricity card; Chain Lightning can arrive later as a normal card).
+
+### Chapters
+| # | Chapter | What the player does | Needs |
+|---|---|---|---|
+| 1 | Dogfight | Fight through fighter waves, reach the command ship, blow up its engine room | objective nodes; armoured capital ship with an exposed engine room |
+| 2 | Retreat | Escape through another dogfight; the player is shot down at the end | timed objective; **scripted event** (the shoot-down is not a death) |
+| 3 | Freefall | Dodge debris and mountain peaks falling past. **You cannot shoot.** Touching an obstacle damages the ship (normal health) | scrolling level; obstacles; weapons locked |
+| 4 | Crash and commandeer | Eject into a tiny **escape pod** (minimal health, no weapon) and sneak through the enemy base past **searchlights** to the hangar; crossing a light brings fighters that shoot you. Sit in the hangar circle for 10 s to take the ship | scrolling stealth level; pod ship; searchlight detection; pursuing fighters; hold-zone objective; ship swap |
+| 5 | Surface run | Long scroll across the surface: turrets, wall defences, air squadrons. Goal: do not die | long scrolling level; terrain; turrets |
+| 6 | Escape and reunion | Reach the atmosphere; meet the squad | short narrative level; cosmetic allies |
+| 7 | Finale | Boss fight with the squad (the disabled command ship), including dogfighting | boss; scripted squad assists |
+
+Delivery in three slices: **slice 1 = chapters 1 to 3**, slice 2 = chapters 4 and 5, slice 3 = chapters 6 and 7 plus the unlock bundle (enemy ship, Laser, Energy Wave). Until the campaign finishes, slice 1 uses a **test unlock** (a flag on completing it) so the unlock flow can be seen working.
+
+### Decisions
+- **Scrolling.** Levels may scroll, but the ship stays on screen and the world moves past it. A scrolling level is a **timeline keyed to scroll distance** (px): spawns, obstacles, terrain and scripted events at distances, with a scroll speed that can change. Closed (non-scrolling) levels with waves are also fine (the first dogfight chapters).
+- **Allies.** Allies are **cosmetic wingmen** flying "underneath" the player layer in the dogfights, fighting on their own with no effect on combat. In the finale boss fight they have **timed scripted assists** (they come through and do something: a strafing run, a distraction), no ally AI.
+- **Medals.** Every chapter is **timed**, with authored thresholds. Gold also needs zero deaths. Chapter 5 gets an **alternate gold objective: destroy all turrets** (medal criteria can include a level-specific objective as well as time and deaths).
+- **Checkpoint.** On death the ship blows up and returns to the start of the current objective with a **full heal**; the enemies, timers and objective reset, the total time keeps running and the death is counted against gold.
+- **Capital ship (chapter 1, reused in chapter 7).** A big unit/boss with an outer **armour** layer that cannot be shot through except in one specific area where the **engine room** sits. Blowing up the engine room (a room with the `engine` function from the room catalog, `explodeOnDisable`) completes the objective. In chapter 7 the same ship is the disabled boss.
+- **Chapter 3.** Weapons are locked; touching an obstacle damages the ship (normal health and i-frames; the ship is destroyed only when health runs out). Debris and peaks are pixel shapes scrolling past (they could be carvable props in later chapters, not in chapter 3 since you cannot shoot).
+
+### Engine work for slice 1
+1. **Objective node** (new flow node type) with `destroy`, `reach`, `survive`, `escape` and `bossFight` objectives for chapters 1 and 2, a per-objective checkpoint, and a result.
+2. **Campaign framework:** campaign data format, campaign select and level select screens with medals and best times (save system), result screen, the timer and medal pace on the HUD.
+3. **Scripted events and beats:** a small timeline format: show a text beat, force the ship's destruction (no death), lock weapons, set a scroll speed, spawn.
+4. **Scrolling levels:** a distance timeline, scrolling background and an obstacle entity (pixel shapes with contact damage).
+5. **Armoured capital ship:** an armour layer that cannot be carved, with a gap exposing the engine room.
+6. **Cosmetic allies:** wingmen that fly and shoot with no effect.
+7. **Preset ship** for the campaign (no loadout builder, no cards).
+
+### New weapons (slice 3, first guesses to tune after playing)
+- **Laser** (main): slow and heavy. Cooldown about 0.6 s (about 1.7 shots/s), energy per shot about 5.5 times a chain gun shot, pierce about 0.7, a narrow carve. Roughly 15% more total damage per second than the chain gun but concentrated, so it carves deep.
+- **Energy Wave** (aux): a half-moon energy field fired in a direction (straight up first), cooldown about 4 s, an arc of about 100 degrees out to about 160 px, damage falling off with distance (100% at the ship to about 25% at the edge), a new `wave` carve shape.
+
+### Open
+Final boss design (chapter 7); the enemy ship's name, stats and preset loadout; story text; per-chapter medal thresholds (authored once the levels exist); how many dogfight waves chapters 1 and 2 have; names for the pilot and the squad.
+
+### The enemy empire (cohesive faction design)
+The campaign fights one enemy empire, so **every enemy unit, turret, wall, the capital ship and the final boss must read as one faction**, and the commandeered enemy ship (chapter 4) and the unlocked enemy ship must clearly belong to it. This is a faction kit, not a per-enemy decision:
+- **Faction data.** Units and bosses get a `faction` (e.g. `'empire'`) with a shared kit: a palette (hull, frame, glow), silhouette rules (a shared shape language, e.g. angular and forward-swept with a repeating insignia or stripe motif), a core colour, a weapon/projectile colour family and component styles (turret housings, console lights). Paint helpers (`src/bosses/paint.ts`) take the kit, so new enemies inherit the look.
+- **Roster.** The campaign defines an empire roster of small, big and capital units (fighters, gunships, walls, ground turrets, the capital ship, the final boss), designed together as one family: same materials, same colour language, consistent scale steps from fighter to capital ship. The player's squad (Delta) uses a clearly different palette so friend and foe read instantly.
+- **The commandeered ship** is a member of the roster (a hero version of the fighter), so the player visibly flies a ship that matches the enemy fighters (which is why the squad is in disbelief).
+- **Endless** may keep the generic units, or later use factions as themes; faction kits are data, so a second faction is a new kit and roster.
+
+### Bonus gold objectives and the gold rule
+Every chapter has one **bonus objective**, shown at the start of the level. It rewards mastery of that chapter's own mechanic, not another timer. **Gold = zero deaths AND (beat the gold time OR complete the bonus)**: two routes to gold, speed or mastery. (A "both" tier is left for a later platinum medal.)
+
+| Chapter | Bonus |
+|---|---|
+| 1. Dogfight | **Ace:** shoot down 30 fighters before reaching the command ship |
+| 2. Retreat | **Untouched:** take no hits during the retreat |
+| 3. Freefall | **Undamaged:** take no damage from debris or peaks (you cannot shoot, so this is the mastery) |
+| 4. Commandeer | **Silent:** reach the hangar without ever being detected by a searchlight |
+| 5. Surface run | **Destroy all turrets** |
+| 6. Reunion | **Fly clean:** reach the atmosphere without using the dodge, or at full health |
+| 7. Finale | **Full dismantle:** destroy every room and turret on the capital ship before the core goes |
+
+Tracking needs only a few counters (kills, hits taken, rooms destroyed, pickups, alarms), kept per level attempt and reset on a checkpoint restart where the objective restarts (the death still counts).
+
+### Chapter 4 gameplay (agreed)
+The player ejects from the crashed ship into a tiny **escape pod**: a small ship with a tiny hitbox, **minimal health and no weapon**. The level is a **scrolling stealth level** through the enemy base with **searchlights** sweeping it. If the pod crosses a light, **fighters come after it and shoot**; the pod cannot shoot back, so the answer to being detected is to run, break line of sight or dodge. The goal is the **hangar**: reach the hangar circle and **sit in it for 10 seconds** to take the enemy ship (the objective ends with a ship swap to the empire fighter, the commandeered hero ship). Bonus gold: **Silent**, never detected. This replaces the earlier fuel-depot idea. Engine needs: a preset pod ship (no weapons, tiny hitbox, low health), a searchlight hazard that sets a detection state, pursuing fighters (existing units with a chase movement, spawned on detection), and a `hold` objective (stay inside a zone for N seconds).
+
+### Chapters 1 and 2 gameplay (agreed)
+- **Chapter 1 (capital ship).** Most of the capital ship **cannot be touched** (its armour is indestructible). One **attackable area** can be shot and **chunked out** until the player carves through to the **engine room**; blowing up the engine room completes the objective. Fighters keep attacking meanwhile. This is a carve-to-reach challenge on one zone, not a precision shot into a gap.
+- **Chapter 2 (retreat) scrolls** toward the exit; the scripted shoot-down at the end is not a death.
+
+### The capital ship keeps its state (chapter 1 to chapter 7)
+The game **saves the state of the capital ship at the end of chapter 1 and restores it in chapter 7**, so the final boss is the same ship in the same condition: the carved-out area, the destroyed engine room, the debris and blasts (the engines are dead, which is why it is a disabled boss). Lore: the armour could not be hit in chapter 1 because it is **their** tech; in chapter 7 the player flies **their** ship, so the armour **can** now be hit.
+- **Snapshot.** A boss/unit snapshot (per-layer pixel masks, component and room states, core hp) is captured when chapter 1's engine-room objective completes (or at the end of the chapter) and stored in the campaign progress (`SaveData`, run-length encoded masks to keep it small; format versioned). Chapter 7 restores it and then switches the armour to carvable (the "their tech" rule is a flag on the ship that the commandeered ship's tech sets).
+- **Replays.** Decided: if chapter 1 is replayed, the snapshot from the **latest completion** replaces the stored one, so the finale always matches the last time the player finished chapter 1.
+- **Slice 1 builds the snapshot capture and the save format**; slice 3 builds the restore and the "armour now carvable" switch. The capital ship must therefore be designed once, in one definition, used by chapters 1 and 7.
