@@ -97,9 +97,9 @@ export const FP2_SHOT_DOWN: Cinematic = {
   ],
   overlays: [{ t: 6.8, color: '#000000', to: 1, duration: 2.8 }],
   radio: [
-    { t: 0.2, speaker: LEAD, text: 'The gate is right there! Almost through!' },
-    { t: 2.8, speaker: LEAD, text: 'Rookie, you are hit! Pull up! Pull up!', static: 0.3 },
+    { t: 0.2, speaker: LEAD, text: 'You are first to the gate, rookie! We are right behind you!' },
     { t: 5.4, speaker: COMMAND, text: 'Rookie! Rookie, respond! *static*', duration: 4.4, static: 0.65 },
+    { t: 7.6, speaker: LEAD, text: 'Break off, scatter! We will find the rookie.', duration: 2.4, static: 0.5 },
   ],
   skippableAfter: 2,
 };

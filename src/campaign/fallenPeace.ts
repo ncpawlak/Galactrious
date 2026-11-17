@@ -107,7 +107,8 @@ const CHAPTER_2: CampaignLevel = {
         { at: 7, do: 'text', speaker: COMMAND, text: 'All Delta, withdraw. Empire reinforcements inbound from above.' },
         { at: 13, do: 'text', speaker: LEAD, text: 'Bandit on your six! Keep moving!' },
         { at: 26, do: 'text', speaker: LEAD, text: 'Flak ahead. Watch the markers, they go off where you are.' },
-        { at: 38, do: 'text', speaker: LEAD, text: 'Delta 4 is down. Stay with me. Stay with me!' },
+        { at: 36, do: 'text', speaker: LEAD, text: 'Rookie, you are ahead of us. Hit the gate, we are right behind you!' },
+        { at: 43, do: 'text', speaker: LEAD, text: 'We are pinned down back here! Go, rookie, go!' },
         { at: 49, do: 'text', speaker: COMMAND, text: 'The jump gate is open. Get to it, rookie!' },
       ],
       // Scripted: the shoot-down is not a death. Nothing restarts and nothing counts.
