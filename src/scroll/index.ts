@@ -4,6 +4,7 @@ import { FALLEN_PEACE_45_SCROLL_LEVELS } from './fallenPeace45';
 import { STEALTH_TEST_SCROLL } from '../stealth/testLevel';
 import { SCROLL_TEST, SCROLL_TEST_STORM } from './testLevel';
 import { SURFACE_THEME } from './themes/surface';
+import { BASE_INTERIOR, SURFACE_BASE, SURFACE_WILD, TUNDRA_NIGHT } from './themes/fp45';
 import { SURFACE_TEST } from '../terrain/surfaceTest';
 import type { ScrollLevelDef } from './types';
 
@@ -12,6 +13,7 @@ import { SCROLL_THEMES } from './background';
 
 // The ground theme lives in its own file (themes/surface.ts); register it by id.
 SCROLL_THEMES.surface = SURFACE_THEME;
+for (const t of [TUNDRA_NIGHT, BASE_INTERIOR, SURFACE_BASE, SURFACE_WILD]) SCROLL_THEMES[t.id] = t;
 
 export { SCROLL_THEMES, ScrollBackground, themeById } from './background';
 export { OBSTACLE_DAMAGE, Obstacle, ObstacleSystem } from './obstacles';

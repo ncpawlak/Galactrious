@@ -1665,6 +1665,12 @@ export class Game {
   }
 
   private resolveImpact(b: Bullet, targets: readonly Combatant[]): void {
+    // An energy barrier stops a shot and is never harmed (chapter 5).
+    if (this.scroll && this.scroll.terrain.barriers.absorb(b.x, b.y)) {
+      b.alive = false;
+      this.armourSpark(b.x, b.y);
+      return;
+    }
     // Carvable obstacles (surface run) take the base gun's shots; the freefall's are not carvable, so this is a no-op there.
     if (this.scroll && this.scroll.obstacles.list.length > 0 && this.scroll.obstacles.shoot(b.x, b.y, b.energy)) {
       b.alive = false;

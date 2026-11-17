@@ -383,7 +383,8 @@ export class CampaignSession {
   draw(g: CanvasRenderingContext2D): void {
     if (this.result || !this.started) return;
     const env = this.env();
-    this.handler.draw(g, env);
+    // A cinematic that hides the HUD also hides the objective's world overlays (zone circle, hold ring, warnings): the picture is the cinematic's alone.
+    if (!this.cine?.hidesHud) this.handler.draw(g, env);
     this.cine?.draw(g);
     if (this.cine?.hidesHud) {
       this.drawSubtitles(g);

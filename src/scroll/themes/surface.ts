@@ -16,19 +16,19 @@ import type { CustomBackgroundLayer, ScrollTheme } from '../types';
  * hard, saturated shapes on the screen. Decorative base buildings are pale concrete blue-grey on purpose (never slate, never red).
  */
 
-const TH = 1280;
-const TAU = Math.PI * 2;
+export const TH = 1280;
+export const TAU = Math.PI * 2;
 
-type Ctx = CanvasRenderingContext2D;
+export type Ctx = CanvasRenderingContext2D;
 
 /** Draw `fn` at y, y - TH and y + TH when it is near the tile edge, so features wrap without a seam. */
-function wrapped(_ctx: Ctx, y: number, reach: number, fn: (dy: number) => void): void {
+export function wrapped(_ctx: Ctx, y: number, reach: number, fn: (dy: number) => void): void {
   fn(0);
   if (y < reach) fn(TH);
   if (y > TH - reach) fn(-TH);
 }
 
-function blob(ctx: Ctx, x: number, y: number, rx: number, ry: number, color: string, alpha: number, rot = 0): void {
+export function blob(ctx: Ctx, x: number, y: number, rx: number, ry: number, color: string, alpha: number, rot = 0): void {
   ctx.globalAlpha = alpha;
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -36,7 +36,7 @@ function blob(ctx: Ctx, x: number, y: number, rx: number, ry: number, color: str
   ctx.fill();
 }
 
-function jaggedPoly(ctx: Ctx, cx: number, cy: number, r: number, rnd: () => number, n = 9, squash = 1): [number, number][] {
+export function jaggedPoly(ctx: Ctx, cx: number, cy: number, r: number, rnd: () => number, n = 9, squash = 1): [number, number][] {
   const pts: [number, number][] = [];
   for (let i = 0; i < n; i++) {
     const a = (i / n) * TAU + rnd() * 0.3;
@@ -49,7 +49,7 @@ function jaggedPoly(ctx: Ctx, cx: number, cy: number, r: number, rnd: () => numb
   return pts;
 }
 
-interface Light {
+export interface Light {
   x: number;
   y: number;
   phase: number;
@@ -60,7 +60,7 @@ interface Light {
 /** The periodic x of a road or track at tile y (so it wraps). */
 const roadX = (y: number, x0: number, amp: number, turns: number, ph: number): number => x0 + amp * Math.sin((y / TH) * TAU * turns + ph) + amp * 0.35 * Math.sin((y / TH) * TAU * turns * 2 + ph * 2);
 
-function paintGround(lights: Light[]): HTMLCanvasElement {
+export function paintGround(lights: Light[]): HTMLCanvasElement {
   const { canvas, ctx } = makeCanvas(W, TH);
   const rnd = mulberry32(5150);
   // Base snow and soft tonal drifts.
@@ -265,7 +265,7 @@ function paintGround(lights: Light[]): HTMLCanvasElement {
 }
 
 /** Tall features: ridges, radar masts and towers with long shadows. `lights` blink on top of them. */
-function paintTall(lights: Light[]): HTMLCanvasElement {
+export function paintTall(lights: Light[]): HTMLCanvasElement {
   const { canvas, ctx } = makeCanvas(W, TH);
   const rnd = mulberry32(7771);
   const SX = 16;
@@ -343,7 +343,7 @@ function paintTall(lights: Light[]): HTMLCanvasElement {
   return canvas;
 }
 
-function tileLayer(paint: (lights: Light[]) => HTMLCanvasElement, share: number): () => CustomBackgroundLayer {
+export function tileLayer(paint: (lights: Light[]) => HTMLCanvasElement, share: number): () => CustomBackgroundLayer {
   return () => {
     const lights: Light[] = [];
     let tile: HTMLCanvasElement | null = null;
@@ -376,7 +376,7 @@ function tileLayer(paint: (lights: Light[]) => HTMLCanvasElement, share: number)
 }
 
 /** Shadows of the walls, the ship and the flyers on the snow (soft, offset down-right like a low sun at the upper left). */
-function shadowLayer(): CustomBackgroundLayer {
+export function shadowLayer(): CustomBackgroundLayer {
   const ship = makeCanvas(56, 56);
   const flyer = makeCanvas(56, 56);
   const sx = ship.ctx;
@@ -430,7 +430,7 @@ function shadowLayer(): CustomBackgroundLayer {
 }
 
 /** High wisps (speed 1.7) and speed streaks (long at speed, nothing standing still) and a haze that grows with the weather. */
-function airLayer(): CustomBackgroundLayer {
+export function airLayer(): CustomBackgroundLayer {
   const rnd = mulberry32(31337);
   const wisps = Array.from({ length: 5 }, () => ({ x: rnd() * W, y: rnd() * (H + 300), w: 160 + rnd() * 200, h: 30 + rnd() * 40, a: 0.1 + rnd() * 0.12 }));
   const streaks = Array.from({ length: 34 }, () => ({ x: rnd() * W, y: rnd() * (H + 200), s: 0.7 + rnd() * 0.9 }));
