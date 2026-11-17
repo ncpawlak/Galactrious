@@ -158,3 +158,58 @@ Phases and motion: **Prowl** (figure-eight, maw aimed + tail volley and bomb) ->
 Pacing (hull density 8, default ship, test mode off, god mode so deaths do not restart, `game.debug.simulate(100, 'sweep')`, 6 runs): `hull25` 57.7-60.8 s, mean 59.9. In a full 240 s sweep run the phases began near 50-60 s and 106-110 s and the core fell at 187-199 s. Like Bulwark rooms, `hull25` is partly set by explosive chains (a 4-8% hull drop at once around 55 s), so hull density moves it less than expected.
 
 Not verified: no human playtest (dodge fairness, feel of the speeds); no mirrored variant; hit positions of the pads and consoles were checked on a screenshot of the fresh boss only, not each after digging.
+
+## Run flow, enemy units and waves (v1 design, not built)
+Status: **design only**, agreed with the owner. Nothing here exists in code yet. Goal for v1: a Galaga-like fixed run that stresses how levels work. Bigger ambitions (branching maps, persistence, level set pieces) come later and must not need engine rewrites.
+
+### The run
+A **run** is a fixed list of 3 **levels**; each level is a fixed list of **nodes**: `wave, wave, wave, boss`, then a **reward**. Beat the last boss and the run is won. One run is plain data (a `RunDefinition`).
+
+```
+title -> L1[wave wave wave boss] -> reward -> L2[...] -> reward -> L3[...] -> WIN
+          any death (permadeath for now) -> run over -> title
+```
+
+- **Flow engine.** A small state machine owning the run state: current level and node, the player's loadout and upgrades, health, a seed. Nodes know nothing about each other.
+- **Node types.** v1: `wave`, `boss`, `reward`. Reserved, not built: `level` (a hand-built set piece) and `interlude` (story card, shop). A node is anything implementing one interface (`start`, `update`, `isDone`, `draw`), so new types need no engine change.
+- **Health.** The player heals fully between levels (simplest; revisit later).
+- **Death.** Permadeath for now: the run ends and returns to the title.
+- **Persistence.** Nothing carries across runs in v1 (unlocks and currency are out of scope, but expected later).
+- **Boss order.** The three levels end on the three bosses we have (Bulwark with rooms, Mantis, and one more); the order is set during the level script and tuned for pacing.
+
+### Enemy units are small bosses
+A **unit** is a `UnitDefinition`, a slimmed-down `BossDefinition`, so it reuses the whole boss pipeline: carving, anchoring, components, attack scripts, blasts and debris. Every enemy therefore has the same chip-damage feel.
+
+| | Small unit | Big unit | Boss |
+|---|---|---|---|
+| Layers | 1 | 1 or 2 | 3 |
+| Dies after | a few hits | many hits | a full dig |
+| Components | optional (a gun) | turrets, explosives | full set, rooms |
+| Core | yes | yes | yes, with armor |
+
+- Non-bosses do not need three layers; they can have components. Big units may have two layers.
+- A unit dies when its core is gone or it is mostly carved away, so small units go fast.
+- **Performance.** If dozens of units are too heavy with full anchoring state, small units get a lighter path (a cheaper carve grid, skipping fragment labelling). That is an optimisation to add only if measured; it must not change the data format.
+- Units never hurt the player by touching them (contact damage is issue #27, out of v1). Only their projectiles and hazards do.
+
+### Waves
+A **wave** is data: which units appear, in what formation, on what entrance path, at what time.
+
+- **Formations:** rows, columns, V shapes, arcs, each unit with a spawn time.
+- **Entrances:** a unit flies in on a curve (the Galaga loop) and then holds a formation slot or dives, reusing the boss movement interface (`sway`, `figureEight`, `zip`, `sequence`).
+- **Attacks:** the same scripted schedulers; every shot comes from a weapon source.
+- **Wave end:** units never fly away; **the player must kill every unit** to end the wave. No timeout in v1.
+- **Level shape:** wave 1 mostly small units; wave 2 adds big ones; wave 3 mixes both with more components; then the boss.
+
+### Rewards and upgrades
+- After each level the player picks one of three cards (rewards come from levels; pickups from big units are a later idea).
+- **v1 cards:** weapon stats (Gauss reach and width, Rocket radius, Arc count, cooldowns, chain gun rate) and ship stats (health, dodge cooldown). Bosses are tuned against an expected loadout, not scaled globally.
+- **Elemental effects (after the stat cards).** A shot carries tags, and an upgrade adds a rule on top of the tag, e.g. chain gun burn: "on hit, +1 burn: extra burn damage in a small radius around each shot". The carve and blast code stays unchanged. The tag hooks go in with the flow work; the effects are a later PR, burn first.
+
+### Build order
+1. This design doc.
+2. Flow engine: run state machine, node interface, `wave`/`boss`/`reward` nodes, stub reward screen, existing bosses as boss nodes. Playable end to end with placeholders.
+3. Units and waves: `UnitDefinition`, formations and entrance paths, first set of 3 small and 2 big units. (Steps 2 and 3 can run in parallel once the node interface is agreed.)
+4. Level script: the 3 levels, wave pacing.
+5. Upgrade cards: stat cards and the tag hooks.
+6. Elemental effects: burn first.
