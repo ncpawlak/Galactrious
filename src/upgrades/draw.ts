@@ -12,6 +12,8 @@ export const GROUP_COLORS: Record<string, string> = {
   Lance: '#ff6bd6',
   Blades: '#e0f0ff',
   Swarm: '#ff78dc',
+  Laser: '#ff5a7a',
+  'Energy Wave': '#8f9bff',
   Ship: '#c4a8ff',
 };
 

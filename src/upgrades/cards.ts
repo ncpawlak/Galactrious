@@ -54,6 +54,16 @@ export const CARDS: CardDef[] = [
   // --- swarm ---
   { id: 'swarm-count', name: 'Bigger Swarm', group: 'Swarm', weapon: 'swarm', desc: 'Swarm launches 2 more missiles.', maxStacks: 3, modifiers: [{ stat: 'swarm.count', op: 'add', value: 2 }] },
   { id: 'swarm-cooldown', name: 'Swarm Hive', group: 'Swarm', weapon: 'swarm', desc: 'Swarm recharges 15% faster.', maxStacks: 4, modifiers: [{ stat: 'swarm.cooldown', op: 'mul', value: 0.85 }] },
+  // --- laser (main, campaign unlock) ---
+  { id: 'laser-damage', name: 'Overcharge', group: 'Laser', weapon: 'laser', desc: 'Laser bolts hit 25% harder.', maxStacks: 4, modifiers: [{ stat: 'laser.damage', op: 'mul', value: 1.25 }] },
+  { id: 'laser-rate', name: 'Laser Capacitor', group: 'Laser', weapon: 'laser', desc: 'Laser fires 18% faster.', maxStacks: 4, modifiers: [{ stat: 'laser.fireRate', op: 'mul', value: 1.18 }] },
+  { id: 'laser-pierce', name: 'Piercing Beam', group: 'Laser', weapon: 'laser', desc: 'Laser keeps 8% more energy through each layer, tunnelling deeper.', maxStacks: 3, modifiers: [{ stat: 'laser.pierce', op: 'add', value: 0.08 }] },
+  { id: 'laser-width', name: 'Wide Lens', group: 'Laser', weapon: 'laser', desc: 'Laser bores a wider tunnel.', maxStacks: 3, modifiers: [{ stat: 'laser.width', op: 'add', value: 1 }] },
+  // --- energy wave (aux, campaign unlock) ---
+  { id: 'wave-arc', name: 'Wider Crescent', group: 'Energy Wave', weapon: 'wave', desc: 'Energy Wave sweeps an arc 20 degrees wider.', maxStacks: 3, modifiers: [{ stat: 'wave.arc', op: 'add', value: 20 }] },
+  { id: 'wave-reach', name: 'Long Crescent', group: 'Energy Wave', weapon: 'wave', desc: 'Energy Wave reaches 25 px farther.', maxStacks: 3, modifiers: [{ stat: 'wave.reach', op: 'add', value: 25 }] },
+  { id: 'wave-cooldown', name: 'Wave Capacitor', group: 'Energy Wave', weapon: 'wave', desc: 'Energy Wave recharges 15% faster.', maxStacks: 4, modifiers: [{ stat: 'wave.cooldown', op: 'mul', value: 0.85 }] },
+  { id: 'wave-edge', name: 'Sustained Field', group: 'Energy Wave', weapon: 'wave', desc: 'Energy Wave loses less power with distance (edge power +10 points).', maxStacks: 3, modifiers: [{ stat: 'wave.edge', op: 'add', value: 0.1 }] },
   // --- ship ---
   { id: 'hull-plating', name: 'Hull Plating', group: 'Ship', desc: '+1 max hull, repaired right away.', maxStacks: 3, modifiers: [{ stat: 'ship.maxHealth', op: 'add', value: 1 }] },
   { id: 'dodge-cooldown', name: 'Quick Thrusters', group: 'Ship', desc: 'Dodge recharges 20% faster.', maxStacks: 3, modifiers: [{ stat: 'dodge.cooldown', op: 'mul', value: 0.8 }] },

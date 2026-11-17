@@ -53,10 +53,12 @@ export interface MainDef extends WeaponBase {
   pierce: number;
   speedMul: number;
   shape?: CarveShapeName;
+  /** Width upgrade tiers: the stat `<id>.width` (0, 1, 2...) picks the carve shape from this list (wider = lower lateral penalty), replacing `shape`. */
+  shapeTiers?: CarveShapeName[];
   /** Energy multiplier by distance travelled: `near` up to `start` px, easing to `far` at `end` px where the bullet dies. */
   fall?: { start: number; end: number; near: number; far: number };
   /** Bullet look: colour and size in px. */
-  bullet: { color: string; w: number; h: number };
+  bullet: { color: string; w: number; h: number; /** Charged-beam look: additive glow colour as 'r,g,b' (muzzle glow-in, streak, impact flare). */ glow?: string };
 }
 
 export type WeaponDef = AuxDef | MainDef;
@@ -109,9 +111,10 @@ export interface ProjectileInit {
 /** Timed effects that live on the ship while an aux weapon's cooldown runs. */
 export type EffectInit =
   | { kind: 'beam'; weapon: WeaponId; duration: number; tick: number; energy: number; pierce: number; shape: CarveShapeName; tags?: TagSet }
-  | { kind: 'blades'; weapon: WeaponId; duration: number; tick: number; energy: number; shape: CarveShapeName; count: number; radius: number; spin: number; tags?: TagSet };
+  | { kind: 'blades'; weapon: WeaponId; duration: number; tick: number; energy: number; shape: CarveShapeName; count: number; radius: number; spin: number; tags?: TagSet }
+  | { kind: 'wave'; weapon: WeaponId; duration: number; tick: number; energy: number; shape: CarveShapeName; ox: number; oy: number; dir: number; arc: number; reach: number; samples: number; edge: number; tags?: TagSet };
 
-type Effect = EffectInit & { age: number; acc: number; /** beam: where it ends this tick; blades: spin angle. */ endY: number; angle: number };
+type Effect = EffectInit & { age: number; acc: number; /** beam: where it ends this tick; blades: spin angle. */ endY: number; angle: number; /** wave: components already soaked (each once). */ seen: Set<object> };
 
 interface Projectile extends ProjectileInit {
   vx: number;
@@ -273,6 +276,35 @@ const AUX: AuxDef[] = [
       }
     },
   },
+  {
+    id: 'wave',
+    name: 'Energy Wave',
+    slot: 'aux',
+    desc: 'Half-moon blast: strong up close, fading with distance.',
+    color: '#8f9bff',
+    unlock: 'energy-wave',
+    unlockHint: 'Complete Fallen Peace with gold.',
+    cooldown: (s) => s('wave.cooldown', WEAPONS.wave.cooldown),
+    fire: (c) => {
+      const w = WEAPONS.wave;
+      c.effect({
+        kind: 'wave',
+        weapon: 'wave',
+        duration: w.duration,
+        tick: w.tick,
+        energy: w.energy * c.power,
+        shape: w.shape,
+        ox: c.ship.x,
+        oy: c.ship.y - 18,
+        dir: -Math.PI / 2,
+        arc: (c.stat('wave.arc', w.arcDeg) * Math.PI) / 180,
+        reach: c.stat('wave.reach', w.reach),
+        samples: w.samples,
+        edge: Math.min(1, c.stat('wave.edge', w.edge)),
+        tags: c.tags,
+      });
+    },
+  },
 ];
 
 /** Main weapons (1 slot): the Game fires these. The chain gun is the original base gun, exactly as before. */
@@ -299,6 +331,18 @@ const MAIN: MainDef[] = [
     unlockHint: 'Unlock the Wisp ship.',
     ...MAINS.needle,
     bullet: { color: '#e9c8ff', w: 2, h: 14 },
+  },
+  {
+    id: 'laser',
+    name: 'Laser',
+    slot: 'main',
+    desc: 'Slow heavy bolt: bores a deep, narrow tunnel.',
+    color: '#ff5a7a',
+    unlock: 'laser',
+    unlockHint: 'Complete Fallen Peace with gold.',
+    ...MAINS.laser,
+    shapeTiers: ['laser', 'laser1', 'laser2', 'laser3'],
+    bullet: { color: '#ffd9e0', w: 4, h: 34, glow: '255,70,110' },
   },
 ];
 
@@ -424,7 +468,7 @@ export class WeaponSystem {
   private readonly timers: Record<WeaponId, number> = {};
   private projectiles: Projectile[] = [];
   private effects: Effect[] = [];
-  private flashes: { x: number; y: number; color: string; t: number }[] = [];
+  private flashes: { x: number; y: number; color: string; t: number; max?: number; r?: number }[] = [];
 
   constructor(private readonly host: WeaponHost) {
     this.equip(this.defs);
@@ -494,7 +538,7 @@ export class WeaponSystem {
       stat: this.host.stat,
       tags: this.host.tags(d.id),
       spawn: (p) => this.spawn(p),
-      effect: (e) => this.effects.push({ ...e, age: 0, acc: 0, endY: 0, angle: 0 }),
+      effect: (e) => this.effects.push({ ...e, age: 0, acc: 0, endY: 0, angle: 0, seen: new Set() }),
       pickTarget: () => this.pickTarget(),
     });
   }
@@ -572,6 +616,7 @@ export class WeaponSystem {
       while (e.acc >= e.tick) {
         e.acc -= e.tick;
         if (e.kind === 'beam') this.beamTick(e, ship.x, ship.y - 26, targets);
+        else if (e.kind === 'wave') this.waveTick(e, targets);
         else this.bladeTick(e, ship.x, ship.y, targets);
       }
     }
@@ -598,6 +643,35 @@ export class WeaponSystem {
         e.endY = y;
         return;
       }
+    }
+  }
+
+  /** Wave radius now: eases out from the ship to `reach`. */
+  private waveRadius(e: Effect & { kind: 'wave' }): number {
+    const t = Math.min(1, e.age / e.duration);
+    return e.reach * (1 - (1 - t) * (1 - t));
+  }
+
+  /** Energy factor of the wave at distance r: 1 at the ship easing linearly to `edge` at `reach`. */
+  static waveFactor(r: number, reach: number, edge: number): number {
+    return 1 - (1 - edge) * Math.min(1, Math.max(0, r / reach));
+  }
+
+  /** One wave tick: `samples` bites along the front arc, each with the energy of its distance from the origin; a bite that carves flashes. */
+  private waveTick(e: Effect & { kind: 'wave' }, targets: readonly Combatant[]): void {
+    const r = this.waveRadius(e);
+    if (r < 4) return;
+    const k = WeaponSystem.waveFactor(r, e.reach, e.edge);
+    for (let i = 0; i < e.samples; i++) {
+      const a = e.dir + (e.samples === 1 ? 0 : (i / (e.samples - 1) - 0.5) * e.arc);
+      const x = e.ox + Math.cos(a) * r;
+      const y = e.oy + Math.sin(a) * r;
+      if (!targets.some((t) => !t.boss.defeated && nearBox(t.boss, x, y, 14))) continue;
+      const energy = e.energy * k;
+      const p = this.probe(e.weapon, x, y, energy, 0, e.shape, e.tags);
+      p.seen = e.seen;
+      this.impact(p);
+      if (p.energy !== undefined && p.energy < energy - 0.5) this.flashes.push({ x, y, color: '#c8d0ff', t: 0.16, max: 0.16, r: 5 + 8 * k });
     }
   }
 
@@ -735,10 +809,11 @@ export class WeaponSystem {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     for (const f of this.flashes) {
-      ctx.globalAlpha = Math.min(1, f.t / 0.12);
+      const m = f.max ?? 0.12;
+      ctx.globalAlpha = Math.min(1, f.t / m);
       ctx.fillStyle = f.color;
       ctx.beginPath();
-      ctx.arc(f.x, f.y, 10 + (0.12 - f.t) * 90, 0, Math.PI * 2);
+      ctx.arc(f.x, f.y, Math.max(0, (f.r ?? 10) + (m - f.t) * 90), 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -749,6 +824,10 @@ export class WeaponSystem {
   private drawEffect(ctx: CanvasRenderingContext2D, e: Effect): void {
     const ship = this.host.ship;
     const fade = Math.max(0, Math.min(1, (e.duration - e.age) / 0.2, e.age / 0.08));
+    if (e.kind === 'wave') {
+      this.drawWave(ctx, e);
+      return;
+    }
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     if (e.kind === 'beam') {
@@ -789,6 +868,33 @@ export class WeaponSystem {
         ctx.restore();
       }
     }
+    ctx.restore();
+  }
+
+  /** The crescent: a filled half-moon at the front radius (thick in the middle, tapering to the tips), fainter crescents trailing behind it, a soft fade at the end. */
+  private drawWave(ctx: CanvasRenderingContext2D, e: Effect & { kind: 'wave' }): void {
+    const r = this.waveRadius(e);
+    if (r < 3) return;
+    const t = Math.min(1, e.age / e.duration);
+    const soft = Math.min(1, (1 - t) / 0.35); // fade out over the last 35%
+    const strength = WeaponSystem.waveFactor(r, e.reach, e.edge);
+    const a0 = e.dir - e.arc / 2;
+    const a1 = e.dir + e.arc / 2;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const crescent = (rad: number, thick: number, alpha: number, color: string): void => {
+      if (rad < 2) return;
+      ctx.globalAlpha = Math.max(0, alpha);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(e.ox, e.oy, rad, a0, a1);
+      ctx.quadraticCurveTo(e.ox + Math.cos(e.dir) * (rad - thick * 2), e.oy + Math.sin(e.dir) * (rad - thick * 2), e.ox + Math.cos(a0) * rad, e.oy + Math.sin(a0) * rad);
+      ctx.fill();
+    };
+    const thick = Math.min(10 + 12 * strength, r * 0.45); // never thicker than the radius lets it be a crescent
+    for (let k = 4; k >= 1; k--) crescent(r - k * 11, thick * (1 - k * 0.16), 0.16 * soft * (1 - k * 0.2), '#8f9bff');
+    crescent(r, thick * 1.3, 0.5 * soft * (0.45 + 0.55 * strength), '#8f9bff');
+    crescent(r, thick * 0.8, 0.9 * soft * (0.5 + 0.5 * strength), '#dfe4ff');
     ctx.restore();
   }
 
