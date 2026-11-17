@@ -68,6 +68,23 @@ export const JUICE = {
   numbers: { mergeWindow: 0.15, life: 0.7, rise: 40, minValue: 1 },
   /** WebAudio carve/hit sounds. */
   audio: { volume: 0.18, minInterval: 0.045 },
+  /**
+   * Player damage feedback (src/damageFx.ts). Toggled with the rest of the juice by [J].
+   * shake: trauma added per hit (+ perDamage per point beyond 1, capped at maxTrauma); `scrape` = obstacle contact.
+   * flash: seconds white then red on the hull; vignette: peak alpha / fade seconds; blink: i-frame flicker Hz.
+   * lowHealth: fractions of max hull for smoke and fire (fire also at 1 hp); alarm = seconds between beeps.
+   */
+  damage: {
+    enabled: true,
+    shake: { hit: 0.55, perDamage: 0.08, scrape: 0.8, maxTrauma: 0.95 },
+    hitStop: 0.04,
+    flash: { white: 0.06, red: 0.14 },
+    vignette: { peak: 0.55, fade: 0.4, lowPeak: 0.22, lowPulse: 1.1 },
+    sparks: { hit: 14, scrape: 22 },
+    blink: { hz: 16, minAlpha: 0.25 },
+    lowHealth: { smoke: 0.4, fire: 0.2, smokeRate: 22, fireRate: 40, emberRate: 18 },
+    alarm: { interval: 1.4, volume: 0.5 },
+  },
 };
 
 /**
