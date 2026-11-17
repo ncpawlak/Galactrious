@@ -1,8 +1,8 @@
 import { H, W } from '../config';
 import { auxById, AUX_DEFS, MAIN_DEFS, type MainDef, type WeaponDef } from '../weapons';
-import { cleanLoadout, defaultLoadoutFor, isNewShip, isNewWeapon, weaponAvailable } from '../loadouts';
+import { bodyHasNewSkin, cleanLoadout, defaultLoadoutFor, isNewShip, isNewSkin, isNewWeapon, weaponAvailable } from '../loadouts';
 import { saveStore } from '../save';
-import { drawShipLook, SHIPS, shipUnlocked, type ShipDefinition, type WeaponLoadout } from '../ships';
+import { drawShipLook, equippedSkin, SHIPS, shipUnlocked, skinKey, skinLook, skinsOf, skinUnlocked, type ShipDefinition, type ShipSkin, type WeaponLoadout } from '../ships';
 import { drawCentered } from './screens';
 import type { NodeHost } from './node';
 
@@ -137,8 +137,10 @@ const weaponDef = (id: string): WeaponDef | undefined => (id === '' ? undefined 
 
 const ARROW_L: Btn = { x: 14, y: 22, w: 84, h: 84 };
 const ARROW_R: Btn = { x: W - 98, y: 22, w: 84, h: 84 };
+const SKIN_L: Btn = { x: 10, y: 226, w: 58, h: 84 };
+const SKIN_R: Btn = { x: W - 68, y: 226, w: 58, h: 84 };
 const MODEL_AREA: Btn = { x: 0, y: 112, w: W, h: 330 };
-const MODEL = { x: W / 2, y: 268, scale: 5.4 };
+const MODEL = { x: W / 2, y: 262, scale: 4.8 };
 const STATS_Y = 468;
 const MAIN_BOX: Btn = { x: 30, y: 542, w: W - 60, h: 92 };
 const AUX_W = 150;
@@ -174,6 +176,10 @@ export class ShipBuilderScreen {
   private pressLast = { x: 0, y: 0 };
   /** Bodies that were NEW when first shown on this visit (they are marked seen at once, but keep their dot until you leave the screen). */
   private readonly newThisVisit = new Set<string>();
+  /** Skins that were NEW when first shown on this visit (`skinKey`), same idea as `newThisVisit`. */
+  private readonly newSkinsThisVisit = new Set<string>();
+  /** The skin shown per body (index into its skins). Starts on the equipped one; a locked skin can be viewed but is never equipped. */
+  private readonly skinAt = new Map<string, number>();
   private t = 0;
   private flash = '';
   private flashT = 0;
@@ -224,17 +230,57 @@ export class ShipBuilderScreen {
     return [main, ...aux];
   }
 
+  /** The skin shown on the body on screen. */
+  get skin(): ShipSkin {
+    const skins = skinsOf(this.ship);
+    let i = this.skinAt.get(this.ship.id);
+    if (i === undefined) {
+      i = Math.max(0, skins.findIndex((k) => k.id === equippedSkin(this.ship).id));
+      this.skinAt.set(this.ship.id, i);
+    }
+    return skins[i];
+  }
+
   /** The body on screen is being viewed: clear its NEW flag (kept as a dot until this visit ends). */
   private view(): void {
     const s = this.ship;
     if (isNewShip(s)) this.newThisVisit.add(s.id);
     if (shipUnlocked(s)) saveStore.markSeen('ships', s.id);
+    this.viewSkin();
+  }
+
+  /** The skin on screen is being viewed: clear its NEW flag, and equip it when it is owned. */
+  private viewSkin(): void {
+    const s = this.ship;
+    const k = this.skin;
+    if (!skinUnlocked(k)) return;
+    const key = skinKey(s.id, k.id);
+    if (isNewSkin(s, k)) this.newSkinsThisVisit.add(key);
+    if (k.unlock) saveStore.markSeen('skins', key);
+    saveStore.setSkin(s.id, k.id);
+  }
+
+  /** Show the next or previous skin of this body. */
+  private stepSkin(dir: number): void {
+    const n = skinsOf(this.ship).length;
+    if (n < 2 || !shipUnlocked(this.ship)) return;
+    this.skinAt.set(this.ship.id, (skinsOf(this.ship).indexOf(this.skin) + dir + n) % n);
+    this.viewSkin();
+  }
+
+  /** The pair can start: the body is owned and the skin shown is owned. */
+  private get ready(): boolean {
+    return shipUnlocked(this.ship) && skinUnlocked(this.skin);
   }
 
   private step(dir: number): void {
     this.index = (this.index + dir + SHIPS.length) % SHIPS.length;
     this.sheet = null;
     this.view();
+  }
+
+  private get hasSkinArrows(): boolean {
+    return shipUnlocked(this.ship) && skinsOf(this.ship).length > 1;
   }
 
   private say(s: string): void {
@@ -306,13 +352,18 @@ export class ShipBuilderScreen {
       return null;
     }
     if (hit(BACK, tap)) return 'back';
-    if (hit(START, tap) && shipUnlocked(this.ship)) return 'start';
+    if (hit(START, tap)) {
+      if (this.ready) return 'start';
+      if (shipUnlocked(this.ship)) this.say(this.skin.requirement ?? 'This skin is locked');
+    }
     if (hit(RESET, tap)) {
       this.slots.set(this.ship.id, this.fromLoadout(defaultLoadoutFor(this.ship.id)));
       return null;
     }
     if (hit(ARROW_L, tap)) this.step(-1);
     else if (hit(ARROW_R, tap)) this.step(1);
+    else if (this.hasSkinArrows && hit(SKIN_L, tap)) this.stepSkin(-1);
+    else if (this.hasSkinArrows && hit(SKIN_R, tap)) this.stepSkin(1);
     else if (hit(MODEL_AREA, tap)) {
       this.press = { x: tap.x, y: tap.y, scroll: 0, moved: false, area: 'model' };
       this.pressLast = { x: tap.x, y: tap.y };
@@ -360,8 +411,13 @@ export class ShipBuilderScreen {
     }
     if (key === 'ArrowLeft') this.step(-1);
     else if (key === 'ArrowRight') this.step(1);
+    else if (key === 'BracketLeft' || key === 'ArrowUp') this.stepSkin(-1);
+    else if (key === 'BracketRight' || key === 'ArrowDown') this.stepSkin(1);
     else if (key === 'Escape') return 'back';
-    else if ((key === 'Enter' || key === 'Space') && shipUnlocked(this.ship)) return 'start';
+    else if (key === 'Enter' || key === 'Space') {
+      if (this.ready) return 'start';
+      if (shipUnlocked(this.ship)) this.say(this.skin.requirement ?? 'This skin is locked');
+    }
     else this.slotKey(key);
     return null;
   }
@@ -380,14 +436,16 @@ export class ShipBuilderScreen {
     g.fillRect(0, 0, W, H);
     g.restore();
     const ship = this.ship;
-    const open = shipUnlocked(ship);
+    const bodyOpen = shipUnlocked(ship);
+    const skin = this.skin;
+    const open = bodyOpen && skinUnlocked(skin);
     const slots = this.current;
 
     // Header: arrows and the body's name.
-    const otherNew = SHIPS.some((s, i) => i !== this.index && isNewShip(s));
+    const otherNew = SHIPS.some((s, i) => i !== this.index && (isNewShip(s) || bodyHasNewSkin(s)));
     this.arrow(g, ARROW_L, '<', otherNew);
     this.arrow(g, ARROW_R, '>', otherNew);
-    text(g, ship.name.toUpperCase(), W / 2, 66, `bold 34px ${MONO}`, open ? '#ffffff' : '#8a93a8', 'center');
+    text(g, ship.name.toUpperCase(), W / 2, 66, `bold 34px ${MONO}`, bodyOpen ? '#ffffff' : '#8a93a8', 'center');
     if (this.newThisVisit.has(ship.id)) newDot(g, W / 2 + (ship.name.length * 20.5) / 2 + 14, 48);
     drawCentered(g, `${this.subtitle}   ·   body ${this.index + 1}/${SHIPS.length}`, 94, `13px ${MONO}`, '#6ee7ff');
 
@@ -398,13 +456,14 @@ export class ShipBuilderScreen {
     grad.addColorStop(1, 'rgba(11, 20, 36, 0)');
     g.fillStyle = grad;
     g.fillRect(0, MODEL_AREA.y, W, MODEL_AREA.h);
-    if (open) drawShipLook(g, ship.look, MODEL.x, MODEL.y, MODEL.scale);
+    if (open) drawShipLook(g, skinLook(ship, skin.id), MODEL.x, MODEL.y, MODEL.scale);
     else {
       g.shadowColor = '#5a6fa8';
       g.shadowBlur = 14;
-      drawShipLook(g, ship.look, MODEL.x, MODEL.y, MODEL.scale, true);
+      drawShipLook(g, skinLook(ship, skin.id), MODEL.x, MODEL.y, MODEL.scale, true);
     }
     g.restore();
+    if (this.hasSkinArrows) this.drawSkinNav(g, ship, skin);
     if (open) {
       const [d1, d2] = wrap2(ship.desc, 56);
       drawCentered(g, d1, d2 ? 412 : 424, `12px ${MONO}`, '#8fa0c8');
@@ -412,7 +471,7 @@ export class ShipBuilderScreen {
     } else {
       lockIcon(g, MODEL.x, MODEL.y, 74);
       drawCentered(g, 'LOCKED', 410, `bold 16px ${MONO}`, '#ff8a5a');
-      const [r1, r2] = wrap2(ship.requirement ?? ship.unlockHint ?? 'unknown', 40);
+      const [r1, r2] = wrap2((bodyOpen ? skin.requirement : ship.requirement) ?? ship.unlockHint ?? 'unknown', 40);
       drawCentered(g, r1, 430, `bold 14px ${MONO}`, '#ffd2b8');
       if (r2) drawCentered(g, r2, 448, `bold 14px ${MONO}`, '#ffd2b8');
     }
@@ -438,12 +497,42 @@ export class ShipBuilderScreen {
     // Weapon slots.
     for (let i = 0; i < 4; i++) this.drawSlot(g, i, slots[i]);
     if (this.flashT > 0) drawCentered(g, clip(this.flash, 54), 818, `bold 13px ${MONO}`, '#ff8a5a');
-    else drawCentered(g, '< > or swipe: body   tap a slot: weapon   (keys: 1-4, enter, esc)', 818, `11px ${MONO}`, '#8fa0c8');
+    else drawCentered(g, this.hasSkinArrows ? 'top < >: body   side < >: skin ([ ])   tap a slot: weapon' : '< > or swipe: body   tap a slot: weapon   (keys: 1-4, enter, esc)', 818, `11px ${MONO}`, '#8fa0c8');
     button(g, BACK, 'BACK', '#ffffff');
     button(g, RESET, 'DEFAULT', '#ff8a5a');
     button(g, START, 'START', '#4ade80', open);
 
     if (this.sheet) this.drawSheet(g);
+  }
+
+  /** Skin arrows at the model's sides, the skin's name and one dot per skin (filled = shown). */
+  private drawSkinNav(g: CanvasRenderingContext2D, ship: ShipDefinition, skin: ShipSkin): void {
+    const skins = skinsOf(ship);
+    const otherNew = skins.some((k) => k !== skin && isNewSkin(ship, k));
+    for (const [b, label] of [[SKIN_L, '<'], [SKIN_R, '>']] as [Btn, string][]) {
+      g.save();
+      g.fillStyle = 'rgba(11, 20, 36, 0.85)';
+      g.fillRect(b.x, b.y, b.w, b.h);
+      g.strokeStyle = '#26324d';
+      g.lineWidth = 2;
+      g.strokeRect(b.x + 1, b.y + 1, b.w - 2, b.h - 2);
+      g.restore();
+      text(g, label, b.x + b.w / 2, b.y + b.h / 2 + 12, `bold 36px ${MONO}`, '#6ee7ff', 'center');
+      if (otherNew) newDot(g, b.x + b.w - 9, b.y + 9, 6);
+    }
+    const locked = !skinUnlocked(skin);
+    text(g, locked ? `${skin.name.toUpperCase()} (locked)` : skin.name.toUpperCase(), W / 2, 388, `bold 15px ${MONO}`, locked ? '#8a93a8' : '#ffffff', 'center');
+    if (this.newSkinsThisVisit.has(skinKey(ship.id, skin.id))) newDot(g, W / 2 + (skin.name.length * 9.2) / 2 + 14, 383, 5);
+    const gap = 16;
+    skins.forEach((k, i) => {
+      const x = W / 2 + (i - (skins.length - 1) / 2) * gap;
+      g.save();
+      g.fillStyle = k === skin ? '#6ee7ff' : skinUnlocked(k) ? '#3a4a70' : '#1c2438';
+      g.beginPath();
+      g.arc(x, 399, k === skin ? 4.5 : 3.5, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    });
   }
 
   private arrow(g: CanvasRenderingContext2D, b: Btn, label: string, dot: boolean): void {

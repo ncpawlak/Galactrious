@@ -1,7 +1,7 @@
 import { H, W } from '../config';
 import type { NodeHost } from '../flow/node';
 import { saveStore, type UnlockKind } from '../save';
-import { drawShipLook, SHIP_BY_ID, SHIPS, type ShipDefinition } from '../ships';
+import { drawShipLook, SHIP_BY_ID, SHIPS, skinLook, type ShipDefinition } from '../ships';
 import { CARDS } from '../upgrades/cards';
 import { WEAPON_DEFS } from '../weapons';
 
@@ -98,11 +98,16 @@ export function describeUnlock(spec: UnlockSpec): UnlockInfo {
   } else if (spec.kind === 'weapons') {
     const w = WEAPON_DEFS.find((d) => d.unlock === spec.id || d.id === spec.id);
     if (w) return { name: w.name, label: w.slot === 'main' ? 'MAIN WEAPON' : 'AUX WEAPON', desc: w.desc, color: w.color, icon: (g, x, y, size) => ring(g, x, y, size, w.color, w.name[0]) };
+  } else if (spec.kind === 'skins') {
+    for (const s of SHIPS) {
+      const k = s.skins?.find((x) => x.unlock === spec.id);
+      if (k) return { name: `${s.name} ${k.name} skin`, label: 'SKIN', desc: `A new look for the ${s.name}. Pick it in the ship builder.`, color: Object.values(k.palette)[0] ?? '#6ee7ff', icon: (g, x, y, size) => drawShipLook(g, skinLook(s, k.id), x, y, size / 48) };
+    }
   } else {
     const c = CARDS.find((d) => d.unlock === spec.id || d.id === spec.id);
     if (c) return { name: c.name, label: 'CARD', desc: c.desc, color: '#ffd21f', icon: (g, x, y, size) => ring(g, x, y, size, '#ffd21f', c.name[0]) };
   }
-  const label = spec.kind === 'ships' ? 'SHIP' : spec.kind === 'weapons' ? 'WEAPON' : 'CARD';
+  const label = spec.kind === 'ships' ? 'SHIP' : spec.kind === 'weapons' ? 'WEAPON' : spec.kind === 'skins' ? 'SKIN' : 'CARD';
   const name = spec.name ?? spec.id.replace(/[-_]+/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
   return { name, label, desc: spec.desc ?? 'A new unlock.', color: '#6ee7ff', icon: (g, x, y, size) => ring(g, x, y, size, '#6ee7ff', name[0] ?? '?') };
 }

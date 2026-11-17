@@ -1,6 +1,6 @@
 import { TUNING } from './config';
 import { DELTA, EMPIRE } from './factions';
-import { isUnlocked } from './save';
+import { isUnlocked, saveStore } from './save';
 
 /**
  * Ships as data. A ship is a look (drawn on the canvas), base stats, the weapons it starts with and an optional unlock flag.
@@ -11,6 +11,8 @@ import { isUnlocked } from './save';
 
 /** A polygon part of a ship silhouette, in ship-local px (the ship's nose is at -y, its centre at 0,0). */
 export interface ShipPart {
+  /** Names the part so a skin palette can recolour it (`ShipSkin.palette`). */
+  id?: string;
   color: string;
   points: [number, number][];
 }
@@ -20,9 +22,29 @@ export interface ShipLook {
   hull: ShipPart;
   /** Drawn after the hull, in order (wings, fins, stripes). */
   details?: ShipPart[];
-  cockpit: { color: string; x: number; y: number; w: number; h: number };
-  /** Exhaust rect: `len` is the flicker base length, `flicker` the random extra. */
-  flame: { color: string; x: number; y: number; w: number; len: number; flicker: number };
+  /** `r` rounds the corners (a bubble canopy); `highlight` is a smaller lighter rect on top of it. */
+  cockpit: { color: string; x: number; y: number; w: number; h: number; r?: number; highlight?: { color: string; x: number; y: number; w: number; h: number } };
+  /** Exhaust rect: `len` is the flicker base length, `flicker` the random extra. `xs` adds more flames at those x offsets (twin or triple engines). */
+  flame: { color: string; x: number; y: number; w: number; len: number; flicker: number; xs?: number[] };
+  /** How big the shape is drawn (default 1). The redesigned hulls are drawn in a large coordinate space and scaled down to the old in-game footprint; hitboxes are unchanged. */
+  scale?: number;
+}
+
+/**
+ * A skin: a colour variant of a body. `palette` maps a part `id` (or `cockpit`, `highlight`, `flame`) to a colour; `details` are extra parts
+ * (stripes, emblems) drawn after the body's own details. The first skin of a ship is its default (always unlocked, empty palette).
+ */
+export interface ShipSkin {
+  id: string;
+  name: string;
+  palette: Record<string, string>;
+  details?: ShipPart[];
+  /** Flag in `save.unlocks.skins`. Omitted = always unlocked. */
+  unlock?: string;
+  /** Shown on the locked skin in the ship builder. */
+  requirement?: string;
+  /** Awarded when a run of this Conquest region is won (src/conquest/tracker.ts). */
+  clearRegion?: string;
 }
 
 export interface ShipStats {
@@ -58,6 +80,8 @@ export interface ShipDefinition {
   /** One line for the select screen. */
   desc: string;
   look: ShipLook;
+  /** Colour variants (see `ShipSkin`); the first is the default. Omitted = one skin. */
+  skins?: ShipSkin[];
   baseStats: ShipStats;
   startingWeapons: WeaponLoadout;
   /** Unlock flag (`save.unlocks.ships`). Omitted = always unlocked. */
@@ -75,6 +99,77 @@ export interface ShipDefinition {
   empireTech?: boolean;
 }
 
+/** The redesigned looks (DESIGN.md "Ship redesign"): drawn in a large coordinate space and scaled by `scale` down to the old in-game size. */
+const VANGUARD_LOOK: ShipLook = {
+  scale: 0.55,
+  hull: { id: 'body', color: '#6ee7ff', points: [[0, -52], [8, -20], [10, 10], [6, 30], [0, 24], [-6, 30], [-10, 10], [-8, -20]] },
+  details: [
+    { id: 'wing', color: '#2fa8c9', points: [[10, -4], [40, 30], [38, 38], [12, 26]] },
+    { id: 'wing', color: '#2fa8c9', points: [[-10, -4], [-40, 30], [-38, 38], [-12, 26]] },
+    { id: 'canard', color: '#2fa8c9', points: [[8, -22], [22, -12], [8, -10]] },
+    { id: 'canard', color: '#2fa8c9', points: [[-8, -22], [-22, -12], [-8, -10]] },
+    { id: 'nose', color: '#e8fbff', points: [[0, -52], [3, -30], [-3, -30]] },
+    { id: 'trim', color: '#1b6f88', points: [[12, 8], [36, 30], [34, 33], [12, 22]] },
+    { id: 'trim', color: '#1b6f88', points: [[-12, 8], [-36, 30], [-34, 33], [-12, 22]] },
+  ],
+  cockpit: { color: '#0b2a36', x: -3.5, y: -24, w: 7, h: 16, r: 3.5, highlight: { color: '#bff3ff', x: -2, y: -22, w: 4, h: 8 } },
+  flame: { color: '#ff8a3c', x: -8, y: 30, w: 5, len: 5, flicker: 5, xs: [3] },
+};
+
+const VANGUARD_SKINS: ShipSkin[] = [
+  { id: 'default', name: 'Blue', palette: {} },
+  {
+    id: 'rookie',
+    name: 'Rookie',
+    palette: { body: '#4cc76a', wing: '#2f9a4c', trim: '#1b5e2e', canard: '#ffd21f', nose: '#fff0a0', cockpit: '#0b2a14', highlight: '#eaffc8', flame: '#ffb347' },
+    details: [
+      // Two racing stripes down the body, then a yellow delta emblem with a green cut-out on each wing surface.
+      { color: '#ffd21f', points: [[-4.5, -30], [-2.3, -30], [-2.3, 24], [-4.5, 24]] },
+      { color: '#ffd21f', points: [[2.3, -30], [4.5, -30], [4.5, 24], [2.3, 24]] },
+      { color: '#ffd21f', points: [[20, 9], [26, 20], [14, 20]] },
+      { color: '#2f9a4c', points: [[20, 13.5], [23, 18], [17, 18]] },
+      { color: '#ffd21f', points: [[-20, 9], [-26, 20], [-14, 20]] },
+      { color: '#2f9a4c', points: [[-20, 13.5], [-23, 18], [-17, 18]] },
+    ],
+    unlock: 'vanguard-rookie',
+    clearRegion: 'empire-base',
+    requirement: 'Clear Empire Base in Conquest',
+  },
+];
+
+const WARDEN_LOOK: ShipLook = {
+  scale: 0.5,
+  hull: { id: 'body', color: '#ff9f43', points: [[0, -46], [14, -28], [16, 18], [9, 36], [-9, 36], [-16, 18], [-14, -28]] },
+  details: [
+    { id: 'strut', color: '#8a4d14', points: [[-20, 2], [-13, 2], [-13, 12], [-20, 12]] },
+    { id: 'strut', color: '#8a4d14', points: [[20, 2], [13, 2], [13, 12], [20, 12]] },
+    { id: 'pod', color: '#b8651a', points: [[-40, -20], [-18, -20], [-18, 32], [-40, 32]] },
+    { id: 'pod', color: '#b8651a', points: [[18, -20], [40, -20], [40, 32], [18, 32]] },
+    { id: 'barrel', color: '#ffd9a8', points: [[-31.5, -36], [-28.5, -36], [-28.5, -20], [-31.5, -20]] },
+    { id: 'barrel', color: '#ffd9a8', points: [[28.5, -36], [31.5, -36], [31.5, -20], [28.5, -20]] },
+    { id: 'stripe', color: '#ffd23a', points: [[-40, -6], [-18, -6], [-18, -2], [-40, -2]] },
+    { id: 'stripe', color: '#ffd23a', points: [[18, -6], [40, -6], [40, -2], [18, -2]] },
+    { id: 'stripe', color: '#ffd23a', points: [[-40, 14], [-18, 14], [-18, 18], [-40, 18]] },
+    { id: 'stripe', color: '#ffd23a', points: [[18, 14], [40, 14], [40, 18], [18, 18]] },
+    { id: 'nose', color: '#ffe3b8', points: [[0, -46], [6, -34], [-6, -34]] },
+  ],
+  cockpit: { color: '#2a1608', x: -5, y: -30, w: 10, h: 14 },
+  flame: { color: '#ffd23a', x: -33, y: 32, w: 8, len: 5, flicker: 6, xs: [-4, 25] },
+};
+
+const WISP_LOOK: ShipLook = {
+  scale: 0.45,
+  hull: { id: 'body', color: '#c77dff', points: [[0, -56], [5, -10], [4, 26], [0, 18], [-4, 26], [-5, -10]] },
+  details: [
+    { id: 'wing', color: '#7dff9a', points: [[5, 2], [30, 36], [28, 40], [6, 24]] },
+    { id: 'wing', color: '#7dff9a', points: [[-5, 2], [-30, 36], [-28, 40], [-6, 24]] },
+    { id: 'fin', color: '#9a4fd8', points: [[4, 18], [10, 40], [4, 34]] },
+    { id: 'fin', color: '#9a4fd8', points: [[-4, 18], [-10, 40], [-4, 34]] },
+  ],
+  cockpit: { color: '#f4e6ff', x: -1.5, y: -32, w: 3, h: 20 },
+  flame: { color: '#7dff9a', x: -2.5, y: 26, w: 5, len: 6, flicker: 6 },
+};
+
 export const DEFAULT_SHIP_ID = 'vanguard';
 
 export const SHIPS: ShipDefinition[] = [
@@ -83,11 +178,8 @@ export const SHIPS: ShipDefinition[] = [
     id: DEFAULT_SHIP_ID,
     name: 'Vanguard',
     desc: 'Balanced all-rounder. Chain gun with Gauss, Rocket and Arc.',
-    look: {
-      hull: { color: '#6ee7ff', points: [[0, -22], [15, 16], [0, 9], [-15, 16]] },
-      cockpit: { color: '#ffffff', x: -2, y: -6, w: 4, h: 9 },
-      flame: { color: '#ff8a3c', x: -3, y: 12, w: 6, len: 4, flicker: 5 },
-    },
+    look: VANGUARD_LOOK,
+    skins: VANGUARD_SKINS,
     baseStats: { maxHealth: TUNING.player.maxHealth, speed: TUNING.ship.speed, dodgeCooldown: TUNING.dodge.cooldown, hitbox: TUNING.player.hitbox },
     startingWeapons: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] },
   },
@@ -95,16 +187,8 @@ export const SHIPS: ShipDefinition[] = [
     id: 'warden',
     name: 'Warden',
     desc: 'Heavy hull, slow to turn. Scatter shotgun with Blades, Rocket and Lance.',
-    look: {
-      hull: { color: '#ff9f43', points: [[0, -20], [10, -8], [24, 6], [24, 18], [10, 14], [0, 18], [-10, 14], [-24, 18], [-24, 6], [-10, -8]] },
-      details: [
-        { color: '#7a4a1c', points: [[-24, 6], [-16, 6], [-16, 18], [-24, 18]] },
-        { color: '#7a4a1c', points: [[24, 6], [16, 6], [16, 18], [24, 18]] },
-        { color: '#ffe3b8', points: [[0, -14], [4, -4], [-4, -4]] },
-      ],
-      cockpit: { color: '#2a1608', x: -3, y: -2, w: 6, h: 10 },
-      flame: { color: '#ffd23a', x: -6, y: 14, w: 12, len: 4, flicker: 6 },
-    },
+    look: WARDEN_LOOK,
+    skins: [{ id: 'default', name: 'Bronze', palette: {} }],
     baseStats: { maxHealth: 7, speed: 390, dodgeCooldown: 3, hitbox: 6, minY: 290 },
     startingWeapons: { main: 'scatter', aux: ['blades', 'rocket', 'lance'] },
     unlock: 'warden',
@@ -115,15 +199,8 @@ export const SHIPS: ShipDefinition[] = [
     id: 'wisp',
     name: 'Wisp',
     desc: 'Frail and fast, tiny hitbox. Needler with Swarm, Gauss and Arc.',
-    look: {
-      hull: { color: '#c77dff', points: [[0, -24], [7, 4], [4, 18], [0, 12], [-4, 18], [-7, 4]] },
-      details: [
-        { color: '#7dff9a', points: [[7, 2], [20, 14], [6, 12]] },
-        { color: '#7dff9a', points: [[-7, 2], [-20, 14], [-6, 12]] },
-      ],
-      cockpit: { color: '#f4e6ff', x: -1, y: -10, w: 2, h: 10 },
-      flame: { color: '#7dff9a', x: -2, y: 12, w: 4, len: 5, flicker: 6 },
-    },
+    look: WISP_LOOK,
+    skins: [{ id: 'default', name: 'Violet', palette: {} }],
     baseStats: { maxHealth: 3, speed: 560, dodgeCooldown: 2, hitbox: 4 },
     startingWeapons: { main: 'needle', aux: ['swarm', 'gauss', 'arc'] },
     unlock: 'wisp',
@@ -161,8 +238,7 @@ export const SHIPS: ShipDefinition[] = [
 
 /**
  * Campaign-only ships: never shown in the Endless ship select (they are not in `SHIPS`), but `shipById` and `Game.setShip` know them.
- * `delta-rookie` is the Fallen Peace ship: the Vanguard's numbers and silhouette in the Delta squad palette (mint, white, teal; no red,
- * so it never reads as an empire ship), preset weapons chain + Gauss, Rocket, Arc.
+ * `delta-rookie` is the Fallen Peace ship: the Vanguard's numbers and silhouette in the default blue Vanguard skin (blue never reads as an empire ship), preset weapons chain + Gauss, Rocket, Arc.
  */
 export const DELTA_ROOKIE_ID = 'delta-rookie';
 export const CAMPAIGN_SHIPS: ShipDefinition[] = [
@@ -170,18 +246,7 @@ export const CAMPAIGN_SHIPS: ShipDefinition[] = [
     id: DELTA_ROOKIE_ID,
     name: 'Delta Rookie',
     desc: 'Delta squad standard issue. Twin chain guns with Gauss, Rocket and Arc.',
-    look: {
-      hull: { color: DELTA.hull, points: [[0, -22], [15, 16], [0, 9], [-15, 16]] },
-      details: [
-        { color: DELTA.mid, points: [[0, -16], [8, 12], [0, 8], [-8, 12]] },
-        { color: DELTA.trim, points: [[-15, 16], [-9, 13], [-9, 16]] },
-        { color: DELTA.trim, points: [[15, 16], [9, 13], [9, 16]] },
-        { color: DELTA.dark, points: [[-12, 15], [-7, 11], [-7, 15]] },
-        { color: DELTA.dark, points: [[12, 15], [7, 11], [7, 15]] },
-      ],
-      cockpit: { color: '#ffffff', x: -2, y: -6, w: 4, h: 9 },
-      flame: { color: DELTA.flame, x: -3, y: 12, w: 6, len: 4, flicker: 5 },
-    },
+    look: VANGUARD_LOOK, // the squad flies the default blue skin of the redesigned hull, never the Rookie skin
     // Campaign tuning (chapters 1 and 2): the rookie's chain gun fires 25% faster and hits 22% harder than the Endless Vanguard's.
     baseStats: { maxHealth: TUNING.player.maxHealth, speed: TUNING.ship.speed, dodgeCooldown: TUNING.dodge.cooldown, hitbox: TUNING.player.hitbox, statMul: { 'chain.fireRate': 1.25, 'chain.damage': 1.22 }, twinMuzzles: 2, muzzleGap: 22, muzzleDamage: 0.6 },
     startingWeapons: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] },
@@ -224,6 +289,58 @@ export function shipById(id: string): ShipDefinition {
   return SHIP_BY_ID.get(id) ?? SHIP_BY_ID.get(DEFAULT_SHIP_ID)!;
 }
 
+/** A skin is owned when it has no unlock flag or the flag is in `save.unlocks.skins`. */
+export function skinUnlocked(s: ShipSkin): boolean {
+  return !s.unlock || isUnlocked('skins', s.unlock);
+}
+
+/** The ship's skins (always at least the default one). */
+export function skinsOf(s: ShipDefinition): ShipSkin[] {
+  return s.skins && s.skins.length > 0 ? s.skins : [{ id: 'default', name: 'Standard', palette: {} }];
+}
+
+/** Save key of a skin for the `seen` list. */
+export const skinKey = (shipId: string, skinId: string): string => `${shipId}:${skinId}`;
+
+const skinCache = new Map<string, ShipLook>();
+
+/** The ship's look wearing a skin (cached, so the same skin always gives the same object). The default skin gives `look` itself. */
+export function skinLook(ship: ShipDefinition, skinId: string): ShipLook {
+  const skins = skinsOf(ship);
+  const skin = skins.find((k) => k.id === skinId) ?? skins[0];
+  if (skin === skins[0]) return ship.look;
+  const key = skinKey(ship.id, skin.id);
+  let out = skinCache.get(key);
+  if (!out) {
+    const pal = skin.palette;
+    const col = (p: ShipPart): ShipPart => (p.id && pal[p.id] ? { ...p, color: pal[p.id] } : p);
+    const c = ship.look.cockpit;
+    out = {
+      ...ship.look,
+      hull: col(ship.look.hull),
+      details: [...(ship.look.details ?? []).map(col), ...(skin.details ?? [])],
+      cockpit: { ...c, color: pal.cockpit ?? c.color, highlight: c.highlight ? { ...c.highlight, color: pal.highlight ?? c.highlight.color } : undefined },
+      flame: { ...ship.look.flame, color: pal.flame ?? ship.look.flame.color },
+    };
+    skinCache.set(key, out);
+  }
+  return out;
+}
+
+/** The skin the player has equipped on a body (the default when none is saved or the saved one is locked or unknown). Campaign ships have no skins: always the default. */
+export function equippedSkin(ship: ShipDefinition): ShipSkin {
+  const skins = skinsOf(ship);
+  const k = saveStore.current.skins[ship.id];
+  const s = skins.find((x) => x.id === k);
+  return s && skinUnlocked(s) ? s : skins[0];
+}
+
+/** The look a run draws for this body: the equipped skin. */
+export function equippedLook(shipId: string): ShipLook {
+  const ship = shipById(shipId);
+  return skinLook(ship, equippedSkin(ship).id);
+}
+
 /** True when the ship is always available or its flag is set in the save. */
 export function shipUnlocked(s: ShipDefinition): boolean {
   return !s.unlock || isUnlocked('ships', s.unlock);
@@ -239,6 +356,7 @@ export function shipBase(id: string): Record<string, number> {
 export function drawShipLook(g: CanvasRenderingContext2D, look: ShipLook, x: number, y: number, scale = 1, silhouette = false): void {
   g.save();
   g.translate(Math.round(x), Math.round(y));
+  scale *= look.scale ?? 1;
   if (scale !== 1) g.scale(scale, scale);
   const poly = (p: ShipPart): void => {
     g.fillStyle = silhouette ? '#000' : p.color;
@@ -247,19 +365,32 @@ export function drawShipLook(g: CanvasRenderingContext2D, look: ShipLook, x: num
     g.closePath();
     g.fill();
   };
-  poly(look.hull);
+  if (!silhouette) poly(look.hull);
   if (silhouette) {
     // A locked body: the hull and detail shapes in one black fill (details can reach past the hull), no cockpit or flame.
-    for (const d of look.details ?? []) poly(d);
+    // Two passes: the parts with the caller's glow, then again without it on top, so the glow has no seams where parts overlap.
+    const parts = [look.hull, ...(look.details ?? [])];
+    for (const p of parts) poly(p);
+    g.shadowColor = 'transparent';
+    g.shadowBlur = 0;
+    for (const p of parts) poly(p);
     g.restore();
     return;
   }
   for (const d of look.details ?? []) poly(d);
   const c = look.cockpit;
   g.fillStyle = c.color;
-  g.fillRect(c.x, c.y, c.w, c.h);
+  if (c.r) {
+    g.beginPath();
+    g.roundRect(c.x, c.y, c.w, c.h, c.r);
+    g.fill();
+  } else g.fillRect(c.x, c.y, c.w, c.h);
+  if (c.highlight) {
+    g.fillStyle = c.highlight.color;
+    g.fillRect(c.highlight.x, c.highlight.y, c.highlight.w, c.highlight.h);
+  }
   const f = look.flame;
   g.fillStyle = f.color;
-  g.fillRect(f.x, f.y, f.w, f.len + Math.random() * f.flicker);
+  for (const fx of [f.x, ...(f.xs ?? [])]) g.fillRect(fx, f.y, f.w, f.len + Math.random() * f.flicker);
   g.restore();
 }
