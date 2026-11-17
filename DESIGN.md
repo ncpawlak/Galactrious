@@ -699,9 +699,9 @@ Status: **design only**, agreed with the owner. It replaces the two-screen flow 
 - A **skin** is a palette (and, where it helps, trim) variant of a body. A body always has a **default skin**, unlocked from the start.
 - **Skins are awards.** Each locked skin names its requirement in the UI. They are tied to Campaign, Conquest and Endless results. First slice, kept small (1 or 2 per mode, adding more is a data change):
   - **Campaign:** a skin for finishing "Fallen Peace"; a gold skin for finishing it with all gold medals.
-  - **Conquest:** a skin for clearing a region (Empire Base first); one for completing a region's challenge set.
+  - **Conquest:** the **Rookie skin** for clearing a region (Empire Base first); one more for completing a region's challenge set.
   - **Endless:** a skin for reaching a level milestone (milestones to be set; Endless has no awards yet).
-- **Delta-Rookie:** it stays the campaign's own ship (story, preset loadout). In the builder it shows as the **Vanguard's "Rookie" skin**, unlocked by finishing the campaign. (Open: the owner has not confirmed this; the alternative is to leave it a separate body.)
+- **Delta-Rookie:** it stays the campaign's own ship (story, preset loadout). In the builder it appears as the **Vanguard's "Rookie" skin**, which is a **Conquest reward** (clearing the Empire Base region), not a campaign unlock. Decided by the owner.
 - Skin data lives with the ship definitions (`src/ships.ts`): `skins: { id, name, palette, unlock }[]`. The unlock reasons are shown on the locked screen and the Unlocks screen.
 
 ### NEW markers
@@ -715,7 +715,7 @@ Status: **design only**, agreed with the owner. It replaces the two-screen flow 
 - Keep keyboard support: arrows change body, `[`/`]` or up/down change skin, 1 to 4 open a slot, enter starts, esc goes back.
 
 ### Open
-Skin names and the exact award thresholds; Endless milestones; whether Delta-Rookie becomes a skin; a live weapon preview on the model (optional, not in v1).
+Skin names and the exact award thresholds; Endless milestones; a live weapon preview on the model (optional, not in v1).
 
 ## Combat range
 
