@@ -45,3 +45,40 @@ export const SCROLL_TEST: ScrollLevelDef = {
     { at: 8900, kind: 'event', name: 'near-end' },
   ],
 };
+
+/**
+ * Debug-only weather test (`game.debug.scroll.start('scroll-test-storm')`): space at speed, then the atmosphere building from
+ * calm to a violent storm (`setWeather`), then the arctic blizzard calm to heavy, easing back down at the end. 12000 px.
+ */
+export const SCROLL_TEST_STORM: ScrollLevelDef = {
+  id: 'scroll-test-storm',
+  name: 'Weather test',
+  length: 12000,
+  speed: 120,
+  theme: 'space',
+  allies: { count: 3, pattern: 'patrol' },
+  timeline: [
+    // Space: from a drift to a hard burn (the streaks stretch with the speed).
+    { at: 0, kind: 'event', name: 'space-slow' },
+    { at: 900, kind: 'speed', speed: 320, ease: 3 },
+    { at: 1800, kind: 'speed', speed: 520, ease: 3 },
+    { at: 2600, kind: 'wave', wave: 'l1w1' },
+    { at: 3200, kind: 'speed', speed: 200, ease: 2 },
+    // Atmosphere: calm, then building.
+    { at: 3600, kind: 'theme', theme: 'atmosphere', fade: 3 },
+    { at: 3600, kind: 'setWeather', intensity: 0.1, ease: 0.1 },
+    { at: 3600, kind: 'event', name: 'atmosphere-calm' },
+    { at: 4400, kind: 'setWeather', intensity: 0.45, ease: 6 },
+    { at: 4400, kind: 'allies', on: false },
+    { at: 4600, kind: 'field', to: 7200, density: 5, shapes: [{ shape: 'debris-m' }, { shape: 'debris-l' }, { shape: 'debris-s', weight: 2 }], motions: ['straight', 'tumble', 'fast'], lane: { x: 270, width: 140 }, seed: 5 },
+    { at: 5600, kind: 'speed', speed: 340, ease: 3 },
+    { at: 5600, kind: 'setWeather', intensity: 1, ease: 5 },
+    { at: 5600, kind: 'event', name: 'storm-violent' },
+    // Arctic: the blizzard.
+    { at: 7600, kind: 'theme', theme: 'arctic', fade: 3 },
+    { at: 7600, kind: 'setWeather', intensity: 0.3, ease: 3 },
+    { at: 8600, kind: 'setWeather', intensity: 1, ease: 5 },
+    { at: 8800, kind: 'field', to: 11000, density: 5, shapes: [{ shape: 'peak-s' }, { shape: 'peak-m', weight: 0.6 }, { shape: 'debris-m' }], motions: ['straight', 'weave'], lane: { x: 270, width: 130 }, seed: 8 },
+    { at: 11000, kind: 'setWeather', intensity: 0.15, ease: 4 },
+  ],
+};

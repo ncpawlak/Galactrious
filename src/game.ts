@@ -350,6 +350,7 @@ export class Game {
     this.stopScroll();
     const r = new ScrollRunnerImpl(this.scrollHost);
     this.scroll = r;
+    r.onThunder = (k) => this.fx.rumble(0.12 + 0.12 * k);
     r.start(def);
   }
 
@@ -571,6 +572,10 @@ export class Game {
           if (this.scroll) this.scroll.paused = on;
         },
         distance: () => this.scroll?.distance ?? 0,
+        /** Weather 0..1 (eased over `ease` s), theme switch, lightning now. */
+        weather: (v: number, ease = 0) => this.scroll?.setWeather(v, ease),
+        theme: (id: string, fade = 0) => this.scroll?.background?.setTheme(id, fade),
+        strike: () => this.scroll?.background?.strike(),
         speed: () => this.scroll?.speed ?? 0,
         levels: Object.keys(SCROLL_LEVELS),
         /** Spawn one obstacle now at its entry edge. */
