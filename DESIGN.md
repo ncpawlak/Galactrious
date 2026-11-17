@@ -422,7 +422,7 @@ Delta squadron is in a large dogfight above the planet Orini. The player is a ro
 | 1 | Dogfight | Fight through fighter waves, reach the command ship, blow up its engine room | objective nodes; armoured capital ship with an exposed engine room |
 | 2 | Retreat | Escape through another dogfight; the player is shot down at the end | timed objective; **scripted event** (the shoot-down is not a death) |
 | 3 | Freefall | Dodge debris and mountain peaks falling past. **You cannot shoot.** Touching an obstacle damages the ship (normal health) | scrolling level; obstacles; weapons locked |
-| 4 | Crash and commandeer | Find the enemy base, take an enemy ship | pickup; ship swap |
+| 4 | Crash and commandeer | Eject into a tiny **escape pod** (minimal health, no weapon) and sneak through the enemy base past **searchlights** to the hangar; crossing a light brings fighters that shoot you. Sit in the hangar circle for 10 s to take the ship | scrolling stealth level; pod ship; searchlight detection; pursuing fighters; hold-zone objective; ship swap |
 | 5 | Surface run | Long scroll across the surface: turrets, wall defences, air squadrons. Goal: do not die | long scrolling level; terrain; turrets |
 | 6 | Escape and reunion | Reach the atmosphere; meet the squad | short narrative level; cosmetic allies |
 | 7 | Finale | Boss fight with the squad (the disabled command ship), including dogfighting | boss; scripted squad assists |
@@ -468,9 +468,12 @@ Every chapter has one **bonus objective**, shown at the start of the level. It r
 | 1. Dogfight | **Ace:** shoot down 30 fighters before reaching the command ship |
 | 2. Retreat | **Untouched:** take no hits during the retreat |
 | 3. Freefall | **Undamaged:** take no damage from debris or peaks (you cannot shoot, so this is the mastery) |
-| 4. Commandeer | to be designed with the chapter gameplay (candidates: silent approach, or blow the fuel depot in one chain reaction) |
+| 4. Commandeer | **Silent:** reach the hangar without ever being detected by a searchlight |
 | 5. Surface run | **Destroy all turrets** |
 | 6. Reunion | **Fly clean:** reach the atmosphere without using the dodge, or at full health |
 | 7. Finale | **Full dismantle:** destroy every room and turret on the capital ship before the core goes |
 
 Tracking needs only a few counters (kills, hits taken, rooms destroyed, pickups, alarms), kept per level attempt and reset on a checkpoint restart where the objective restarts (the death still counts).
+
+### Chapter 4 gameplay (agreed)
+The player ejects from the crashed ship into a tiny **escape pod**: a small ship with a tiny hitbox, **minimal health and no weapon**. The level is a **scrolling stealth level** through the enemy base with **searchlights** sweeping it. If the pod crosses a light, **fighters come after it and shoot**; the pod cannot shoot back, so the answer to being detected is to run, break line of sight or dodge. The goal is the **hangar**: reach the hangar circle and **sit in it for 10 seconds** to take the enemy ship (the objective ends with a ship swap to the empire fighter, the commandeered hero ship). Bonus gold: **Silent**, never detected. This replaces the earlier fuel-depot idea. Engine needs: a preset pod ship (no weapons, tiny hitbox, low health), a searchlight hazard that sets a detection state, pursuing fighters (existing units with a chase movement, spawned on detection), and a `hold` objective (stay inside a zone for N seconds).
