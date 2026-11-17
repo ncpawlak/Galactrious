@@ -253,6 +253,8 @@ export class Boss {
   private checkTimer = 0;
   /** Debug A/B switch: false = the old per-layer-only anchoring (loose room chunks stay), see DESIGN.md. */
   unionAnchoring = true;
+  /** False = no connectivity pass at all: a carved piece stays where it is (terrain structures are attached to the ground, see src/terrain). */
+  anchoring = true;
   /** Per layer: original connected region id of each pixel (0 = empty). Regions anchor independently. */
   private regions: Int32Array[];
   /** Dust from vanished specks and break-aways, in screen space; the game may drain this for particles. */
@@ -303,7 +305,7 @@ export class Boss {
     this.y = this.baseY + this.offsetY;
 
     this.checkTimer -= dt;
-    if (this.checkTimer <= 0 && this.layers.some((l) => l.needsCheck)) {
+    if (this.anchoring && this.checkTimer <= 0 && this.layers.some((l) => l.needsCheck)) {
       this.checkTimer = CONNECTIVITY_INTERVAL;
       // Anchoring is judged on the union of all layers (see `unionAnchor`): a carve in any layer can cut a
       // piece of another one loose, so one flagged layer re-checks the whole stack when something is orphaned.

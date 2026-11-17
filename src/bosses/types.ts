@@ -74,6 +74,8 @@ export interface BossDefinition {
   faction?: string;
   /** Layers flagged `indestructible` in the layout (armour) become normal carvable layers when true. Default false. Live: `BossFight.armourCarvable`. */
   armourCarvable?: boolean;
+  /** Runs after a campaign snapshot is restored onto this boss (src/campaign/snapshot.ts): for pixels the snapshot's source definition did not have (chapter 7's hidden rooms). */
+  afterRestore?: (fight: import('../bossFight').BossFight, snap: import('../campaign/snapshot').BossSnapshot) => void;
   /** At least one phase. */
   phases: PhaseDefinition[];
 }

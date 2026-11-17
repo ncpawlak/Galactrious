@@ -239,6 +239,14 @@ export class Run {
     this.setPhase('campaign');
   }
 
+  /** Debug: open the campaign unlock reveal for a campaign id (src/finale/unlocks.ts). */
+  showCampaignUnlocks(campaignId: string) {
+    this.endNode();
+    const items = this.campaign.showUnlocks(campaignId);
+    this.setPhase('campaign');
+    return items;
+  }
+
   /** True while a node is current (as opposed to the title and result screens). */
   get active(): boolean {
     return this.phase === 'node';

@@ -111,6 +111,11 @@ export class Effects {
     this.trauma = 1;
   }
 
+  /** A scripted shake (cinematics): raise the trauma to at least `a` (0..1). */
+  kick(a: number): void {
+    if (this.enabled) this.trauma = Math.min(1, Math.max(this.trauma, a));
+  }
+
   /** A soft, low rumble (thunder): a small trauma kick, never above 0.3. */
   rumble(a: number): void {
     if (this.enabled) this.addTrauma(a, 0.3);

@@ -1,16 +1,24 @@
 /**
  * "Fallen Peace", slice 1: chapters 1 to 3 (DESIGN.md "Campaign 1" and "As built: Fallen Peace chapters 1-3"). Chapters 4 to 7
- * are other sessions' work: append their `CampaignLevel`s to `FALLEN_PEACE.levels`.
+ * are other sessions' work: append their `CampaignLevel`s to `FALLEN_PEACE.levels`. Every chapter follows the mission design
+ * standard (DESIGN.md "Cinematic and mission design standard"): a briefing, constant engagement, an approach beat before the big
+ * fight, and an exit cinematic (an objective `outro`) instead of an abrupt end.
  *
- * Timeline of the three chapters, with the medal numbers measured in a scripted run (see DESIGN.md):
- *  1. Dogfight: closed screen. Objective 1 `destroy` (four fighter waves, gunships in the last), objective 2 `bossFight` (the
- *     armoured capital ship; done when the ENGINE ROOM dies; its snapshot is saved to the campaign progress, slot `capital-ship`).
- *  2. Retreat: scrolling. Objective 1 `escape` (reach the exit before the timer, flybys all the way), objective 2 `survive` with the
- *     scripted shoot-down (`forceDestroyPlayer`: not a death) that ends the chapter.
- *  3. Freefall: scrolling, weapons locked, objective `scroll` over the debris and peak level; the crash is the last beat.
+ *  1. Dogfight: closed screen. Objective 1 is a TIME-GATED fighter stream (`survive`, 55 s; the Ace bonus is "30 fighters before
+ *     the time runs out"), its outro the fighters breaking off. Objective 2 `bossFight`: an `intro` where the armoured capital ship
+ *     descends, invincible, with commentary; done when the ENGINE ROOM dies (snapshot to slot `capital-ship`); an `outro` with the
+ *     engine-room explosion and the ship's 180 off the bottom of the screen.
+ *  2. Retreat: scrolling, space the whole way, about 60 s. One `escape` objective (reach the jump gate); the outro is the shoot-down
+ *     and the fall toward the planet (scripted: not a death).
+ *  3. Freefall: scrolling, weapons locked, starts crippled (2 hp, burning), flown backwards. One `scroll` objective; the outro is the
+ *     crash on the ridge, the whiteout and the fade.
  */
 import { FP2_EXIT_DISTANCE } from '../scroll/fallenPeace';
 import { CAPITAL_SHIP_ID } from '../bosses/capitalShip';
+import { FALLEN_PEACE_UNLOCKS } from '../finale/unlocks';
+import { STREAM_SECONDS } from '../enemies/empireWaves';
+import { FP1_APPROACH, FP1_BREAK_OFF, FP1_EXIT, FP2_SHOT_DOWN, FP3_CRASH } from './fallenPeaceCinematics';
+import { FALLEN_PEACE_45_LEVELS } from './fallenPeace45';
 import type { Beat, CampaignDefinition, CampaignLevel } from './types';
 
 /** The preset Delta rookie ship and loadout: no builder, no cards. */
@@ -35,23 +43,26 @@ const CHAPTER_1: CampaignLevel = {
   name: '1. Dogfight',
   briefing: [
     'Orini, above the arctic ice. The empire has brought its command ship to break Delta squad, and every fighter it owns.',
-    'Fight through the dogfight. Your wingmen are in it with you, but this strike is yours.',
+    'Fight through the dogfight. The enemy will not stop coming: when one group goes down the next is already on you. Your wingmen are in it with you, but this strike is yours.',
     'The command ship wears armour that nothing of ours can scratch, all but one gap at its stern. Carve through to the engine room and blow it up.',
   ],
   ship: DELTA_SHIP,
   objectives: [
     {
       id: 'fighters',
-      type: 'destroy',
+      type: 'survive',
       title: 'Break through the fighters',
+      label: 'HOLD THE LINE',
       scroll: 'fp1-space',
-      spawns: [{ wave: 'fp1-dogfight', tag: 'fighters' }],
-      targets: [{ tag: 'fighters' }],
+      seconds: STREAM_SECONDS + 3,
+      spawns: [{ wave: 'fp1-stream', tag: 'fighters' }],
       beats: [
         { at: 1, do: 'text', speaker: LEAD, text: 'All Delta, break and attack. Rookie, stay on my wing.' },
-        { at: 22, do: 'text', speaker: COMMAND, text: 'Bandits everywhere. Keep them off the strike run.' },
-        { at: 55, do: 'text', speaker: LEAD, text: 'Gunships coming in. Mind their wing guns.' },
+        { at: 14, do: 'text', speaker: COMMAND, text: 'Bandits everywhere. Keep them off the strike run.' },
+        { at: 23, do: 'text', speaker: LEAD, text: 'Gunships coming in. Mind their wing guns.' },
+        { at: 40, do: 'text', speaker: COMMAND, text: 'Command ship is closing. Hold them a little longer.' },
       ],
+      outro: FP1_BREAK_OFF,
     },
     {
       id: 'engine-room',
@@ -61,16 +72,16 @@ const CHAPTER_1: CampaignLevel = {
       bossId: CAPITAL_SHIP_ID,
       until: { room: 'engine' },
       snapshotSlot: CAPITAL_SNAPSHOT_SLOT,
+      intro: FP1_APPROACH,
       beats: [
-        { at: 0.5, do: 'text', speaker: COMMAND, text: 'That is the command ship. Its armour is theirs: you cannot touch it.' },
-        { at: 5, do: 'text', speaker: COMMAND, text: 'Only the notch at the stern is soft. Dig up through it to the engine room.' },
         { at: 30, do: 'text', speaker: LEAD, text: 'Keep digging, rookie. We will keep the fighters off you.' },
         ...harassment(),
       ],
+      outro: FP1_EXIT,
     },
   ],
   // Measured with a scripted run (DESIGN.md): see the numbers there.
-  medals: { bronze: 330, silver: 240, gold: 170, bonus: { kind: 'killCount', count: 30, text: 'Ace: shoot down 30 fighters before the engine room goes' } },
+  medals: { bronze: 300, silver: 220, gold: 160, bonus: { kind: 'destroyAll', tag: 'fighters', count: 30, text: 'Ace: shoot down 30 fighters before the time runs out' } },
 };
 
 const CHAPTER_2: CampaignLevel = {
@@ -79,7 +90,7 @@ const CHAPTER_2: CampaignLevel = {
   briefing: [
     'The engines are dead and the command ship is adrift. The strike worked.',
     'Now the empire wants its revenge. Delta squad is falling back toward the jump gate through a second dogfight, and the enemy is not holding formation: they are making passes, from above, from the sides and from behind.',
-    'Reach the exit before the timer runs out.',
+    'Reach the jump gate before the timer runs out.',
   ],
   ship: DELTA_SHIP,
   objectives: [
@@ -89,47 +100,38 @@ const CHAPTER_2: CampaignLevel = {
       title: 'Reach the jump gate',
       scroll: 'fp2-retreat',
       exit: { x: 270, y: 340, r: 120 },
+      gate: true,
       exitAtDistance: FP2_EXIT_DISTANCE,
-      // The exit opens at about 110 s; the timer gives the player 30 s past that to get there.
-      timer: 145,
+      // The gate opens at 50 s; the timer gives the player 25 s past that to get there.
+      timer: 75,
       beats: [
         { at: 0.5, do: 'text', speaker: LEAD, text: 'Engines are dead. Nice shooting, rookie. Now we get out of here.' },
-        { at: 8, do: 'text', speaker: COMMAND, text: 'All Delta, withdraw. Empire reinforcements inbound from above.' },
-        { at: 14, do: 'text', speaker: LEAD, text: 'Bandit on your six! Keep moving!' },
-        { at: 38, do: 'text', speaker: LEAD, text: 'Flak ahead. Watch the markers, they go off where you are.' },
-        { at: 52, do: 'text', speaker: LEAD, text: 'Delta 4 is down. Stay with me. Stay with me!' },
-        { at: 84, do: 'text', speaker: COMMAND, text: 'The entry corridor is open. Take it, rookie.' },
-        { at: 107, do: 'text', speaker: COMMAND, text: 'Jump gate ahead. Get to it!' },
+        { at: 7, do: 'text', speaker: COMMAND, text: 'All Delta, withdraw. Empire reinforcements inbound from above.' },
+        { at: 13, do: 'text', speaker: LEAD, text: 'Bandit on your six! Keep moving!' },
+        { at: 26, do: 'text', speaker: LEAD, text: 'Flak ahead. Watch the markers, they go off where you are.' },
+        { at: 36, do: 'text', speaker: LEAD, text: 'Rookie, you are ahead of us. Hit the gate, we are right behind you!' },
+        { at: 43, do: 'text', speaker: LEAD, text: 'We are pinned down back here! Go, rookie, go!' },
+        { at: 49, do: 'text', speaker: COMMAND, text: 'The jump gate is open. Get to it, rookie!' },
       ],
-    },
-    {
-      id: 'shot-down',
-      type: 'survive',
-      title: 'Hit!',
-      scroll: 'fp2-shot',
-      seconds: 99,
-      beats: [
-        { at: 0.6, do: 'text', speaker: LEAD, text: 'Missile lock! Break, break!' },
-        { at: 2.6, do: 'text', speaker: 'SYSTEM', text: 'HULL BREACH. EJECT.' },
-        { at: 3.6, do: 'lockWeapons' },
-        // Scripted: not a death. The attempt does not restart and the death counter does not move.
-        { at: 4.2, do: 'forceDestroyPlayer' },
-        { at: 7.5, do: 'completeObjective' },
-      ],
+      // Scripted: the shoot-down is not a death. Nothing restarts and nothing counts.
+      outro: FP2_SHOT_DOWN,
     },
   ],
-  medals: { bronze: 190, silver: 145, gold: 125, bonus: { kind: 'hitless', text: 'Untouched: take no hits during the retreat' } },
+  medals: { bronze: 130, silver: 80, gold: 58, bonus: { kind: 'hitless', text: 'Untouched: take no hits during the retreat' } },
 };
 
 const CHAPTER_3: CampaignLevel = {
   id: 'fp-3',
   name: '3. Freefall',
   briefing: [
-    'Your ship is gone. What is left of it is falling through the upper atmosphere of Orini, over the arctic ice.',
-    'You cannot shoot. Your guns are dead. Touching a piece of debris or a mountain peak damages the hull, and the hull will not take much.',
+    'Your ship is crippled and burning, and it is falling tail first through the upper atmosphere of Orini, over the arctic ice. The planet surface is ahead of you, at the top of the screen.',
+    'You cannot shoot. Your guns are dead and the hull will not take much: two hits. Debris that is falling faster than you will overtake you from below and from the sides, and mountain ranges rise out of the cloud ahead.',
     'Dodge, and stay alive until you hit the ground.',
   ],
   ship: DELTA_SHIP,
+  // Crippled: two hull points, burning, and after a death the checkpoint gives you the same two back, not a full hull.
+  startHealth: 2,
+  forceDamageFx: true,
   objectives: [
     {
       id: 'fall',
@@ -138,30 +140,18 @@ const CHAPTER_3: CampaignLevel = {
       scroll: 'fp3-freefall',
       weaponsLocked: true,
       beats: [
-        { at: 0.5, do: 'text', text: 'Weapons offline. Just stay alive.' },
-        { at: 14, do: 'text', speaker: 'SYSTEM', text: 'Debris field. Altitude 9000.' },
-        { at: 55, do: 'text', speaker: 'SYSTEM', text: 'Peaks below. Altitude 5000.' },
-        { at: 100, do: 'text', speaker: 'SYSTEM', text: 'Ground contact in thirty seconds.' },
+        { at: 0.5, do: 'text', speaker: 'SYSTEM', text: 'WEAPONS OFFLINE. HULL CRITICAL. STAY ALIVE.' },
+        { at: 9, do: 'text', speaker: 'SYSTEM', text: 'Debris falling faster than you. Watch below and the sides.' },
+        { at: 30, do: 'text', speaker: 'SYSTEM', text: 'Mountains ahead. Altitude 5000.' },
+        { at: 62, do: 'text', speaker: 'SYSTEM', text: 'Storm cell. Visibility falling.' },
+        { at: 95, do: 'text', speaker: 'SYSTEM', text: 'Ground contact in fifteen seconds.' },
       ],
-    },
-    {
-      id: 'crash',
-      type: 'survive',
-      title: 'Brace!',
-      scroll: 'fp3-crash',
-      weaponsLocked: true,
-      seconds: 99,
-      beats: [
-        { at: 0.3, do: 'text', text: 'The ice is coming up fast.' },
-        // The crash: scripted, not a death, and the chapter ends.
-        { at: 3, do: 'forceDestroyPlayer' },
-        { at: 6, do: 'completeObjective' },
-      ],
+      outro: FP3_CRASH,
     },
   ],
-  // The fall lasts a fixed 141 s whatever you do (the world scrolls at a set pace), so the gold time (130 s) cannot be beaten: gold in
-  // this chapter is the bonus route, Undamaged. Silver/bronze reward staying alive without restarts (a restart adds 20+ s).
-  medals: { bronze: 220, silver: 160, gold: 130, bonus: { kind: 'noDamage', text: 'Undamaged: take no damage from debris or peaks' } },
+  // The fall lasts a fixed 111 s whatever you do (the world scrolls at a set pace), so the gold time (105 s) cannot be beaten: gold here is the Undamaged
+  // route. Silver is a run with no death (hits allowed: the ship has two); a restart adds the time of the failed attempt.
+  medals: { bronze: 220, silver: 125, gold: 105, bonus: { kind: 'noDamage', text: 'Undamaged: take no damage from debris or peaks' } },
 };
 
 export const FALLEN_PEACE: CampaignDefinition = {
@@ -173,8 +163,7 @@ export const FALLEN_PEACE: CampaignDefinition = {
     'The mission: fight through the dogfight, reach the enemy command ship and blow up its engine room. Then bring everyone home.',
     'It will not go to plan.',
   ],
-  levels: [CHAPTER_1, CHAPTER_2, CHAPTER_3],
-  // TEST UNLOCK: a placeholder flag so the unlock flow can be seen working after chapters 1-3. Slice 3 replaces it with the real
-  // reward (the enemy ship, the Laser and the Energy Wave) when chapter 7 is the last level.
-  completionUnlock: { kind: 'cards', id: 'campaign-test-fallen-peace', label: 'TEST UNLOCK: Fallen Peace slice 1' },
+  levels: [CHAPTER_1, CHAPTER_2, CHAPTER_3, ...FALLEN_PEACE_45_LEVELS],
+  // The real reward, granted when the last level (chapter 7) completes: the empire fighter, the Laser and the Energy Wave.
+  unlocks: FALLEN_PEACE_UNLOCKS,
 };

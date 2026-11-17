@@ -3,7 +3,12 @@
  * of levels, a level is a preset ship + a sequence of objectives + medal rules. The runtime is `session.ts`.
  */
 import type { Medal, UnlockKind } from '../save';
+import type { AssistSpec } from '../finale/assists';
+import type { UnlockSpec } from '../finale/unlocks';
 import type { ScrollLevelDef } from '../scroll/types';
+import type { Cinematic } from './cinematic';
+
+export type { AssistSpec, UnlockSpec };
 
 export type { Medal };
 
@@ -31,7 +36,13 @@ export type BeatAction =
   | { do: 'setScrollSpeed'; speed: number; ease?: number }
   /** Jump to the objective with this id (the current one counts as completed). */
   | { do: 'startObjective'; objective: string }
-  | { do: 'completeObjective' };
+  | { do: 'completeObjective' }
+  /** Play a cinematic now (takes control, pauses the objective's clock and the level timer until it ends). */
+  | { do: 'cinematic'; cinematic: Cinematic }
+  /** Squad assist (src/finale/assists.ts): a warning cue and countdown (`assist.warn`, default 4 s), then the wingmen come through. */
+  | { do: 'assist'; assist: AssistSpec }
+  /** The armour becomes hittable if the ship has `empireTech` (src/finale/system.ts), with the resonance cue. Nothing happens otherwise. */
+  | { do: 'armourResonance' };
 
 interface ObjectiveBase {
   id: string;
@@ -43,6 +54,16 @@ interface ObjectiveBase {
   beats?: Beat[];
   /** Weapons locked from the start of the objective (chapter 3). */
   weaponsLocked?: boolean;
+  /**
+   * Plays when the objective starts (the approach beat before a big fight, a briefing in the air). The objective's clock and beats
+   * start after it. On a checkpoint restart it is applied instantly (its end state), not replayed.
+   */
+  intro?: Cinematic;
+  /**
+   * Plays when the objective is done, after its snapshot is captured and its counters are banked (so nothing it does can change
+   * either). Then the next objective starts, or the level ends (`then: 'result'` ends it early). Every mission ends with one.
+   */
+  outro?: Cinematic;
   /**
    * Run the objective over a scrolling level (id in `SCROLL_LEVELS` or an inline definition): background, obstacles, allies,
    * flybys and the distance timeline. Restarts with the objective. A closed screen with allies is a slow scroll that never ends.
@@ -69,11 +90,15 @@ export interface ReachObjective extends ObjectiveBase {
 export interface SurviveObjective extends ObjectiveBase {
   type: 'survive';
   seconds: number;
+  /** HUD text before the countdown (default 'SURVIVE'): e.g. 'HOLD THE LINE' for a time-gated dogfight. */
+  label?: string;
 }
 
 export interface EscapeObjective extends ObjectiveBase {
   type: 'escape';
   exit: Zone;
+  /** Draw the exit as a jump gate (a ring in space) instead of a dashed zone. */
+  gate?: boolean;
   /** Scrolling levels: the exit is only open (drawn, reachable) once the scroll distance reaches this many px. Omitted = open from the start. */
   exitAtDistance?: number;
   /** Reach the exit within this many seconds or the attempt fails (restarts the objective, counts as a death). */
@@ -89,8 +114,21 @@ export interface BossFightObjective extends ObjectiveBase {
   until?: { component: string } | { room: string };
   /** Capture the boss into this campaign snapshot slot when the objective completes (latest completion replaces). */
   snapshotSlot?: string;
-  /** Restore this slot's snapshot onto the boss when the fight starts (the finale). Ignored when the slot is empty. */
+  /**
+   * Restore this slot's snapshot onto the boss when the fight starts (the finale). When the slot is empty (a debug start, a player who
+   * skipped chapter 1) a generated fallback is used if the boss has one (src/finale/fallback.ts: the capital ship's disabled state).
+   */
   restoreSlot?: string;
+  /** The boss id the slot's snapshot was taken from, when it differs from `bossId` (chapter 7 restores chapter 1's capital ship onto its finale variant). */
+  restoreBossId?: string;
+  /** Time-gated phase: the objective is done after this many seconds (or when the boss falls). Chapter 7 splits the finale into three checkpointed phases this way. */
+  phaseSeconds?: number;
+  /** Seconds after the objective starts at which the armour becomes carvable, IF the player's ship has `empireTech` (the armour resonance cue plays). Omitted = never. */
+  armourResonance?: number;
+  /** The boss's death plays the core overload sequence (src/finale/overload.ts) before the objective completes. */
+  overload?: boolean;
+  /** Override the restored core hit points (balance the finale; the snapshot of chapter 1 keeps the core at its full, nearly untouchable value). */
+  coreHp?: number;
 }
 
 /** Fly the scrolling level to its end (`scroll` on the objective is required): done when the distance reaches the level's length. Chapter 3. */
@@ -140,6 +178,8 @@ export type BonusCriteria = { text: string } & (
   | { kind: 'destroyAll'; tag: string; count: number }
   | { kind: 'roomsDestroyed'; count: number }
   | { kind: 'noDetection' }
+  /** Full dismantle (chapter 7): this many boss rooms taken offline AND this many boss gun housings destroyed. */
+  | { kind: 'dismantle'; rooms: number; turrets: number }
 );
 
 export interface MedalRules {
@@ -162,6 +202,13 @@ export interface CampaignLevel {
   medals: MedalRules;
   /** Level-wide beats (`at` = level seconds, fired once, not repeated after a death). */
   beats?: Beat[];
+  /**
+   * The ship's hull when an objective starts fresh or restarts from a checkpoint (default: full). Chapter 3 is 2: after a death the
+   * ship is crippled again, not repaired. An objective reached by advancing keeps whatever the hull is.
+   */
+  startHealth?: number;
+  /** The ship shows its low-health smoke AND flames for the whole level, whatever the hull (a crippled ship). */
+  forceDamageFx?: boolean;
 }
 
 export interface UnlockAward {
@@ -179,6 +226,11 @@ export interface CampaignDefinition {
   levels: CampaignLevel[];
   /** Awarded when the last level is completed (slice 1: a test flag). */
   completionUnlock?: UnlockAward;
+  /**
+   * Written into the save when the last level is completed, then shown on the unlock reveal screen (src/finale/unlocks.ts).
+   * "Fallen Peace" sets this to `FALLEN_PEACE_UNLOCKS` once chapter 7 is its last level (and drops `completionUnlock`).
+   */
+  unlocks?: UnlockSpec[];
 }
 
 
@@ -195,5 +247,7 @@ export interface LevelResult {
   newBestMedal: boolean;
   /** Labels of unlocks newly awarded by this result. */
   unlocked: string[];
+  /** The `CampaignDefinition.unlocks` that were new with this result (the reveal screen lists them). */
+  newUnlocks?: UnlockSpec[];
   counters: LevelCounters;
 }

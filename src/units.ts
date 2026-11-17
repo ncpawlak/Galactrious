@@ -40,6 +40,24 @@ export interface UnitDefinition {
   attacks: AttackStep[];
   /** Seconds after arriving in the slot before the first shot (default 1; each unit adds a little random jitter). */
   attackDelay?: number;
+  /**
+   * Ground structure (src/terrain: walls, bunker pads): terrain, not an enemy. It does not count as a wave remnant (`remaining`) or a live
+   * target for the autopilot (`live`), and like a flyby it only fires while its centre is on screen. The terrain system moves and removes it.
+   */
+  ground?: boolean;
+  /** A named empire ace (DESIGN.md "As built: finale systems"): the HUD shows its callsign above it and a banner when it enters; counts as a kill like any unit. */
+  ace?: boolean;
+  /** Callsign shown on the tag and banner (aces). */
+  callsign?: string;
+  /** Tag / banner colour (aces): the paint accent. */
+  accent?: string;
+  /** A second attack set, switched to when this share (0..100) of the hull pixels is gone (the unit is a two-phase fight). */
+  phase2?: { at: number; attacks: AttackStep[]; attackDelay?: number };
+  /**
+   * Own entrance and dives, used when the spawn does not bring a flyby: the placement derived from the slot replaces the caller's
+   * `entrance`/`entranceTime`/`dive` (campaign `spawn` beats and the debug spawner place units without any, so this is how an ace flies in).
+   */
+  placement?: (slot: Point) => Pick<UnitPlacement, 'entrance' | 'entranceTime' | 'dive'>;
 }
 
 /** How a unit is placed when it spawns. */
@@ -129,7 +147,12 @@ export function toBossDefinition(def: UnitDefinition, p: UnitPlacement, attackDe
     rooms: def.rooms,
     faction: def.faction,
     coreArmor: def.coreArmor ?? { min: 1 },
-    phases: [{ name: 'unit', movement: placementMovement(def, p), attacks: def.attacks, attackDelay: eT + attackDelay }],
+    phases: [
+      { name: 'unit', movement: placementMovement(def, p), attacks: def.attacks, attackDelay: eT + attackDelay },
+      ...(def.phase2
+        ? [{ name: 'unit-2', trigger: { kind: 'damage' as const, percent: def.phase2.at }, movement: placementMovement(def, p), attacks: def.phase2.attacks, attackDelay: def.phase2.attackDelay ?? 0.6 }]
+        : []),
+    ],
   };
   return { def: bossDef, spec };
 }
@@ -139,7 +162,7 @@ const DYING_TIME = { small: 0.22, big: 0.5 };
 
 export class Unit {
   readonly fight: BossFight;
-  readonly sched: ScriptedScheduler;
+  sched: ScriptedScheduler;
   readonly big: boolean;
   state: 'alive' | 'dying' = 'alive';
   dyingFor = 0;
@@ -152,6 +175,9 @@ export class Unit {
   readonly chase: ChaseControl | null;
   /** Campaign tag it was spawned with (objectives and bonus rules address units by it). */
   tag?: string;
+  /** Seconds since a script told it to break off and fly away (null = it fights). A leaving unit never fires and is not a kill when it goes. */
+  leaving: number | null = null;
+  leaveDirX = 1;
   private readonly deathFraction: number;
 
   constructor(
@@ -166,6 +192,7 @@ export class Unit {
     this.fight = new BossFight(bd);
     this.fight.components.target = ship;
     this.sched = this.fight.makeScheduler();
+    if (def.phase2) this.fight.onPhaseChange = () => (this.sched = this.fight.makeScheduler());
     this.big = def.size === 'big';
     this.fight.boss.coreSimple = !this.big;
     this.deathFraction = def.deathFraction ?? (this.big ? 0.75 : 0.6);
@@ -180,6 +207,13 @@ export class Unit {
   center(): Point {
     const b = this.fight.boss;
     return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  }
+
+  /** Break off: stop firing and fly away off the top of the screen, sideways away from the middle. */
+  leave(): void {
+    if (this.leaving !== null || this.state !== 'alive') return;
+    this.leaving = 0;
+    this.leaveDirX = this.center().x < 270 ? -1 : 1;
   }
 
   /** Core gone or mostly carved away. */
@@ -239,6 +273,7 @@ export class UnitSystem {
   /** Spawn now. */
   spawn(def: UnitDefinition, placement: UnitPlacement, tag?: string): Unit {
     const jitter = ((this.counter++ * 0.6180339887) % 1) * 1.4;
+    if (def.placement && !placement.flyby) placement = { ...placement, ...def.placement(placement.slot) };
     const u = new Unit(def, placement, placement.flyby || placement.chase ? jitter * 0.15 : jitter, this.ship);
     u.tag = tag;
     u.fight.components.debug = this.debug;
@@ -249,7 +284,16 @@ export class UnitSystem {
 
   /** Alive units (the ones bullets can hit). */
   live(): Unit[] {
-    return this.units.filter((u) => u.state === 'alive');
+    return this.units.filter((u) => u.state === 'alive' && !u.def.ground);
+  }
+
+  /** Enemy fire rate multiplier (1 = as authored). A scroll level sets it (`ScrollLevelDef.fireScale`). */
+  fireScale = 1;
+
+  /** Cosmetic: units (all, or with this tag) stop shooting and fly away; queued spawns with the tag are cancelled. Not kills. */
+  dismiss(tag?: string): void {
+    this.pending = this.pending.filter((p) => tag !== undefined && p.tag !== tag);
+    for (const u of this.units) if (tag === undefined || u.tag === tag) u.leave();
   }
 
   /** Units alive, dying or queued that match a tag and/or def id (no filter = all). */
@@ -260,7 +304,7 @@ export class UnitSystem {
 
   /** Units alive, dying or still waiting to spawn: the wave ends at 0. */
   remaining(): number {
-    return this.units.length + this.pending.length;
+    return this.units.filter((u) => !u.def.ground).length + this.pending.length;
   }
 
   /**
@@ -277,6 +321,14 @@ export class UnitSystem {
       }
     }
     for (const u of this.units) {
+      if (u.leaving !== null) {
+        u.leaving += dt;
+        // Ease off, then pull away faster and faster: up and out sideways.
+        const l = u.leaving;
+        u.fight.extraOffset = { x: u.leaveDirX * l * l * 120, y: -(l * 140 + l * l * 420) };
+        const c = u.center();
+        if (c.y < -260 || c.x < -260 || c.x > 800) u.gone = true;
+      }
       u.fight.update(dt);
       u.age += dt;
       if (u.lifetime !== null && u.age >= u.lifetime) {
@@ -292,15 +344,15 @@ export class UnitSystem {
         if (u.dyingFor >= u.dyingTime) u.gone = true;
         continue;
       }
-      if (!firing) continue;
+      if (!firing || u.leaving !== null) continue;
       // A chaser holds fire while it has lost sight of the player.
       if (u.chase && !u.chase.canFire()) continue;
-      // A flyby or chaser only shoots while it is on screen.
-      if (u.lifetime !== null || u.chase) {
+      // A flyby, chaser or ground structure only shoots while it is on screen.
+      if (u.lifetime !== null || u.chase || u.def.ground) {
         const c = u.center();
         if (c.x < -10 || c.x > 550 || c.y < -10 || c.y > 970) continue;
       }
-      const p = u.sched.update(dt);
+      const p = u.sched.update(dt * this.fireScale);
       if (!p) continue;
       const src = u.sched.lastSource;
       const sources = src ? u.fight.components.fireFrom(src) : u.fight.components.fireFromAny();

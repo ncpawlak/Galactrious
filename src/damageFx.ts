@@ -20,6 +20,8 @@ export class DamageFx {
   private vignette: HTMLCanvasElement | null = null;
   private tint: HTMLCanvasElement | null = null;
   private lastLook: ShipLook | null = null;
+  /** A level flag (`CampaignLevel.forceDamageFx`): the ship smokes and burns whatever its hull (a crippled ship). No alarm and no warning pulse until the hull is really at 1. */
+  force = false;
   private half = { w: 20, h: 24 };
 
   /** Cache the ship's extent (half width/height) for effect offsets. */
@@ -69,8 +71,8 @@ export class DamageFx {
     this.measure(look);
     const lo = d.lowHealth;
     const frac = hp / max;
-    const fire = hp <= 1 || frac <= lo.fire;
-    const smoke = frac <= lo.smoke;
+    const fire = this.force || hp <= 1 || frac <= lo.fire;
+    const smoke = this.force || frac <= lo.smoke;
     if (!smoke && !fire) {
       this.alarmAcc = 0;
       return;
@@ -94,6 +96,7 @@ export class DamageFx {
       this.fireAcc -= 1;
       emit(x + (Math.random() - 0.5) * hw * 0.9, y + (Math.random() - 0.2) * hh * 0.6, (Math.random() - 0.5) * 30, 20 + Math.random() * 40, 0.15 + Math.random() * 0.2, Math.random() < 0.5 ? '#ffd21f' : '#ff4a1a', 2.5 + Math.random() * 3);
     }
+    if (this.force && hp > 1) return;
     this.alarmAcc += dt;
     if (this.alarmAcc >= d.alarm.interval) {
       this.alarmAcc = 0;
@@ -128,7 +131,7 @@ export class DamageFx {
   /** Flames licking over the ship (drawn on top of it) while it is burning. */
   drawFire(ctx: CanvasRenderingContext2D, x: number, y: number, hp: number, max: number): void {
     const lo = JUICE.damage.lowHealth;
-    if (!JUICE.damage.enabled || hp <= 0 || !(hp <= 1 || hp / max <= lo.fire)) return;
+    if (!JUICE.damage.enabled || hp <= 0 || !(this.force || hp <= 1 || hp / max <= lo.fire)) return;
     const hw = this.half.w;
     const hh = this.half.h;
     ctx.save();
@@ -166,7 +169,7 @@ export class DamageFx {
       const k = 1 - this.since / d.vignette.fade;
       a = d.vignette.peak * k * k * (this.heavy ? 1.15 : 1);
     }
-    if (hp > 0 && (hp <= 1 || hp / max <= d.lowHealth.fire)) {
+    if (hp > 0 && (hp <= 1 || (!this.force && hp / max <= d.lowHealth.fire))) {
       a = Math.max(a, d.vignette.lowPeak * (0.55 + 0.45 * Math.sin(this.time * d.vignette.lowPulse * Math.PI * 2)));
     }
     if (a <= 0.01) return;

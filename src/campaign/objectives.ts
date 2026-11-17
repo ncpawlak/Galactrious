@@ -48,6 +48,53 @@ export function drawZone(g: CanvasRenderingContext2D, z: Zone, color: string, t:
   g.restore();
 }
 
+/** A jump gate in space: a glowing ring with rotating segments, an inner shimmer and a pulsing halo, sized to the exit zone. */
+function drawGate(g: CanvasRenderingContext2D, z: Zone, t: number): void {
+  const c = zoneCenter(z);
+  const r = 'r' in z ? z.r : Math.min(z.w, z.h) / 2;
+  const pulse = 0.6 + 0.4 * Math.sin(t * 3);
+  g.save();
+  g.translate(c.x, c.y);
+  const halo = g.createRadialGradient(0, 0, r * 0.4, 0, 0, r * 1.15);
+  halo.addColorStop(0, 'rgba(110,200,255,0)');
+  halo.addColorStop(0.7, `rgba(110,200,255,${0.1 + 0.12 * pulse})`);
+  halo.addColorStop(1, 'rgba(110,200,255,0)');
+  g.fillStyle = halo;
+  g.beginPath();
+  g.arc(0, 0, r * 1.15, 0, Math.PI * 2);
+  g.fill();
+  // Inner shimmer.
+  const inner = g.createRadialGradient(0, 0, 0, 0, 0, r * 0.7);
+  inner.addColorStop(0, `rgba(200,235,255,${0.25 + 0.15 * pulse})`);
+  inner.addColorStop(1, 'rgba(90,150,255,0.05)');
+  g.fillStyle = inner;
+  g.beginPath();
+  g.arc(0, 0, r * 0.7, 0, Math.PI * 2);
+  g.fill();
+  // Ring: eight armoured segments, rotating slowly, with bright nodes between them.
+  g.lineCap = 'butt';
+  for (let i = 0; i < 8; i++) {
+    const a0 = t * 0.4 + (i / 8) * Math.PI * 2;
+    g.strokeStyle = i % 2 ? '#7fd0ff' : '#cfe9ff';
+    g.lineWidth = 12;
+    g.beginPath();
+    g.arc(0, 0, r * 0.72, a0, a0 + (Math.PI * 2) / 8 - 0.14);
+    g.stroke();
+    g.fillStyle = '#ffffff';
+    g.fillRect(Math.cos(a0 - 0.07) * r * 0.72 - 3, Math.sin(a0 - 0.07) * r * 0.72 - 3, 6, 6);
+  }
+  g.strokeStyle = 'rgba(160,215,255,0.55)';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.arc(0, 0, r * 0.84, 0, Math.PI * 2);
+  g.stroke();
+  g.fillStyle = '#cfe9ff';
+  g.font = 'bold 14px ui-monospace, Consolas, monospace';
+  g.textAlign = 'center';
+  g.fillText('JUMP GATE', 0, 5);
+  g.restore();
+}
+
 export function zoneCenter(z: Zone): { x: number; y: number } {
   return 'r' in z ? { x: z.x, y: z.y } : { x: z.x + z.w / 2, y: z.y + z.h / 2 };
 }
@@ -171,7 +218,7 @@ class SurviveHandler implements ObjectiveHandler {
   }
 
   hint(): string {
-    return `SURVIVE: ${Math.max(0, this.def.seconds - this.t).toFixed(0)}s`;
+    return `${this.def.label ?? 'SURVIVE'}: ${Math.max(0, this.def.seconds - this.t).toFixed(0)}s`;
   }
 
   draw(): void {}
@@ -224,7 +271,9 @@ class EscapeHandler implements ObjectiveHandler {
   }
 
   draw(g: CanvasRenderingContext2D, env: ObjectiveEnv): void {
-    if (this.open(env)) {
+    if (this.open(env) && this.def.gate) {
+      drawGate(g, this.def.exit, env.time);
+    } else if (this.open(env)) {
       drawZone(g, this.def.exit, '#4ade80', env.time, 0.14);
       const c = zoneCenter(this.def.exit);
       g.save();
@@ -262,7 +311,8 @@ class BossFightHandler implements ObjectiveHandler {
 
   update(_dt: number, env: ObjectiveEnv): void {
     const u = this.def.until;
-    if (!u) this.done = env.host.combatResult() === 'won';
+    if (this.def.phaseSeconds !== undefined) this.done = env.time >= this.def.phaseSeconds || env.host.combatResult() === 'won';
+    else if (!u) this.done = env.host.combatResult() === 'won';
     else this.done = env.host.bossTarget('component' in u ? 'component' : 'room', 'component' in u ? u.component : u.room) === 'destroyed';
   }
 
@@ -272,6 +322,7 @@ class BossFightHandler implements ObjectiveHandler {
 
   hint(): string {
     const u = this.def.until;
+    if (this.def.phaseSeconds !== undefined) return 'HOLD ON';
     return u ? `DESTROY THE ${('component' in u ? u.component : u.room).toUpperCase()}` : 'DEFEAT THE BOSS';
   }
 

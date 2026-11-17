@@ -160,6 +160,7 @@ export function restoreSnapshot(fight: BossFight, snap: BossSnapshot): void {
     c.level = cs.level;
   }
   for (const rs of snap.rooms) fight.rooms.restoreState(rs.id, rs.exposed, rs.offline);
+  fight.def.afterRestore?.(fight, snap);
 }
 
 /** Compare a fight to a snapshot (round-trip test): returns the list of differences, empty = identical. */

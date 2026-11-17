@@ -1,8 +1,9 @@
 import type { FlybyPreset } from '../enemies/flyby';
 import type { StealthDef } from '../stealth/types';
 import type { StealthSystem } from '../stealth/system';
-import type { UnitPlacement } from '../units';
 import type { WaveDefinition } from '../waves';
+import type { TerrainEntry, ShadowCaster } from '../terrain/types';
+import type { Unit, UnitDefinition, UnitPlacement } from '../units';
 
 /**
  * Scrolling levels (DESIGN.md "As built: scrolling, obstacles, capital ship, allies").
@@ -12,8 +13,11 @@ import type { WaveDefinition } from '../waves';
 
 // --- obstacles -----------------------------------------------------------------------------------------------
 
-/** Shape templates. `debris-*` are chunks (several sizes), `peak-*` are tall jagged rock spires with snow. */
-export type ObstacleShape = 'debris-s' | 'debris-m' | 'debris-l' | 'debris-xl' | 'peak-s' | 'peak-m' | 'peak-l';
+/**
+ * Shape templates. `debris-*` are chunks (several sizes). `peak-*` are single mountain tips and `range-*` clusters of tips, seen from
+ * above a cloud deck: only the tips above the cloud line are solid (the collision mask), a soft cloud skirt hides the rest.
+ */
+export type ObstacleShape = 'debris-s' | 'debris-m' | 'debris-l' | 'debris-xl' | 'peak-s' | 'peak-m' | 'peak-l' | 'range-m' | 'range-l';
 
 /** Extra motion on top of the scroll, in px/s relative to the world. All optional; none = it just scrolls past. */
 export interface ObstacleMotion {
@@ -25,10 +29,15 @@ export interface ObstacleMotion {
   spin?: number;
   /** Sideways sine wobble. */
   wobble?: { amp: number; period: number };
+  /**
+   * Screen-space upward speed in px/s that REPLACES the scroll: the obstacle moves up the screen at this speed whatever the world
+   * does (debris that is falling faster than the ship overtakes it from below, chapter 3).
+   */
+  rise?: number;
 }
 
 /** Named motion presets for authoring. */
-export type MotionPreset = 'straight' | 'drift-l' | 'drift-r' | 'tumble' | 'fast' | 'weave';
+export type MotionPreset = 'straight' | 'drift-l' | 'drift-r' | 'tumble' | 'fast' | 'weave' | 'rise' | 'rise-fast' | 'rise-tumble';
 
 export interface ObstacleSpawn {
   at: number;
@@ -36,9 +45,15 @@ export interface ObstacleSpawn {
   shape: ObstacleShape;
   /** Screen x of the centre (with `edge` left/right: the inset of the centre from that edge). */
   x: number;
-  /** Where it enters from: 'top' (default, scrolls down into view) or a side edge (slides in sideways while scrolling). */
-  edge?: 'top' | 'left' | 'right';
+  /**
+   * Where it enters from: 'top' (default, scrolls down into view), a side edge (slides in sideways while scrolling) or 'bottom'
+   * (comes up from below the screen: use a `rise` motion, or it just scrolls away downward). Bottom and side entries get a
+   * short warning marker on the edge before the obstacle appears.
+   */
+  edge?: 'top' | 'left' | 'right' | 'bottom';
   motion?: MotionPreset | ObstacleMotion;
+  /** Start height for a side entry (default: near the top, or 520 for a rising obstacle). */
+  y?: number;
   /** Scale on the template (default 1). */
   scale?: number;
   /** Contact damage to the player (default: 1 for debris, 2 for peaks). */
@@ -60,12 +75,19 @@ export interface ObstacleField {
   /** Shapes drawn from, with relative weights. */
   shapes: { shape: ObstacleShape; weight?: number }[];
   motions?: MotionPreset[];
+  /**
+   * Where the field's obstacles enter (default 'top'). 'bottom' = up from below, 'sides' = alternating left and right edges (the
+   * `x` is then the inset from that edge), or a weighted mix: `[{ edge: 'top', weight: 2 }, { edge: 'bottom' }]`.
+   */
+  edge?: 'top' | 'bottom' | 'sides' | { edge: 'top' | 'bottom' | 'sides'; weight?: number }[];
   /** Keep this screen-x band free of obstacle centres, so the ship always has a lane (optional). */
   lane?: { x: number; width: number };
   /** Make the lane meander: its centre moves `amp` px either side of `lane.x` over `period` px of scroll. The lane is kept free of obstacle bodies, not just centres. */
   laneDrift?: { amp: number; period: number };
   seed?: number;
   carvable?: boolean;
+  /** Contact damage for the field's obstacles (default 1 for debris, 2 for peaks). */
+  damage?: number;
 }
 
 // --- the rest of the timeline --------------------------------------------------------------------------------
@@ -98,7 +120,9 @@ export type ScrollEntry =
   /** A pickup (stub: emits a `pickup` event with `name`; there is no pickup entity yet). */
   | { at: number; kind: 'pickup'; name: string; x: number }
   /** A named event for the campaign framework (scripted beats, objective triggers). Emitted through `ScrollRunner.onEvent`. */
-  | { at: number; kind: 'event'; name: string; data?: unknown };
+  | { at: number; kind: 'event'; name: string; data?: unknown }
+  /** Carvable walls, defence lines with gaps, wall and ground turrets (src/terrain, DESIGN.md "As built: carvable terrain and ground defences"). */
+  | TerrainEntry;
 
 // --- allies --------------------------------------------------------------------------------------------------
 
@@ -143,7 +167,15 @@ export type BackgroundLayer = (
   | { type: 'whiteout'; color: string; strength: number; rate?: number; seed?: number }
   /** Camera turbulence: the whole background shakes by up to `amp` px at full weather (kept small). */
   | { type: 'turbulence'; amp: number }
+  /** A layer that paints itself (the ground theme `surface`): `make` is called once per theme view and returns the painter. */
+  | { type: 'custom'; make: () => CustomBackgroundLayer }
 ) & { weather?: WeatherRange };
+
+/** A self-painting background layer (see `BackgroundLayer` type `custom`). `dist` = scroll distance, `speed` = px/s, `time` = seconds, `weather` 0..1. */
+export interface CustomBackgroundLayer {
+  update?(dt: number, speed: number): void;
+  draw(ctx: CanvasRenderingContext2D, dist: number, speed: number, time: number, alpha: number, weather: number): void;
+}
 
 /** Background as data: a vertical sky gradient plus layers drawn back to front. */
 export interface ScrollTheme {
@@ -166,10 +198,17 @@ export interface ScrollLevelDef {
   speed: number;
   /** Theme id (`SCROLL_THEMES`) or an inline theme. */
   theme: string | ScrollTheme;
+  /**
+   * Flip the sky gradient top to bottom: the bright horizon / surface haze at the TOP, the deep sky at the bottom. For a level flown
+   * backwards (chapter 3: the planet surface is ahead at the top of the screen). The world still scrolls down the screen.
+   */
+  skyFlip?: boolean;
   /** Starting weather intensity 0 to 1 (default 0); change it over distance with `setWeather` entries. */
   weather?: number;
   /** Player weapons locked from the start. */
   weaponsLocked?: boolean;
+  /** Scales how fast enemy units fire while this level runs (1 = normal, 0.8 = a fifth fewer volleys). Default 1. */
+  fireScale?: number;
   /** Cosmetic allies from the start. */
   allies?: { count: number; pattern?: AllyPattern };
   /** Searchlights, cover zones and detection rules (src/stealth, DESIGN.md "As built: stealth systems"). Omitted = no stealth. */
@@ -188,9 +227,16 @@ export interface ScrollHost {
   spawnWave(wave: WaveDefinition | string): void;
   spawnBoss(bossId: string): void;
   setWeaponsLocked(locked: boolean): void;
+  setEnemyFireScale(k: number): void;
   /** Stealth (src/stealth): the player's collision radius, and spawning a chaser through the unit pipeline. */
   hitbox(): number;
   spawnChaser(unit: string, placement: UnitPlacement): { alive(): boolean };
+  /** Spawn a ground structure (src/terrain) as a unit; the game keeps it at the front of the draw list. Returns the live unit. */
+  spawnTerrain?(def: UnitDefinition, placement: UnitPlacement): Unit;
+  /** A ground turret was destroyed: the game counts it for `destroyAll { tag }`. */
+  noteGroundKill?(tag: string): void;
+  /** Where shadows fall on the ground (the ship and the flying units), for the surface background. */
+  shadowCasters?(): ShadowCaster[];
 }
 
 /** A named event a level emits (timeline `event`/`pickup` entries, plus `level-start`, `level-end`). */
