@@ -8,6 +8,7 @@ import type { BossDefinition } from './bosses/types';
 import type { Movement } from './movement';
 import { still } from './movement';
 import type { Point } from './hazards';
+import { NO_SCALE, scaleUnit, type EnemyScale } from './difficulty';
 import type { RoomHost, RoomSpec } from './rooms';
 import type { ChaseControl } from './stealth/types';
 
@@ -281,7 +282,7 @@ export class UnitSystem {
   spawn(def: UnitDefinition, placement: UnitPlacement, tag?: string): Unit {
     const jitter = ((this.counter++ * 0.6180339887) % 1) * 1.4;
     if (def.placement && !placement.flyby) placement = { ...placement, ...def.placement(placement.slot) };
-    const u = new Unit(def, placement, placement.flyby || placement.chase ? jitter * 0.15 : jitter, this.ship);
+    const u = new Unit(scaleUnit(def, this.scale().hp), placement, placement.flyby || placement.chase ? jitter * 0.15 : jitter, this.ship);
     u.tag = tag;
     u.fight.components.debug = this.debug;
     u.fight.rooms.host = this.roomHost;
@@ -296,6 +297,8 @@ export class UnitSystem {
 
   /** Enemy fire rate multiplier (1 = as authored). A scroll level sets it (`ScrollLevelDef.fireScale`). */
   fireScale = 1;
+  /** Run-level enemy scaling (Conquest difficulty, src/difficulty.ts): read when a unit spawns (hull) and every frame (fire). */
+  scale: () => EnemyScale = () => NO_SCALE;
 
   /** Cosmetic: units (all, or with this tag) stop shooting and fly away; queued spawns with the tag are cancelled. Not kills. */
   dismiss(tag?: string): void {
@@ -327,6 +330,7 @@ export class UnitSystem {
         for (const p of due) this.spawn(p.def, p.placement, p.tag);
       }
     }
+    const fire = this.scale().fire;
     for (const u of this.units) {
       if (u.leaving !== null) {
         u.leaving += dt;
@@ -367,7 +371,7 @@ export class UnitSystem {
         const c = u.center();
         if (c.x < -10 || c.x > 550 || c.y < -10 || c.y > 970) continue;
       }
-      const p = u.sched.update(dt * this.fireScale);
+      const p = u.sched.update(dt * this.fireScale * (u.def.ground ? 1 : fire));
       if (!p) continue;
       const src = u.sched.lastSource;
       const sources = src ? u.fight.components.fireFrom(src) : u.fight.components.fireFromAny();
