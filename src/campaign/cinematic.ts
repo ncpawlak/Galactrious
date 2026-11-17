@@ -40,7 +40,7 @@ export interface BossKey {
 }
 
 /** Visual-only trail emitted at the ship for `duration` seconds. */
-export type TrailKind = 'smoke' | 'fire' | 'snow' | 'sparks';
+export type TrailKind = 'smoke' | 'fire' | 'snow' | 'sparks' | 'powder';
 
 export type WorldEvent = { t: number } & (
   /** A cosmetic fireball (particles, shake, a shockwave ring). `at` names a boss anchor (e.g. 'engineA') instead of x/y. */
@@ -151,6 +151,8 @@ export interface Cinematic {
   skippableAfter?: number | false;
   /** Release the ship pose when the cinematic ends (an intro that hands the ship back to the player). Default: keep it (an outro that sends the ship away). */
   releasePose?: boolean;
+  /** The objective's jump gate flies away: from `t` it shrinks, drifts up and fades over `duration` s about (x, y) (cosmetic: it is only the drawing). */
+  gateFly?: { t: number; duration: number; x: number; y: number };
   /** What happens at the end: 'continue' (default: the next objective, or the result after the last one) or 'result' (end the level now). */
   then?: 'continue' | 'result';
 }
@@ -283,6 +285,13 @@ export class CinematicRunner {
     host.begin(this.lock);
     if (def.props?.length && !instant) host.setScenery((g) => this.drawProps(g));
     if (instant) this.skip();
+  }
+
+  /** Progress 0..1 of the objective gate flying away, with its centre, or null when this cinematic does not move it. */
+  get gateFly(): { k: number; x: number; y: number } | null {
+    const f = this.def.gateFly;
+    if (!f || this.time < f.t) return null;
+    return { k: easeFn.inOut(clamp01((this.time - f.t) / Math.max(0.01, f.duration))), x: f.x, y: f.y };
   }
 
   /** The cinematic's own HUD hiding (the session hides its timer box with it). */
@@ -422,6 +431,12 @@ export class CinematicRunner {
       case 'snow':
         this.host.emit(p.x + jx * 2, p.y + jy, (rnd() - 0.5) * 220, -60 - rnd() * 160, 0.5 + rnd() * 0.6, rnd() < 0.7 ? '#ffffff' : '#cfe2f5', 2 + rnd() * 3.5);
         break;
+      case 'powder': {
+        // Snow thrown up by the ship tumbling down a mountain side: a fountain of big flakes plus fine spray, mostly up and out.
+        const big = rnd() < 0.35;
+        this.host.emit(p.x + jx * 2, p.y + jy * 2, (rnd() - 0.5) * 380, -90 - rnd() * 340, 0.55 + rnd() * 0.8, rnd() < 0.75 ? '#ffffff' : '#bcd6f0', (big ? 5 : 2.5) + rnd() * 4.5);
+        break;
+      }
       case 'sparks':
         this.host.emit(p.x + jx, p.y + jy, (rnd() - 0.5) * 360, -120 - rnd() * 260, 0.25 + rnd() * 0.3, rnd() < 0.5 ? '#fff7a8' : '#ff9a3a', 1.5 + rnd() * 2);
         break;

@@ -288,6 +288,10 @@ export const MOTION_PRESETS: Record<MotionPreset, ObstacleMotion> = {
   rise: { rise: 330 },
   'rise-fast': { rise: 470, spin: 0.5 },
   'rise-tumble': { rise: 380, spin: 1.6 },
+  /** Sweeping in from the left or right edge across the whole screen (see `ObstacleMotion.cross`). */
+  cross: { cross: 230 },
+  'cross-fast': { cross: 320, spin: 0.5 },
+  'cross-tumble': { cross: 270, spin: 1.5 },
 };
 
 export class Obstacle {
@@ -304,6 +308,9 @@ export class Obstacle {
   readonly isPeak: boolean;
   /** Screen-space upward speed in px/s (replaces the scroll), or 0. */
   readonly rise: number;
+  /** Sideways sweep speed in px/s (signed once the entry edge is known: + moves right), or 0. */
+  readonly cross: number;
+  crossV = 0;
   /** Seconds of warning marker left before the obstacle appears (bottom and side entries). While > 0 it is invisible and harmless. */
   warn = 0;
   /** Entry edge, for the warning marker. */
@@ -327,6 +334,7 @@ export class Obstacle {
     const m: ObstacleMotion = typeof spawn.motion === 'string' ? MOTION_PRESETS[spawn.motion] : (spawn.motion ?? {});
     this.isPeak = isRockShape(spawn.shape);
     this.rise = m.rise ?? 0;
+    this.cross = m.cross ?? 0;
     this.spin = this.isPeak ? 0 : (m.spin ?? 0);
     this.vx = m.vx ?? 0;
     this.vy = m.vy ?? 0;
@@ -361,8 +369,11 @@ export class Obstacle {
     }
     this.t += dt;
     if (this.rise > 0) this.y -= this.rise * dt;
-    else this.y += (scrollSpeed + this.vy) * dt;
-    if (this.slideTo !== null) {
+    else this.y += (scrollSpeed * (this.crossV !== 0 ? 0.3 : 1) + this.vy) * dt;
+    if (this.crossV !== 0) {
+      this.baseX += this.crossV * dt;
+      this.x = this.baseX;
+    } else if (this.slideTo !== null) {
       this.x += this.slideV * dt;
       if ((this.slideV > 0 && this.x >= this.slideTo) || (this.slideV < 0 && this.x <= this.slideTo)) {
         this.x = this.slideTo;
@@ -471,7 +482,8 @@ export class ObstacleSystem {
     o.edge = edge;
     if (edge === 'left' || edge === 'right') {
       o.y = s.y ?? (o.rise > 0 ? 520 : -hh * 0.3);
-      o.slideIn(s.x, 110);
+      if (o.cross > 0) o.crossV = edge === 'left' ? o.cross : -o.cross;
+      else o.slideIn(s.x, 110);
     }
     if (edge === 'bottom' || edge === 'left' || edge === 'right') o.warn = WARN_SECONDS;
     this.list.push(o);

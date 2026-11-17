@@ -8,9 +8,11 @@ import type { MotionPreset, ObstacleField, ObstacleSpawn, ScrollEntry, ScrollEve
 
 type EdgeChoice = 'top' | 'bottom' | 'left' | 'right';
 
+const CROSS_MOTIONS: MotionPreset[] = ['cross', 'cross-fast', 'cross-tumble'];
+
 /** One entry edge for the i-th obstacle of a field: a fixed edge, 'sides' alternating left and right, or a weighted mix. */
 function pickEdge(edge: ObstacleField['edge'], rnd: () => number, i: number): EdgeChoice {
-  const one = (e: 'top' | 'bottom' | 'sides'): EdgeChoice => (e === 'sides' ? (rnd() < 0.5 ? 'left' : 'right') : e);
+  const one = (e: 'top' | 'bottom' | 'sides' | 'cross'): EdgeChoice => (e === 'sides' || e === 'cross' ? (rnd() < 0.5 ? 'left' : 'right') : e);
   if (!edge) return 'top';
   if (typeof edge === 'string') return one(edge);
   const total = edge.reduce((a, c) => a + (c.weight ?? 1), 0);
@@ -79,6 +81,8 @@ export function compileTimeline(entries: ScrollEntry[]): Exclude<ScrollEntry, Ob
         const inset = 40 + rnd() * 110;
         o.x = edge === 'left' ? inset : W - inset;
         o.y = 420 + rnd() * 460;
+        // Crossing debris: a height spread by a golden-ratio sequence (neighbours in time are far apart in height, so a pass is never a wall).
+        if (CROSS_MOTIONS.includes(motion)) o.y = 190 + ((i * 0.618034 + rnd() * 0.25) % 1) * 690;
       }
       out.push(o);
     }
