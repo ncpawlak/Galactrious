@@ -5,13 +5,13 @@
  * game must still work, so the data then lives in memory only. A corrupt or unreadable blob falls back to defaults.
  * `?nosave` in the URL (and the one-boss debug mode) uses a pure in-memory save, so tests and debug sims never touch the real one.
  *
- * Version 2 added `lastLoadout`.
+ * Version 2 added `lastLoadout`. Version 3 added `campaign` (boss snapshots) and `MedalRecord.bonus`.
  *
  * To add a new field: add it to `SaveData`, give it a default in `defaults()`, bump `SAVE_VERSION` and add a step to `MIGRATIONS`.
  */
 
 export const SAVE_KEY = 'galactrious.save';
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export type UnlockKind = 'cards' | 'ships' | 'weapons';
 export type Medal = 'bronze' | 'silver' | 'gold';
@@ -19,6 +19,21 @@ export type Medal = 'bronze' | 'silver' | 'gold';
 export interface MedalRecord {
   best?: Medal;
   bestTimeMs?: number;
+  /** The level's bonus objective has been completed at least once. */
+  bonus?: boolean;
+}
+
+/** A stored boss snapshot (src/campaign/snapshot.ts). `data` is a `BossSnapshot`, kept opaque here. */
+export interface SnapshotRecord {
+  /** Level whose completion captured it (latest completion replaces). */
+  levelId: string;
+  bossId: string;
+  data: unknown;
+}
+
+/** Campaign state that is not a medal: boss snapshots by slot (e.g. `capitalShip`). */
+export interface CampaignProgress {
+  snapshots: Record<string, SnapshotRecord>;
 }
 
 /** The ship and weapons chosen last in the loadout builder (Endless), remembered between sessions. */
@@ -32,6 +47,7 @@ export interface SaveData {
   version: number;
   unlocks: Record<UnlockKind, string[]>;
   medals: Record<string, MedalRecord>;
+  campaign: CampaignProgress;
   lastLoadout?: LastLoadout;
   stats?: { runs?: number; bossesKilled?: number };
 }
@@ -40,12 +56,13 @@ const KINDS: UnlockKind[] = ['cards', 'ships', 'weapons'];
 const MEDAL_RANK: Record<Medal, number> = { bronze: 1, silver: 2, gold: 3 };
 
 export function defaults(): SaveData {
-  return { version: SAVE_VERSION, unlocks: { cards: [], ships: [], weapons: [] }, medals: {} };
+  return { version: SAVE_VERSION, unlocks: { cards: [], ships: [], weapons: [] }, medals: {}, campaign: { snapshots: {} } };
 }
 
 /** MIGRATIONS[n] upgrades a version-n blob to version n+1. Empty until the format first changes. */
 const MIGRATIONS: Record<number, (d: Record<string, unknown>) => Record<string, unknown>> = {
   1: (d) => d, // v2 only added the optional `lastLoadout`
+  2: (d) => d, // v3 only added `campaign` and `MedalRecord.bonus` (both default when missing)
 };
 
 /** Validate and migrate an arbitrary parsed value; returns null when it is unusable. */
@@ -75,7 +92,18 @@ function normalize(raw: unknown): SaveData | null {
       const clean: MedalRecord = {};
       if (typeof r.best === 'string' && r.best in MEDAL_RANK) clean.best = r.best as Medal;
       if (typeof r.bestTimeMs === 'number' && Number.isFinite(r.bestTimeMs)) clean.bestTimeMs = r.bestTimeMs;
+      if (r.bonus === true) clean.bonus = true;
       out.medals[id] = clean;
+    }
+  }
+  const cp = d.campaign as Record<string, unknown> | undefined;
+  const snaps = cp && typeof cp === 'object' ? (cp.snapshots as Record<string, unknown> | undefined) : undefined;
+  if (snaps && typeof snaps === 'object' && !Array.isArray(snaps)) {
+    for (const [slot, rec] of Object.entries(snaps)) {
+      const r = rec as Record<string, unknown> | null;
+      if (r && typeof r === 'object' && typeof r.levelId === 'string' && typeof r.bossId === 'string' && r.data && typeof r.data === 'object') {
+        out.campaign.snapshots[slot] = { levelId: r.levelId, bossId: r.bossId, data: r.data };
+      }
     }
   }
   const ll = d.lastLoadout as Record<string, unknown> | undefined;
@@ -171,10 +199,27 @@ export class SaveStore {
   }
 
   /** Record a result for a level: keeps the better medal and the faster time. */
-  setMedal(levelId: string, medal?: Medal, timeMs?: number): void {
+  setMedal(levelId: string, medal?: Medal, timeMs?: number, bonus?: boolean): void {
     const r = (this.data.medals[levelId] ??= {});
+    if (bonus) r.bonus = true;
     if (medal && (!r.best || MEDAL_RANK[medal] > MEDAL_RANK[r.best])) r.best = medal;
     if (timeMs !== undefined && (r.bestTimeMs === undefined || timeMs < r.bestTimeMs)) r.bestTimeMs = timeMs;
+    this.save();
+  }
+
+  /** The stored boss snapshot of a campaign slot, if any. */
+  getSnapshot(slot: string): SnapshotRecord | undefined {
+    return this.data.campaign.snapshots[slot];
+  }
+
+  /** Store a snapshot in a slot; the latest one replaces the old (DESIGN.md "The capital ship keeps its state"). */
+  setSnapshot(slot: string, rec: SnapshotRecord): void {
+    this.data.campaign.snapshots[slot] = rec;
+    this.save();
+  }
+
+  clearSnapshot(slot: string): void {
+    delete this.data.campaign.snapshots[slot];
     this.save();
   }
 
