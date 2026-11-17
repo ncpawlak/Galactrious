@@ -314,3 +314,50 @@ The core is drawn as a reactor ("nuclear heart") by `src/coreFx.ts`, still only 
 - Look: white-hot centre in a coloured glow halo (one cached gradient sprite per colour/radius), a dark backing disc so it reads on any room colour, two counter-rotating arc rings (big cores only; small units get glow plus pulse), heartbeat pulse. Colour defaults to hot cyan-white; a definition can set `coreColor: [r,g,b]`.
 - State: pulse speed and brightness rise with core hp lost and with `coreVulnerability` (fed to `Boss.coreVuln` each frame by `BossFight`; small units skip it). Below ~0.75 vulnerability the core is dimmer and wears a dashed shield ring. A hit flickers it. On death it swells into a white overload flash and shrinks away over `CORE_DEATH_TIME` (0.3 s) while the existing explosion plays.
 - Cost: about 0.1 ms per frame for 20 units on screen (16 small + big mix, measured in the dev build).
+
+## Roadmap: game modes, ships, persistence and room functions (design, not built)
+Status: **design only**, agreed with the owner. The v1 run (fixed 3 levels of waves, rewards between waves, bosses, permadeath) is the prototype for **Endless**. Everything below builds on the flow engine (`src/flow/`): a mode is a run definition plus rules, not a new engine.
+
+### Three modes
+1. **Campaign.** A list of campaigns. Each is a sequence of hand-authored levels made of **objectives** ("do this", "get out of the firing zone", "regroup with your squad"), steering a small story. No waves and no upgrade cards. Levels are **timed**. The player flies a ship with **preset weapons**. A level ends with a **medal** (bronze/silver/gold) by time, and gold also needs **no deaths**. A **gold medal unlocks content for the other modes**, e.g. a level where you pick up an electric ship; gold unlocks the electricity card for the random card pool. Objectives may be combat or non-combat (pickups, escape zones, hazards, escorts). Death: you blow up and **return to the last checkpoint** (a checkpoint is the start of an objective node); every death counts against the gold medal.
+2. **Conquest.** A **long linear list** of nodes built from what the player has unlocked (campaign levels and wave levels, bosses, objectives, many variations). Not endless, but long. Before starting, the player **builds a ship** from unlocked ships/weapons; cards apply during the run. Death rule is permadeath unless decided otherwise (open).
+3. **Endless.** What we have now: waves, rewards, bosses until you die (permadeath). The player picks a ship from those unlocked and builds the loadout; cards apply.
+
+### Ships and weapon slots
+- A **ship** is data: look, base stats and a **starting weapon set**. Campaign ships use their preset weapons only.
+- In Conquest and Endless the player builds a loadout: **1 main weapon + 3 aux weapons**, chosen from the weapons of unlocked ships (a weapon is a part that belongs to a ship until unlocked). More weapon variations will be added; they are what make the slots a real choice.
+- The current game is already this shape: the chain gun is the main weapon, and Gauss, Rocket and Arc missiles are three aux weapons, all equipped. The base chain gun is in the weapon format since the upgrade work, so slots formalise what exists. Cards modify the weapon in a slot (as now).
+- Open: whether ships also change handling (speed, dodge), or only weapons and stats; first pass: stats and weapons only.
+
+### Persistence (new; was out of v1 scope)
+- A versioned local save (local storage first): unlocked ships, weapons, cards, medals per campaign level, best times. Cards gain an `unlock` flag; the reward pool only draws unlocked cards. A reset and a debug "unlock all" are needed. Runs themselves are not saved (permadeath).
+
+### Campaign design notes
+- **Objective node** (a new flow node type next to `wave`, `boss`, `reward`): a goal with a success condition, an optional timer/zone/hazard, a checkpoint at its start, and a result. Candidate objectives: destroy a target, destroy all, survive N seconds, reach a zone, leave a hazard zone before it closes, pick up an item (e.g. a ship), escort or protect something, defeat a boss.
+- **Timer and medals** are data on the level: time thresholds and a death count. The HUD shows the timer and the medal pace.
+- **Checkpoint:** on death, restore the start state of the current objective (player health, enemies, timers reset for that objective; the total timer keeps running, deaths are counted).
+- **Squad / allies:** undecided. First pass: no allied combat units; "regroup" objectives are a reach-a-zone or escort. Revisit once the objective layer exists.
+- Build **one** campaign of 3-5 levels first to prove the format before authoring more.
+
+### Room function catalog (framework work, independent of the modes)
+Rooms exist (named console groups, `powers`, `onExposed`, `explodeOnDisable`). The aim is a **catalog of reusable room functions** in the framework so a boss is assembled from parts. Each function has an online effect and an offline effect, one readable cue, and a HUD state:
+- **Power:** powers weapons/turrets; offline silences them (Mantis).
+- **Shield:** online, armors the core or a zone; offline the armor drops (Bulwark).
+- **Repair:** online, regrows a layer or heals components; offline it stops.
+- **Spawner:** online, launches drones or units; offline it stops.
+- **Sensor / targeting:** online, shots track the player; offline they fire dumb.
+- **Reactor / fuel:** explodes on disable and chains into neighbours (Bulwark).
+- **Engine:** online, movement speed; offline the boss slows.
+Decisions: rooms **react in the middle of the fight** (a Repair room heals while the player digs elsewhere), not only on exposure. Rooms are also for **later-wave bigger non-boss units**: a big unit can carry one small room, making it a bite-sized boss. Rooms link by power and geometry, so a boss is a puzzle of which room to dig to first.
+
+### Build order
+1. Save system and unlock flags; the card pool gated by unlocks.
+2. Weapon slots and ships as data (main + 3 aux): ship select and loadout builder for Endless; the existing weapons as the first set; then new weapon variants.
+3. Mode select on the title; the current run becomes Endless.
+4. Campaign vertical slice: one campaign, `objective` node, timers, checkpoints, medals, the first unlock.
+5. Allies and squad objectives (when decided).
+6. Conquest.
+Alongside, independent: the room function catalog (can run next to steps 1-2).
+
+### Open questions
+- Squad/ally behaviour; Conquest death rule; whether ships change handling; number of campaigns/levels; how many weapon variants per ship.
