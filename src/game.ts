@@ -34,6 +34,7 @@ import { Unit, UnitSystem } from './units';
 import { FinaleSystem } from './finale/system';
 import type { AssistSpec, AssistTarget } from './finale/assists';
 import { finaleSelfTest } from './finale/selfTest';
+import { isolateCore } from './finale/fallback';
 import { ACE_UNITS } from './enemies/empireAces';
 import { divePath, spawnWave, type WaveDefinition } from './waves';
 import type { RoomHost } from './rooms';
@@ -757,6 +758,8 @@ export class Game {
           this.fight.boss.core.hp = 0;
         },
         cue: () => this.finale.armourResonance(),
+        /** Carve away everything but the core: with a `coreCollapse` boss (chapter 7) the core goes critical and the overload plays. */
+        isolateCore: () => isolateCore(this.fight),
         selfTest: () => finaleSelfTest(),
       },
       units: this.units,

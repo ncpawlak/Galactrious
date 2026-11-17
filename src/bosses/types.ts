@@ -76,6 +76,8 @@ export interface BossDefinition {
   armourCarvable?: boolean;
   /** Runs after a campaign snapshot is restored onto this boss (src/campaign/snapshot.ts): for pixels the snapshot's source definition did not have (chapter 7's hidden rooms). */
   afterRestore?: (fight: import('../bossFight').BossFight, snap: import('../campaign/snapshot').BossSnapshot) => void;
+  /** True = when everything except the core is gone (or the core is orphaned), the core goes critical and dies within `CORE_COLLAPSE_TIME` s, so the fight always ends (chapter 7). */
+  coreCollapse?: boolean;
   /** At least one phase. */
   phases: PhaseDefinition[];
 }
