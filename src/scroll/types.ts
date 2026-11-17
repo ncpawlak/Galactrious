@@ -1,5 +1,7 @@
 import type { FlybyPreset } from '../enemies/flyby';
 import type { WaveDefinition } from '../waves';
+import type { TerrainEntry, ShadowCaster } from '../terrain/types';
+import type { Unit, UnitDefinition, UnitPlacement } from '../units';
 
 /**
  * Scrolling levels (DESIGN.md "As built: scrolling, obstacles, capital ship, allies").
@@ -95,7 +97,9 @@ export type ScrollEntry =
   /** A pickup (stub: emits a `pickup` event with `name`; there is no pickup entity yet). */
   | { at: number; kind: 'pickup'; name: string; x: number }
   /** A named event for the campaign framework (scripted beats, objective triggers). Emitted through `ScrollRunner.onEvent`. */
-  | { at: number; kind: 'event'; name: string; data?: unknown };
+  | { at: number; kind: 'event'; name: string; data?: unknown }
+  /** Carvable walls, defence lines with gaps, wall and ground turrets (src/terrain, DESIGN.md "As built: carvable terrain and ground defences"). */
+  | TerrainEntry;
 
 // --- allies --------------------------------------------------------------------------------------------------
 
@@ -140,7 +144,15 @@ export type BackgroundLayer = (
   | { type: 'whiteout'; color: string; strength: number; rate?: number; seed?: number }
   /** Camera turbulence: the whole background shakes by up to `amp` px at full weather (kept small). */
   | { type: 'turbulence'; amp: number }
+  /** A layer that paints itself (the ground theme `surface`): `make` is called once per theme view and returns the painter. */
+  | { type: 'custom'; make: () => CustomBackgroundLayer }
 ) & { weather?: WeatherRange };
+
+/** A self-painting background layer (see `BackgroundLayer` type `custom`). `dist` = scroll distance, `speed` = px/s, `time` = seconds, `weather` 0..1. */
+export interface CustomBackgroundLayer {
+  update?(dt: number, speed: number): void;
+  draw(ctx: CanvasRenderingContext2D, dist: number, speed: number, time: number, alpha: number, weather: number): void;
+}
 
 /** Background as data: a vertical sky gradient plus layers drawn back to front. */
 export interface ScrollTheme {
@@ -183,6 +195,12 @@ export interface ScrollHost {
   spawnWave(wave: WaveDefinition | string): void;
   spawnBoss(bossId: string): void;
   setWeaponsLocked(locked: boolean): void;
+  /** Spawn a ground structure (src/terrain) as a unit; the game keeps it at the front of the draw list. Returns the live unit. */
+  spawnTerrain?(def: UnitDefinition, placement: UnitPlacement): Unit;
+  /** A ground turret was destroyed: the game counts it for `destroyAll { tag }`. */
+  noteGroundKill?(tag: string): void;
+  /** Where shadows fall on the ground (the ship and the flying units), for the surface background. */
+  shadowCasters?(): ShadowCaster[];
 }
 
 /** A named event a level emits (timeline `event`/`pickup` entries, plus `level-start`, `level-end`). */

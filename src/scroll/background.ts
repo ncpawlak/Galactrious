@@ -1,7 +1,7 @@
 import { H, W } from '../config';
 import { makeCanvas } from '../bosses/paint';
 import { mulberry32 } from './obstacles';
-import type { BackgroundLayer, ScrollTheme } from './types';
+import type { BackgroundLayer, CustomBackgroundLayer, ScrollTheme } from './types';
 
 /**
  * Scrolling background as data (`ScrollTheme`): a sky gradient (optionally a second "storm" sky blended in by the weather)
@@ -525,6 +525,7 @@ interface Built {
   shards?: Shard[];
   events?: FarEvent[];
   spawnCd?: number;
+  custom?: CustomBackgroundLayer;
 }
 
 class ThemeView {
@@ -579,6 +580,8 @@ class ThemeView {
         }
         case 'edgeGlow':
           return { layer, glow: buildEdgeGlow(layer.color) };
+        case 'custom':
+          return { layer, custom: layer.make() };
         default:
           return { layer };
       }
@@ -588,6 +591,7 @@ class ThemeView {
   update(dt: number, fx: Fx): void {
     for (const b of this.built) {
       const l = b.layer;
+      if (b.custom) b.custom.update?.(dt, fx.speed);
       if (l.type === 'fleet' && b.events) {
         const ev = b.events;
         for (let i = ev.length - 1; i >= 0; i--) {
@@ -696,6 +700,9 @@ class ThemeView {
         }
         case 'lightning':
           this.drawLightning(ctx, l, fx, alpha);
+          break;
+        case 'custom':
+          b.custom!.draw(ctx, fx.dist, fx.speed, fx.time, alpha, w);
           break;
         default:
           break;
