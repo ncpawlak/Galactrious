@@ -119,9 +119,29 @@ export interface BarrierEntry {
   seed?: number;
 }
 
-export type TerrainEntry = WallEntry | WallLineEntry | TurretEntry | TurretClusterEntry | TurretTallyEntry | BarrierEntry;
+/**
+ * A HIDDEN ITEM (Conquest, src/conquest): something worth finding in the ground. `crate` = a supply crate that looks like scenery (a small
+ * pad, one amber lamp that flickers now and then) and bursts open when shot; `cache` = a secret room sealed in a wall piece (a faint seam and
+ * two rivets in the plating): carve through the plating and shoot the console inside. Found = the host's `noteHidden(id)` (never counted as a
+ * kill or a turret). `x` is the screen x of the centre, `width` the cache wall's width (default 120), `dy` extra scroll px above the entry.
+ */
+export interface HiddenEntry {
+  at: number;
+  kind: 'hidden';
+  id: string;
+  variant: 'crate' | 'cache';
+  x: number;
+  width?: number;
+  dy?: number;
+  seed?: number;
+}
 
-export const TERRAIN_KINDS = ['wall', 'wallLine', 'turret', 'turretCluster', 'turretTally', 'barrier'] as const;
+/** Tag prefix of a hidden item's component (`hidden:<id>`). */
+export const HIDDEN_PREFIX = 'hidden:';
+
+export type TerrainEntry = WallEntry | WallLineEntry | TurretEntry | TurretClusterEntry | TurretTallyEntry | BarrierEntry | HiddenEntry;
+
+export const TERRAIN_KINDS = ['wall', 'wallLine', 'turret', 'turretCluster', 'turretTally', 'barrier', 'hidden'] as const;
 
 export function isTerrainEntry(e: { kind: string }): e is TerrainEntry {
   return (TERRAIN_KINDS as readonly string[]).includes(e.kind);

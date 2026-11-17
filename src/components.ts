@@ -88,6 +88,8 @@ export interface ComponentSpec {
   crater?: { radius?: number; energy?: number };
   /** On destruction, disable these components (ids or groups). */
   disables?: string[];
+  /** Not drawn while active: the part is a hit area only (a hidden Conquest crate is painted into the structure itself). */
+  concealed?: boolean;
 }
 
 /** Phase-level control over components. Targets are ids or groups. */
@@ -767,6 +769,7 @@ export class ComponentSystem implements SourceGate {
 
   private drawBody(ctx: CanvasRenderingContext2D, c: BossComponent, x: number, y: number, embedded: boolean): void {
     const r = c.spec.radius;
+    if (c.spec.concealed && c.state === 'active') return;
     // Heavily damaged parts flicker.
     if (c.state === 'active' && c.level >= 3 && Math.sin(this.time * 47) > 0.55) return;
     ctx.save();

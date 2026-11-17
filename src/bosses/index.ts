@@ -4,13 +4,14 @@ import { bulwarkComponents } from './bulwarkComponents';
 import { bulwarkRooms, bulwarkRoomsMirror } from './bulwarkRooms';
 import { bulwarkRegrowth } from './bulwarkRegrowth';
 import { capitalShip, capitalShipCarvable } from './capitalShip';
+import { capitalShipConquest } from './capitalShipConquest';
 import { capitalShipFinale } from './capitalShipFinale';
 import { mantis } from './mantis';
 import { roomLab } from './roomLab';
 import type { BossDefinition } from './types';
 
 /** All known bosses. [B] in debug cycles through them in this order. */
-export const BOSSES: BossDefinition[] = [demoBoss, demoBossPhased, demoBossMotion, bulwark, bulwarkComponents, bulwarkRooms, bulwarkRoomsMirror, bulwarkRegrowth, mantis, roomLab, capitalShip, capitalShipCarvable, capitalShipFinale];
+export const BOSSES: BossDefinition[] = [demoBoss, demoBossPhased, demoBossMotion, bulwark, bulwarkComponents, bulwarkRooms, bulwarkRoomsMirror, bulwarkRegrowth, mantis, roomLab, capitalShip, capitalShipCarvable, capitalShipFinale, capitalShipConquest];
 
 /** The boss the game starts on (and restarts on after a page load). */
 export const DEFAULT_BOSS_ID = 'bulwark-rooms';

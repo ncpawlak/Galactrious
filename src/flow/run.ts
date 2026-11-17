@@ -1,15 +1,19 @@
 import { CampaignFlow } from '../campaign/flow';
+import { regionById, REGIONS } from '../conquest/regions';
+import { drawConquestResult, RegionScreen, RegionSelectScreen } from '../conquest/screens';
+import { ConquestTracker, type ConquestResult } from '../conquest/tracker';
+import type { RegionDefinition } from '../conquest/types';
 import { cleanLoadout, defaultLoadoutFor, initialSelection } from '../loadouts';
 import { saveStore } from '../save';
 import { DEFAULT_SHIP_ID, SHIP_BY_ID, shipById, SHIPS, type WeaponLoadout } from '../ships';
 import type { FlowNode, NodeContext, NodeDefinition, NodeHost, NodePosition, RunDefinition, RunState } from './node';
 import { createNode } from './nodes';
-import { CAMPAIGN_BTN, ENDLESS_BTN, UNLOCKS_BTN, drawRunOver, drawRunWon, drawTitle } from './screens';
+import { CAMPAIGN_BTN, CONQUEST_BTN, ENDLESS_BTN, UNLOCKS_BTN, drawRunOver, drawRunWon, drawTitle } from './screens';
 import { LoadoutScreen, ShipSelectScreen } from './shipScreens';
 import { UnlocksScreen } from './unlocksScreen';
 
 /** title -> node (the current level's nodes, then its reward) -> ... -> won; death at any node -> over. */
-export type RunPhase = 'title' | 'unlocks' | 'ships' | 'loadout' | 'campaign' | 'node' | 'over' | 'won';
+export type RunPhase = 'title' | 'unlocks' | 'regions' | 'region' | 'ships' | 'loadout' | 'campaign' | 'node' | 'over' | 'won';
 
 /** Seconds a result screen ignores input, so the press that ended the last node cannot skip it. */
 const SCREEN_LOCKOUT = 1;
@@ -40,9 +44,16 @@ export class Run {
   readonly campaign: CampaignFlow;
   private savedSelection: { shipId: string; loadout: WeaponLoadout } | null = null;
   private node: FlowNode | null = null;
+  private nodeDef: NodeDefinition | null = null;
   private unlocksScreen: UnlocksScreen | null = null;
   private shipScreen: ShipSelectScreen | null = null;
   private loadoutScreen: LoadoutScreen | null = null;
+  private regionsScreen: RegionSelectScreen | null = null;
+  private regionScreen: RegionScreen | null = null;
+  /** Conquest (src/conquest): the region being played or chosen, the tracker of the running run and the result of the last one. Null in Endless. */
+  region: RegionDefinition | null = null;
+  tracker: ConquestTracker | null = null;
+  result: ConquestResult | null = null;
   /** Seconds in the current phase (screen blink and lockout). */
   private phaseTime = 0;
 
@@ -64,10 +75,15 @@ export class Run {
     });
   }
 
+  /** The run being played: the region's node list in Conquest, else the Endless run. */
+  get activeDef(): RunDefinition {
+    return this.region ? this.region.run : this.def;
+  }
+
   /** Node definitions of the current level in play order: its nodes, then its reward (not after the last level). */
   private levelNodes(levelIndex = this.state.levelIndex): NodeDefinition[] {
-    const level = this.def.levels[levelIndex];
-    const last = levelIndex === this.def.levels.length - 1;
+    const level = this.activeDef.levels[levelIndex];
+    const last = levelIndex === this.activeDef.levels.length - 1;
     return level.reward && !last ? [...level.nodes, { type: 'reward', ...level.reward }] : level.nodes;
   }
 
@@ -90,7 +106,9 @@ export class Run {
   start(seed: number = (Date.now() & 0x7fffffff) >>> 0): void {
     this.endNode();
     this.unlockedNames = [];
+    this.result = null;
     this.state = this.freshState(seed);
+    this.tracker = this.region ? new ConquestTracker(this.region, this.host, () => this.state) : null;
     this.host.healFull();
     this.enterNode();
   }
@@ -98,8 +116,43 @@ export class Run {
   /** Abandon whatever is running and go back to the title. */
   toTitle(): void {
     this.campaign.shutdown();
+    // A Conquest run left half way still saves its bests (challenges were saved the moment they were met).
+    if (this.tracker && this.phase === 'node') this.tracker.finish('over');
     this.endNode();
+    this.region = null;
+    this.tracker = null;
+    this.result = null;
     this.setPhase('title');
+  }
+
+  /** Conquest: the region screen (challenges and the start button). */
+  private openRegion(region: RegionDefinition): void {
+    this.region = region;
+    this.tracker = null;
+    this.regionScreen = new RegionScreen(region);
+    this.setPhase('region');
+  }
+
+  /** Debug: start a Conquest run at once (skips the menus). `level` / `node` jump into the list. */
+  debugStartConquest(regionId: string, level = 0, node = 0, seed?: number): void {
+    const region = regionById(regionId);
+    if (!region) throw new Error(`unknown region "${regionId}" (known: ${REGIONS.map((r) => r.id).join(', ')})`);
+    this.campaign.shutdown();
+    this.endNode();
+    this.region = region;
+    this.start(seed);
+    if (level > 0 || node > 0) this.debugJump(level, node);
+  }
+
+  /** Debug: jump to node `node` of level `level` of the running list (a Conquest or Endless run). */
+  debugJump(level: number, node: number): void {
+    const defs = this.activeDef.levels;
+    const l = Math.max(0, Math.min(defs.length - 1, level));
+    this.endNode();
+    this.state.levelIndex = l;
+    this.state.nodeIndex = Math.max(0, Math.min(this.levelNodes(l).length - 1, node));
+    if (node === 0) this.host.healFull();
+    this.enterNode();
   }
 
   private setPhase(p: RunPhase): void {
@@ -123,9 +176,11 @@ export class Run {
     const def = defs[this.state.nodeIndex];
     const node = createNode(def);
     this.node = node;
+    this.nodeDef = def;
     this.setPhase('node');
     const ctx: NodeContext = { host: this.host, run: this.state, position: this.position(defs) };
     node.start(ctx);
+    this.tracker?.onNodeStart(def);
   }
 
   private endNode(): void {
@@ -141,11 +196,12 @@ export class Run {
     if (s.nodeIndex >= this.levelNodes().length) {
       s.levelIndex++;
       s.nodeIndex = 0;
-      if (s.levelIndex === 1) this.unlockShip('warden'); // the first boss is down
-      if (s.levelIndex >= this.def.levels.length) {
-        s.levelIndex = this.def.levels.length - 1;
+      if (s.levelIndex === 1 && !this.region) this.unlockShip('warden'); // the first boss is down
+      if (s.levelIndex >= this.activeDef.levels.length) {
+        s.levelIndex = this.activeDef.levels.length - 1;
         s.nodeIndex = this.levelNodes().length - 1;
-        this.unlockShip('wisp'); // the run is won
+        if (this.tracker) this.result = this.tracker.finish('won');
+        else this.unlockShip('wisp'); // the run is won
         this.setPhase('won');
         return;
       }
@@ -166,11 +222,33 @@ export class Run {
       this.state.time += dt;
       const node = this.node!;
       node.update(dt);
+      this.tracker?.update(dt);
       const out = node.outcome();
+      if (out && this.nodeDef) this.tracker?.onNodeEnd(this.nodeDef, out);
       if (out === 'done') this.advance();
       else if (out === 'lost') {
         this.endNode();
+        if (this.tracker) this.result = this.tracker.finish('over');
         this.setPhase('over');
+      }
+      return;
+    }
+    if (this.phase === 'regions') {
+      const r = this.regionsScreen!.update(dt, this.host);
+      if (r?.kind === 'back') this.toTitle();
+      else if (r?.kind === 'open') this.openRegion(r.region);
+      return;
+    }
+    if (this.phase === 'region') {
+      const r = this.regionScreen!.update(dt, this.host);
+      if (r === 'back') {
+        this.region = null;
+        this.regionsScreen = new RegionSelectScreen();
+        this.setPhase('regions');
+      } else if (r === 'start') {
+        const sel = initialSelection();
+        this.shipScreen = new ShipSelectScreen(sel.shipId, `Conquest: ${this.region!.name}`);
+        this.setPhase('ships');
       }
       return;
     }
@@ -184,7 +262,10 @@ export class Run {
     }
     if (this.phase === 'ships') {
       const r = this.shipScreen!.update(dt, this.host);
-      if (r === 'back') this.toTitle();
+      if (r === 'back') {
+        if (this.region) this.openRegion(this.region);
+        else this.toTitle();
+      }
       else if (r === 'next') {
         const ship = this.shipScreen!.ship;
         // Keep the saved weapons when the same ship is picked again, else start from the ship's own.
@@ -218,13 +299,23 @@ export class Run {
       } else if (key === 'KeyC' || inBtn(CAMPAIGN_BTN)) {
         this.campaign.open();
         this.setPhase('campaign');
+      } else if (key === 'KeyQ' || inBtn(CONQUEST_BTN)) {
+        this.regionsScreen = new RegionSelectScreen();
+        this.setPhase('regions');
       } else if (key === 'Enter' || key === 'Space' || key === 'KeyE' || inBtn(ENDLESS_BTN)) {
+        this.region = null;
         const sel = initialSelection();
         this.shipScreen = new ShipSelectScreen(sel.shipId);
         this.setPhase('ships');
       }
-      // The CONQUEST button is "coming soon": taps do nothing.
-    } else if (this.phaseTime > SCREEN_LOCKOUT) this.toTitle();
+    } else if (this.phaseTime > SCREEN_LOCKOUT) {
+      // A result screen: back to the region screen after a Conquest run (to see the challenges), else the title.
+      const region = this.region;
+      if (region && this.result) {
+        this.tracker = null;
+        this.openRegion(region);
+      } else this.toTitle();
+    }
   }
 
   private startFromTitle(): void {
@@ -254,13 +345,19 @@ export class Run {
 
   /** Draws the current node or screen, plus a small progress label while a node is running. */
   draw(g: CanvasRenderingContext2D): void {
-    const summary = { level: this.state.levelIndex + 1, levels: this.def.levels.length, time: this.state.time, upgrades: this.state.upgrades.map((u) => u.name), unlocked: this.unlockedNames };
+    const summary = { level: this.state.levelIndex + 1, levels: this.activeDef.levels.length, time: this.state.time, upgrades: this.state.upgrades.map((u) => u.name), unlocked: this.unlockedNames };
     switch (this.phase) {
       case 'title':
-        drawTitle(g, this.phaseTime, this.def.levels.length);
+        drawTitle(g, this.phaseTime, this.def.levels.length, REGIONS.some((r) => saveStore.isRegionUnlocked(r.id)) ? `${REGIONS.filter((r) => saveStore.isRegionUnlocked(r.id)).length}/${REGIONS.length} region open` : 'locked: finish Fallen Peace');
         break;
       case 'unlocks':
         this.unlocksScreen!.draw(g);
+        break;
+      case 'regions':
+        this.regionsScreen!.draw(g);
+        break;
+      case 'region':
+        this.regionScreen!.draw(g);
         break;
       case 'ships':
         this.shipScreen!.draw(g);
@@ -272,10 +369,12 @@ export class Run {
         this.campaign.draw(g);
         break;
       case 'over':
-        drawRunOver(g, this.phaseTime, summary);
+        if (this.region && this.result) drawConquestResult(g, this.phaseTime, this.result, this.region);
+        else drawRunOver(g, this.phaseTime, summary);
         break;
       case 'won':
-        drawRunWon(g, this.phaseTime, summary);
+        if (this.region && this.result) drawConquestResult(g, this.phaseTime, this.result, this.region);
+        else drawRunWon(g, this.phaseTime, summary);
         break;
       case 'node': {
         this.node!.draw(g);
@@ -287,8 +386,9 @@ export class Run {
         g.textAlign = 'left';
         g.textBaseline = 'alphabetic';
         g.fillStyle = '#6ee7ff';
-        g.fillText(`LEVEL ${p.level}/${p.levels} · ${type.toUpperCase()}${p.count > 1 ? ` ${p.index}/${p.count}` : ''}`, 12, 950);
+        g.fillText(`${this.region ? `${this.region.name} ` : ''}LEVEL ${p.level}/${p.levels} · ${type.toUpperCase()}${p.count > 1 ? ` ${p.index}/${p.count}` : ''}`, 12, 950);
         g.restore();
+        this.tracker?.draw(g);
         break;
       }
     }

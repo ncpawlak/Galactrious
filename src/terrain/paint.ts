@@ -19,7 +19,7 @@ export interface PaintedStructure {
 const cache = new Map<string, PaintedStructure>();
 
 /** Remove the corners of a canvas (angular chamfer) so the ends of a wall read as built, not as a clipped slab. */
-function chamfer(ctx: CanvasRenderingContext2D, w: number, h: number, left: boolean, right: boolean, c: number): void {
+export function chamfer(ctx: CanvasRenderingContext2D, w: number, h: number, left: boolean, right: boolean, c: number): void {
   ctx.globalCompositeOperation = 'destination-out';
   ctx.fillStyle = '#000';
   const tri = (pts: [number, number][]): void => {
@@ -40,7 +40,7 @@ function chamfer(ctx: CanvasRenderingContext2D, w: number, h: number, left: bool
 }
 
 /** The rubble layer: the same footprint as the plating, a dark deck with scattered embers and cracks. */
-function rubbleFor(plating: HTMLCanvasElement, seed: number): HTMLCanvasElement {
+export function rubbleFor(plating: HTMLCanvasElement, seed: number): HTMLCanvasElement {
   const { canvas, ctx } = makeCanvas(plating.width, plating.height);
   ctx.fillStyle = '#34303a';
   ctx.fillRect(0, 0, canvas.width, canvas.height);

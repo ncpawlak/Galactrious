@@ -15,6 +15,7 @@
  */
 import { H, W } from '../config';
 import type { CombatCounters, NodeHost } from '../flow/node';
+import { unlockRegionsFor } from '../conquest/regions';
 import { applyUnlocks, campaignUnlockSpecs } from '../finale/unlocks';
 import { fallbackSnapshot } from '../finale/fallback';
 import { shipHasEmpireTech } from '../finale/system';
@@ -362,6 +363,8 @@ export class CampaignSession {
     // The campaign's real reward list (src/finale/unlocks.ts): written to the save here, shown by the reveal screen afterwards.
     const newUnlocks = this.campaign.unlocks && last.id === this.level.id ? applyUnlocks(campaignUnlockSpecs(this.campaign)) : undefined;
     for (const u of newUnlocks ?? []) if (u.isNew) unlocked.push(u.spec.name ?? u.spec.id);
+    // Finishing a campaign opens its Conquest region (src/conquest).
+    if (last.id === this.level.id) for (const name of unlockRegionsFor(this.campaign.id)) unlocked.push(`Conquest region: ${name}`);
     this.host.endCombat();
     scrollHooks().setSpeed(0);
     this.result = { campaignId: this.campaign.id, levelId: this.level.id, timeMs, deaths: this.deaths, medal, goldRoute, bonusDone, newBestTime, newBestMedal, unlocked, newUnlocks, counters };

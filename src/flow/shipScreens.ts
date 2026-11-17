@@ -89,7 +89,10 @@ export class ShipSelectScreen {
   index: number;
   private t = 0;
 
-  constructor(shipId: string) {
+  constructor(
+    shipId: string,
+    private readonly subtitle = 'Endless',
+  ) {
     this.index = Math.max(0, SHIPS.findIndex((s) => s.id === shipId));
   }
 
@@ -130,7 +133,7 @@ export class ShipSelectScreen {
     g.fillRect(0, 0, W, H);
     g.restore();
     drawCentered(g, 'SELECT SHIP', 70, `bold 36px ${MONO}`, '#ffd21f');
-    drawCentered(g, 'Endless', 104, `15px ${MONO}`, '#6ee7ff');
+    drawCentered(g, this.subtitle, 104, `15px ${MONO}`, '#6ee7ff');
     for (let k = 0; k < SHIP_ROW.visible && this.first + k < SHIPS.length; k++) {
       const i = this.first + k;
       const s = SHIPS[i];

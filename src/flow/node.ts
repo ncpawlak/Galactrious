@@ -221,6 +221,8 @@ export interface NodeHost {
   endCombat(): void;
   /** Restore the ship to full health. */
   healFull(): void;
+  /** Heal `n` hull points (never above the max, never revives). Conquest hidden-item rewards. */
+  healBy(n: number): void;
   /** Next pointer press or key press since the last frame, or null. Each press is returned once. */
   takeTap(): { x: number; y: number } | null;
   takeKey(): string | null;

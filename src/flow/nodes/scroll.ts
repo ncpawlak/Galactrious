@@ -30,13 +30,22 @@ export class ScrollNode implements FlowNode {
     const s = this.ctx.host.scroll();
     if (!s) return;
     g.save();
-    g.fillStyle = 'rgba(5,6,13,0.6)';
-    g.fillRect(8, 940, 124, 14);
-    g.fillStyle = '#6ee7ff';
-    g.font = '10px monospace';
-    g.textAlign = 'left';
-    g.textBaseline = 'middle';
-    g.fillText(`DIST ${Math.floor(s.distance)}  ${Math.round(s.speed)}px/s`, 12, 947);
+    const len = typeof this.def.level === 'string' ? 0 : this.def.level.length;
+    if (len > 0) {
+      // A thin progress bar along the bottom edge (a section of a Conquest run).
+      g.fillStyle = 'rgba(5,6,13,0.55)';
+      g.fillRect(0, 956, 540, 4);
+      g.fillStyle = '#6ee7ff';
+      g.fillRect(0, 956, Math.min(1, s.distance / len) * 540, 4);
+    } else {
+      g.fillStyle = 'rgba(5,6,13,0.6)';
+      g.fillRect(8, 940, 124, 14);
+      g.fillStyle = '#6ee7ff';
+      g.font = '10px monospace';
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      g.fillText(`DIST ${Math.floor(s.distance)}  ${Math.round(s.speed)}px/s`, 12, 947);
+    }
     g.restore();
   }
 

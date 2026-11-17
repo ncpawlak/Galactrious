@@ -10,6 +10,8 @@ import { BLAST, BLAST_DEFAULT_SCALE, H, setBlastScale, TUNING, W, WEAPONS } from
 import { saveStore, type UnlockKind } from './save';
 import type { CinematicHost, ShipPose } from './campaign/cinematic';
 import { setScrollHooks } from './campaign/hooks';
+import { REGIONS } from './conquest/regions';
+import { applyUnlocks } from './finale/unlocks';
 import { DebugPanel, modifierMult } from './debugControls';
 import { Effects } from './effects';
 import { DEFAULT_RUN } from './flow/defaultRun';
@@ -205,6 +207,19 @@ export class Game {
     noteGroundKill: (tag) => {
       this.combatCounters.kills++;
       this.combatCounters.killsByTag[tag] = (this.combatCounters.killsByTag[tag] ?? 0) + 1;
+    },
+    // A Conquest hidden item was found: a gold burst and a chime, counted under `hidden:<id>` (never a kill; the conquest tracker reads it).
+    noteHidden: (id, x, y) => {
+      const cc = this.combatCounters;
+      cc.killsByTag[`hidden:${id}`] = (cc.killsByTag[`hidden:${id}`] ?? 0) + 1;
+      this.explode(x, y, 26);
+      for (let i = 0; i < 22 && this.particles.length < MAX_PARTICLES; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 70 + Math.random() * 190;
+        const life = 0.4 + Math.random() * 0.5;
+        this.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, life, max: life, color: Math.random() < 0.5 ? '#ffe08a' : '#fff6d0', size: 2 + Math.random() * 2 });
+      }
+      this.sfx.componentDestroy(30);
     },
     shadowCasters: () => this.shadowCasters(),
   };
@@ -435,6 +450,9 @@ export class Game {
       healFull: () => {
         this.syncShip();
         this.health.reset();
+      },
+      healBy: (n) => {
+        if (!this.health.dead) this.health.hp = Math.min(this.health.maxHp, this.health.hp + n);
       },
       takeTap: () => this.taps.shift() ?? null,
       takeKey: () => this.keyPresses.shift() ?? null,
@@ -743,6 +761,30 @@ export class Game {
         snapshotRoundTrip: () => this.snapshotRoundTrip(),
         /** Open the unlock reveal screen for a campaign (writes its unlocks into the save): showUnlocks('fallen-peace', gold?): gold=true adds the all-gold weapons. */
         showUnlocks: (campaignId: string, gold = false) => this.run.showCampaignUnlocks(campaignId, gold),
+      },
+      /**
+       * Conquest debug (run mode): `unlockRegion(id?)`, `start(regionId?, level?, node?, seed?)` (menus skipped; the ship is the current selection), `jump(level, node)`,
+       * `nodes()` (the running list as `level.node: type id`), `grantChallenge(id)` (completes it and awards its unlocks), `tracker()`, `result()`, `setTime(s)` (run clock).
+       */
+      conquest: {
+        regions: REGIONS.map((r) => r.id),
+        unlockRegion: (id = 'empire-base') => saveStore.unlockRegion(id),
+        start: (id = 'empire-base', level = 0, node = 0, seed?: number) => this.run.debugStartConquest(id, level, node, seed),
+        jump: (level: number, node: number) => this.run.debugJump(level, node),
+        nodes: () =>
+          this.run.activeDef.levels.flatMap((l, li) => [...l.nodes, ...(l.reward && li < this.run.activeDef.levels.length - 1 ? [{ type: 'reward' as const }] : [])].map((n, ni) => `${li}.${ni}: ${n.type}${'bossId' in n ? ' ' + n.bossId : ''}${'wave' in n ? ' ' + n.wave.id : ''}${'level' in n && typeof n.level !== 'string' ? ' ' + n.level.id : ''}`)),
+        grantChallenge: (id: string) => {
+          for (const r of REGIONS) {
+            const c = r.challenges.find((x) => x.id === id);
+            if (!c) continue;
+            const fresh = saveStore.completeChallenge(r.id, c.id);
+            return { fresh, unlocks: applyUnlocks(c.rewards).filter((i) => i.isNew).map((i) => i.spec.id) };
+          }
+          throw new Error(`unknown challenge "${id}"`);
+        },
+        tracker: () => this.run.tracker,
+        result: () => this.run.result,
+        setTime: (s: number) => (this.run.state.time = s),
       },
       /**
        * Finale systems (src/finale), usable in any combat: assist(spec) schedules a squad assist, ace(id, x, y) spawns an ace

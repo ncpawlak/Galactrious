@@ -41,14 +41,14 @@ function titleButton(g: CanvasRenderingContext2D, b: { x: number; y: number; w: 
   if (sub) drawCentered(g, sub, b.y + 48, '12px monospace', color);
 }
 
-export function drawTitle(g: CanvasRenderingContext2D, t: number, levels: number): void {
+export function drawTitle(g: CanvasRenderingContext2D, t: number, levels: number, conquestSub = 'a long run, one region'): void {
   dim(g, 0.35);
   drawCentered(g, 'GALACTRIOUS', 250, 'bold 56px monospace', '#ffd21f');
   drawCentered(g, 'carve the bosses', 292, '18px monospace', '#6ee7ff');
   drawCentered(g, `${levels} levels  /  waves, then a boss  /  one life`, 340, '14px monospace', '#8fa0c8');
   titleButton(g, ENDLESS_BTN, 'ENDLESS [ENTER]', '#ffd21f', Math.floor(t * 2) % 2 === 0 ? 'tap to choose ship and loadout' : undefined);
   titleButton(g, CAMPAIGN_BTN, 'CAMPAIGN [C]', '#6ee7ff', 'story levels, medals');
-  titleButton(g, CONQUEST_BTN, 'CONQUEST', '#3a4560', 'coming soon');
+  titleButton(g, CONQUEST_BTN, 'CONQUEST [Q]', '#ff8a5a', conquestSub);
   titleButton(g, UNLOCKS_BTN, 'UNLOCKS [U]', '#6ee7ff');
   drawCentered(g, 'move: drag / arrows / WASD    dodge: Shift / X / button', 860, '12px monospace', '#8fa0c8');
   drawCentered(g, 'debug: [Z] one-boss test mode', 880, '12px monospace', '#5b6a8c');
