@@ -31,7 +31,7 @@ import { RewardNode } from './flow/nodes/reward';
 import type { FlowNode, NodeContext } from './flow/node';
 import { Loadout } from './upgrades/stats';
 import { AUX_DEFS, AUX_KEYS, MAIN_DEFS, WEAPON_DEFS, Sweep, WeaponSystem, auxById, effectiveMain, mainById, nearBox, type AuxDef, type Combatant } from './weapons';
-import { drawShipLook, SHIP_BY_ID, shipById, shipMinY, SHIPS } from './ships';
+import { drawShipLook, equippedLook, SHIP_BY_ID, shipById, shipMinY, SHIPS } from './ships';
 import { cleanLoadout } from './loadouts';
 import { Unit, UnitSystem } from './units';
 import { FinaleSystem } from './finale/system';
@@ -745,7 +745,10 @@ export class Game {
           cards: CARDS.flatMap((c) => (c.unlock ? [c.unlock] : [])),
           ships: SHIPS.flatMap((s) => (s.unlock ? [s.unlock] : [])),
           weapons: WEAPON_DEFS.flatMap((w) => (w.unlock ? [w.unlock] : [])),
+          skins: SHIPS.flatMap((s) => (s.skins ?? []).flatMap((k) => (k.unlock ? [k.unlock] : []))),
         }),
+      /** Unlock a skin for testing without clearing Conquest: `game.debug.unlockSkin('vanguard-rookie')` (the skin's unlock flag; default = the Rookie skin). Equip it in the ship builder. */
+      unlockSkin: (id = 'vanguard-rookie') => saveStore.unlock('skins', id),
       resetSave: () => saveStore.reset(),
       run: this.run,
       /** Campaign debug (run mode only): start(levelId, objectiveIndex?), skipObjective(), setTime(s), unlockAll(on?), session(), counters(), snapshotRoundTrip(). */
@@ -2036,7 +2039,7 @@ export class Game {
   }
 
   private shipLook() {
-    return shipById(this.run.state.shipId).look;
+    return equippedLook(this.run.state.shipId);
   }
 
   private drawShip(): void {

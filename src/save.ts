@@ -11,13 +11,15 @@
  *
  * Version 6 added `seen` (ship and weapon ids the player has looked at in the ship builder; unlocked but unseen items get a NEW dot). A v5 save counts everything it has unlocked as seen.
  *
+ * Version 7 added skins: `unlocks.skins` (skin flags), `skins` (the equipped skin per body) and `seen.skins` (`shipId:skinId`). A v6 save keeps working: no skin unlocked, the default skin equipped.
+ *
  * To add a new field: add it to `SaveData`, give it a default in `defaults()`, bump `SAVE_VERSION` and add a step to `MIGRATIONS`.
  */
 
 export const SAVE_KEY = 'galactrious.save';
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
-export type UnlockKind = 'cards' | 'ships' | 'weapons';
+export type UnlockKind = 'cards' | 'ships' | 'weapons' | 'skins';
 export type Medal = 'bronze' | 'silver' | 'gold';
 
 export interface MedalRecord {
@@ -69,18 +71,20 @@ export interface SaveData {
   campaign: CampaignProgress;
   conquest: ConquestProgress;
   /** Ship ids and weapon ids already viewed in the ship builder. An unlocked item missing here shows a NEW dot. */
-  seen: { ships: string[]; weapons: string[] };
+  seen: { ships: string[]; weapons: string[]; skins: string[] };
+  /** The equipped skin per body (ship id -> skin id). Missing = the default skin. */
+  skins: Record<string, string>;
   lastLoadout?: LastLoadout;
   /** The last loadout started with each body (ship id -> weapons), remembered by the ship builder. */
   loadouts?: Record<string, { main: string; aux: string[] }>;
   stats?: { runs?: number; bossesKilled?: number };
 }
 
-const KINDS: UnlockKind[] = ['cards', 'ships', 'weapons'];
+const KINDS: UnlockKind[] = ['cards', 'ships', 'weapons', 'skins'];
 const MEDAL_RANK: Record<Medal, number> = { bronze: 1, silver: 2, gold: 3 };
 
 export function defaults(): SaveData {
-  return { version: SAVE_VERSION, unlocks: { cards: [], ships: [], weapons: [] }, medals: {}, campaign: { snapshots: {} }, conquest: { regions: [], challenges: {}, best: {} }, seen: { ships: [], weapons: [] } };
+  return { version: SAVE_VERSION, unlocks: { cards: [], ships: [], weapons: [], skins: [] }, medals: {}, campaign: { snapshots: {} }, conquest: { regions: [], challenges: {}, best: {} }, seen: { ships: [], weapons: [], skins: [] }, skins: {} };
 }
 
 /** MIGRATIONS[n] upgrades a version-n blob to version n+1. Empty until the format first changes. */
@@ -113,6 +117,7 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => Record<string, 
     d.seen = { ships: [...ships], weapons: [...new Set([...weapons.map((w) => (w === 'pulse-orb' ? 'pulse' : w)), ...ships.flatMap((s) => withShip[s] ?? [])])] };
     return d;
   },
+  6: (d) => d, // v7 added `unlocks.skins`, `skins` and `seen.skins` (all default when missing)
 };
 
 /** Validate and migrate an arbitrary parsed value; returns null when it is unusable. */
@@ -179,10 +184,14 @@ function normalize(raw: unknown): SaveData | null {
   }
   const sn = d.seen as Record<string, unknown> | undefined;
   if (sn && typeof sn === 'object') {
-    for (const k of ['ships', 'weapons'] as const) {
+    for (const k of ['ships', 'weapons', 'skins'] as const) {
       const list = sn[k];
       if (Array.isArray(list)) out.seen[k] = [...new Set(list.filter((x): x is string => typeof x === 'string'))];
     }
+  }
+  const sk = d.skins;
+  if (sk && typeof sk === 'object' && !Array.isArray(sk)) {
+    for (const [ship, id] of Object.entries(sk as Record<string, unknown>)) if (typeof id === 'string') out.skins[ship] = id;
   }
   const ll = d.lastLoadout as Record<string, unknown> | undefined;
   if (ll && typeof ll === 'object' && typeof ll.ship === 'string' && typeof ll.main === 'string' && Array.isArray(ll.aux)) {
@@ -278,14 +287,21 @@ export class SaveStore {
     return true;
   }
 
-  isSeen(kind: 'ships' | 'weapons', id: string): boolean {
+  isSeen(kind: 'ships' | 'weapons' | 'skins', id: string): boolean {
     return this.data.seen[kind].includes(id);
   }
 
   /** Mark a ship or weapon as viewed (clears its NEW dot). */
-  markSeen(kind: 'ships' | 'weapons', id: string): void {
+  markSeen(kind: 'ships' | 'weapons' | 'skins', id: string): void {
     if (this.isSeen(kind, id)) return;
     this.data.seen[kind].push(id);
+    this.save();
+  }
+
+  /** Equip a skin on a body (the builder checks it is unlocked). */
+  setSkin(shipId: string, skinId: string): void {
+    if (this.data.skins[shipId] === skinId) return;
+    this.data.skins[shipId] = skinId;
     this.save();
   }
 

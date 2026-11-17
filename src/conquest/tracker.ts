@@ -2,6 +2,7 @@ import { BOSSES } from '../bosses';
 import { applyUnlocks, describeUnlock, type UnlockSpec } from '../finale/unlocks';
 import type { NodeDefinition, NodeHost, NodeOutcome, RunState } from '../flow/node';
 import { saveStore } from '../save';
+import { SHIPS } from '../ships';
 import { drawCards } from '../upgrades/stats';
 import type { ChallengeDef, HiddenReward, RegionDefinition } from './types';
 
@@ -172,6 +173,13 @@ export class ConquestTracker {
     return `upgrade: ${card.name}`;
   }
 
+  /** Winning a run of the region unlocks the skins that name it (`ShipSkin.clearRegion`); a toast-free reveal: the result screen lists them. */
+  private awardSkins(): void {
+    const specs: UnlockSpec[] = SHIPS.flatMap((s) => (s.skins ?? []).filter((k) => k.clearRegion === this.region.id && k.unlock).map((k) => ({ kind: 'skins' as const, id: k.unlock! })));
+    const names = applyUnlocks(specs).filter((i) => i.isNew).map((i) => unlockName(i.spec));
+    this.newUnlocks.push(...names);
+  }
+
   /** The metric of `ch` is met: save it (once) and award its rewards. */
   private meet(ch: ChallengeDef): void {
     this.met.add(ch.id);
@@ -191,6 +199,7 @@ export class ConquestTracker {
       const c = this.host.counters();
       this.kills = Math.max(0, c.kills - this.base.kills);
       if (outcome === 'won') for (const ch of this.region.challenges) if (ch.metric.kind === 'clear') this.meet(ch);
+      if (outcome === 'won') this.awardSkins();
       saveStore.recordConquestBest(this.region.id, { kills: this.kills, timeSec: Math.floor(this.state().time), hidden: this.found.size, cleared: outcome === 'won' });
     }
     return { regionId: this.region.id, outcome, kills: this.kills, timeSec: this.state().time, hidden: this.found.size, hiddenTotal: this.region.hidden.length, earned: [...this.earned], unlocks: [...this.newUnlocks] };

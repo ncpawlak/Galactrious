@@ -1,12 +1,13 @@
 import { H, W } from '../config';
 import { makeCanvas } from '../bosses/paint';
+import { drawShipLook, shipById } from '../ships';
 import type { AllyPattern } from './types';
 
 /**
  * Cosmetic allies: Delta squad wingmen. They fly scripted paths in the background, UNDER every combat layer (the game draws
  * them right after the background), and fire small pale tracers that hit nothing. No collisions, no hit effects, no
- * influence on enemies or the player: purely a picture. Mint hull with white trim, so they read against the enemy reds
- * and the player's ship.
+ * influence on enemies or the player: purely a picture. Drawn from the default blue Vanguard look, so they read against the
+ * enemy reds and the empire's slate.
  */
 
 const SPRITE_W = 22;
@@ -16,22 +17,9 @@ let sprite: HTMLCanvasElement | null = null;
 
 function allySprite(): HTMLCanvasElement {
   if (sprite) return sprite;
-  const { canvas, ctx } = makeCanvas(SPRITE_W, SPRITE_H);
-  const poly = (color: string, pts: [number, number][]): void => {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-    ctx.closePath();
-    ctx.fill();
-  };
-  // Delta wing, nose up.
-  poly('#2f9e78', [[11, 0], [15, 10], [22, 22], [15, 20], [11, 26], [7, 20], [0, 22], [7, 10]]);
-  poly('#7dffc0', [[11, 3], [13, 11], [11, 20], [9, 11]]);
-  poly('#e9fff4', [[11, 6], [12, 11], [11, 14], [10, 11]]);
-  poly('#1c6e55', [[3, 20], [7, 14], [7, 20]]);
-  poly('#1c6e55', [[19, 20], [15, 14], [15, 20]]);
-  ctx.fillStyle = '#ffd9a0';
-  ctx.fillRect(10, 23, 2, 3);
+  // The default blue Vanguard skin (the squad never wears the Rookie skin), drawn at twice the logical size for a crisp downscale.
+  const { canvas, ctx } = makeCanvas(SPRITE_W * 2, SPRITE_H * 2);
+  drawShipLook(ctx, shipById('vanguard').look, SPRITE_W, SPRITE_H + 4);
   sprite = canvas;
   return canvas;
 }

@@ -1,5 +1,5 @@
 import { saveStore } from './save';
-import { DEFAULT_SHIP_ID, SHIPS, shipById, shipUnlocked, type WeaponLoadout } from './ships';
+import { DEFAULT_SHIP_ID, SHIPS, shipById, shipUnlocked, skinKey, skinUnlocked, type ShipDefinition, type ShipSkin, type WeaponLoadout } from './ships';
 import { AUX_DEFS, MAIN_DEFS, WEAPON_DEFS, type WeaponDef } from './weapons';
 
 /**
@@ -49,5 +49,11 @@ export const isNewShip = (s: { id: string; unlock?: string }): boolean => !!s.un
 /** A gated weapon the player can use but has not yet looked at in the builder. */
 export const isNewWeapon = (d: WeaponDef): boolean => !d.stashed && !!d.unlock && weaponAvailable(d) && !saveStore.isSeen('weapons', d.id);
 
+/** A gated skin the player owns but has not yet looked at in the ship builder. */
+export const isNewSkin = (ship: ShipDefinition, skin: ShipSkin): boolean => !!skin.unlock && skinUnlocked(skin) && !saveStore.isSeen('skins', skinKey(ship.id, skin.id));
+
+/** Any unseen skin on this body. */
+export const bodyHasNewSkin = (ship: ShipDefinition): boolean => (ship.skins ?? []).some((k) => isNewSkin(ship, k));
+
 /** Anything NEW in the builder (title entry dot). */
-export const anythingNew = (): boolean => SHIPS.some(isNewShip) || WEAPON_DEFS.some(isNewWeapon);
+export const anythingNew = (): boolean => SHIPS.some((s) => isNewShip(s) || bodyHasNewSkin(s)) || WEAPON_DEFS.some(isNewWeapon);

@@ -30,9 +30,10 @@ export class DamageFx {
     this.lastLook = look;
     let w = 0;
     let h = 0;
+    const k = look.scale ?? 1;
     for (const [x, y] of look.hull.points) {
-      w = Math.max(w, Math.abs(x));
-      h = Math.max(h, Math.abs(y));
+      w = Math.max(w, Math.abs(x) * k);
+      h = Math.max(h, Math.abs(y) * k);
     }
     this.half = { w: Math.max(10, w), h: Math.max(12, h) };
   }

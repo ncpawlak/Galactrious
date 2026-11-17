@@ -50,7 +50,7 @@ function drawWreck(g: CanvasRenderingContext2D, cx: number, cy: number, time: nu
   g.fill();
   g.rotate(-0.35);
   // Fuselage: the Vanguard silhouette, torn: hull, a missing wing, scorching.
-  g.fillStyle = '#2f6f5a';
+  g.fillStyle = '#2a7a96';
   g.beginPath();
   g.moveTo(0, -42);
   g.lineTo(9, -10);
@@ -62,7 +62,7 @@ function drawWreck(g: CanvasRenderingContext2D, cx: number, cy: number, time: nu
   g.lineTo(-14, -6);
   g.closePath();
   g.fill();
-  g.fillStyle = '#5ef2b0';
+  g.fillStyle = '#6ee7ff';
   g.beginPath();
   g.moveTo(0, -42);
   g.lineTo(9, -10);
