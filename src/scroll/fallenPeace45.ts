@@ -99,8 +99,8 @@ const YARD_LIGHTS: LightDef[] = [
   cone(33, 110, 380, 16, { type: 'pulse', aim: 90, on: 1.3, off: 2.7 }, '#ff9a7a'),
   cone(33, 270, 380, 16, { type: 'pulse', aim: 90, on: 1.3, off: 2.7, offset: 1.0 }, '#ff9a7a'),
   cone(33, 430, 380, 16, { type: 'pulse', aim: 90, on: 1.3, off: 2.7, offset: 2.0 }, '#ff9a7a'),
-  // 5. A wide, quick sweep.
-  cone(45, 270, 520, 18, { type: 'sweep', center: 90, amp: 50, period: 5.5 }),
+  // 5. A wide, slower sweep.
+  cone(45, 270, 440, 18, { type: 'sweep', center: 90, amp: 30, period: 8 }),
   // 6. The hangar approach: pulses from both sides, aimed in.
   cone(55, 40, 430, 20, { type: 'pulse', aim: 78, on: 1.3, off: 2.6 }, '#ff9a7a'),
   cone(55, 500, 430, 20, { type: 'pulse', aim: 102, on: 1.3, off: 2.6, offset: 1.6 }, '#ff9a7a'),
@@ -145,7 +145,7 @@ function lcg(seed: number): () => number {
 }
 
 /** Seconds between shots of one turret (the engine default is 3.2 gun / 4.2 mortar): slower, so a gap can be threaded under fire. */
-const TURRET_EVERY = 5.5;
+const TURRET_EVERY = 7.3;
 
 /** Authoring knobs of the surface run (defaults are the shipped values; `buildSurface` takes overrides so a bot can sweep them). */
 export interface SurfaceTune {
@@ -158,8 +158,12 @@ export interface SurfaceTune {
   strafe: boolean;
   /** Progress at which the wall and turret difficulty stops growing. */
   cap: number;
+  /** Gap width at progress 0 (px) and how much it narrows by progress 0.6; seconds between lines at the start. */
+  gap0: number;
+  gapNarrow: number;
+  lineBase: number;
 }
-export const SURFACE_TUNE: SurfaceTune = { every: TURRET_EVERY, flyEvery: 13, flyCount: 1.2, fire: [0.6, 0.6, 0.6], lineK: 3.0, mortars: 1, strafe: true, cap: 0.6 };
+export const SURFACE_TUNE: SurfaceTune = { every: TURRET_EVERY, flyEvery: 22, flyCount: 0.6, fire: [0.6, 0.6, 0.5], lineK: 3.5, mortars: 1, strafe: true, cap: 0.6, gap0: 150, gapNarrow: 55, lineBase: 10.5 };
 const REAR = 'empire-fighter-rear';
 const STRAFER = 'empire-strafer';
 
@@ -192,7 +196,7 @@ export function surfaceTimeline(tune: SurfaceTune = SURFACE_TUNE): ScrollEntry[]
     const p = Math.min(t / SURFACE_SECONDS, tune.cap);
     if (!inTail(t)) {
       const nGaps = p < 0.3 ? 2 : p < 0.7 ? 1 + (lineNo % 2) : lineNo % 3 === 2 ? 2 : 1;
-      const width = Math.round(120 - p * 56);
+      const width = Math.round(tune.gap0 - (p / 0.6) * tune.gapNarrow);
       const gaps: WallGap[] = [];
       let prev = lineNo === 0 ? 270 : 270;
       for (let k = 0; k < nGaps; k++) {
@@ -201,10 +205,10 @@ export function surfaceTimeline(tune: SurfaceTune = SURFACE_TUNE): ScrollEntry[]
         prev = x;
       }
       const perPiece = p < 0.45 ? 1 : 2;
-      const turrets = Array.from({ length: perPiece * 3 }, () => clearX(r, gaps, 100)).sort((a, b) => a - b);
-      const mortars = p >= 0.3 ? [clearX(r, gaps, 100), clearX(r, gaps, 100)] : undefined;
+      const turrets = Array.from({ length: perPiece * 3 }, () => clearX(r, gaps, 170)).sort((a, b) => a - b);
+      const mortars = p >= 0.3 ? [clearX(r, gaps, 170), clearX(r, gaps, 170)] : undefined;
       hot.push(t + 4.6);
-      out.push({ at: T5(t), kind: 'wallLine', gaps, turrets: turrets.slice(0, 2), mortars: mortars && p >= 0.3 ? mortars.slice(0, tune.mortars) : undefined, fireEvery: TURRET_EVERY, seed: 10 + lineNo, depth: p > 0.9 ? 52 : undefined });
+      out.push({ at: T5(t), kind: 'wallLine', gaps, turrets: turrets.slice(0, 1), mortars: mortars && p >= 0.4 ? mortars.slice(0, tune.mortars) : undefined, fireEvery: TURRET_EVERY, seed: 10 + lineNo, depth: p > 0.9 ? 52 : undefined });
       // What fills the space between two lines: a cluster, a lone turret, or a free-standing wall.
       const between = t + 3.4;
       if (!inTail(between) && lineNo % 3 === 1) {
@@ -216,7 +220,7 @@ export function surfaceTimeline(tune: SurfaceTune = SURFACE_TUNE): ScrollEntry[]
       }
       lineNo++;
     }
-    t += 8.4 - tune.lineK * p; // 8.4 s apart at the start, 5.4 s at the end
+    t += tune.lineBase - tune.lineK * p; // 10.5 s apart at the start, 8.4 s once the difficulty plateaus
   }
   // The last line before the exit: one narrow gap, guns and mortars, a thick wall. It is a hard block you can carve or squeeze.
   out.push({ at: T5(SURFACE_SECONDS - 12), kind: 'wallLine', gaps: [{ x: 300, width: 76 }], turrets: [90, 210, 400, 470], mortars: [150, 440], fireEvery: TURRET_EVERY, depth: 52, seed: 99 });
@@ -226,13 +230,16 @@ export function surfaceTimeline(tune: SurfaceTune = SURFACE_TUNE): ScrollEntry[]
     // A pass reaches the ship about 2 s after it spawns; slide it clear of the moments a wall line is crossing the ship's row.
     let tf = t0;
     while (hot.some((h) => Math.abs(tf + 2 - h) < 1.8) && tf < t0 + 6) tf += 0.5;
+    // Nothing arrives in the first 8 s of a section (the seam fade has just ended).
+    for (const sec of SURFACE_SECTIONS) if (tf >= sec - 0.01 - (sec === 178 ? 58 : 60) && tf < sec - (sec === 178 ? 58 : 60) + 8) tf = sec - (sec === 178 ? 58 : 60) + 8;
     const p = tf / SURFACE_SECONDS;
-    const n = 2 + Math.floor(p * tune.flyCount);
+    const n = tf < 120 ? 1 : 2; // one ship per pass in the first two sections, two in the last (flyCount is kept for tuning sweeps)
+    void tune.flyCount;
     const x = 90 + Math.round(r() * 360);
     const spec = !tune.strafe && k % 4 === 2 ? 1 : k % 4;
     if (spec === 0) out.push({ at: T5(tf), kind: 'flyby', unit: REAR, preset: 'rear', x, count: n, spacing: 0.5, xStep: r() < 0.5 ? 70 : -70 });
     else if (spec === 1) out.push({ at: T5(tf), kind: 'flyby', unit: STRAFER, preset: 'cross', side: r() < 0.5 ? 'left' : 'right', y: 260 + Math.round(r() * 200), count: n, spacing: 0.9, alternate: true });
-    else if (spec === 2) out.push({ at: T5(tf), kind: 'flyby', unit: STRAFER, preset: 'strafe', x, count: Math.max(2, n - 1), spacing: 0.9, side: r() < 0.5 ? 'left' : 'right' });
+    else if (spec === 2) out.push({ at: T5(tf), kind: 'flyby', unit: STRAFER, preset: 'strafe', x, count: Math.max(1, n - 1), spacing: 0.9, side: r() < 0.5 ? 'left' : 'right' });
     else if (p >= 0.35) out.push({ at: T5(tf), kind: 'flyby', unit: 'empire-flak', preset: 'drift', x: 90 + Math.round(r() * 360) });
     else out.push({ at: T5(tf), kind: 'flyby', unit: REAR, preset: 'rear', x, count: n, spacing: 0.45, xStep: 90 });
   }
