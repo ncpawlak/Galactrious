@@ -164,9 +164,12 @@ export const WEAPONS = {
   blades: { cooldown: 7, duration: 4.5, count: 3, radius: 80, spin: 5.5, tick: 0.1, energy: 70, shape: 'ember3' as const },
   /** Swarm (aux): `count` small homing missiles at random solid spots of the targets. */
   swarm: { cooldown: 6.5, count: 6, energy: 340, pierce: 0.3, shape: 'swarm' as const, speed: 560, turn: 4.5, wanderTime: 2.2 },
-  /** Flak burst (aux, empire ship): one slow shell fired straight up; it detonates on the first solid pixel or component as a boss blast (the flak battery's 3 bursts became 1 shot). */
+  /** Energy Bomb (aux, empire ship): one slow shell fired straight up. On the first solid pixel or component (or after `range` px of flight) it sticks, a `fuse` s fuse runs, then it goes off as a boss blast; at most `maxLive` bombs fused at once (the oldest goes off early). */
   flak: {
     cooldown: 3.2,
+    fuse: 2,
+    range: 520,
+    maxLive: 3,
     speed: 330,
     maxSpeed: 330,
     accel: 0,

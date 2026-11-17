@@ -30,7 +30,7 @@ export const FALLEN_PEACE_UNLOCKS: UnlockSpec[] = [
 /** The extra reward when EVERY chapter holds a gold medal: the two weapons of the empire ship, usable on any ship. (The Laser and Energy Wave are stashed for later.) */
 export const FALLEN_PEACE_GOLD_UNLOCKS: UnlockSpec[] = [
   { kind: 'weapons', id: 'pulse-orb', name: 'Pulse Orbs', desc: 'A new main weapon: the enemy pulse orbs, turned around.' },
-  { kind: 'weapons', id: 'flak', name: 'Energy Bomb', desc: 'A new aux weapon: one slow shell that bursts in a wide blast.' },
+  { kind: 'weapons', id: 'flak', name: 'Energy Bomb', desc: 'A new aux weapon: one slow shell that sticks where it lands and bursts in a wide blast after a short fuse.' },
 ];
 
 /** True when every level of the campaign has a gold medal in the save. */

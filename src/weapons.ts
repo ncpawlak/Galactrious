@@ -105,6 +105,8 @@ export interface ProjectileInit {
   componentPierce?: boolean;
   /** Detonates as a boss blast on the first solid pixel or component (rocket). */
   blast?: BlastSpec;
+  /** With `blast`: instead of detonating on impact the shell sticks and a fuse of `time` s runs; `range` px of flight ends it too (it lands where it is); at most `cap` live fused bombs (the oldest goes off early). */
+  fuse?: { time: number; range: number; cap: number };
   /** Homing on a random solid boss pixel (arc). */
   steer?: { target: Combatant; lx: number; ly: number; turn: number; amp: number; freq: number; phase: number; wanderTime: number };
   /** Seconds the trail stays visible. */
@@ -128,6 +130,10 @@ interface Projectile extends ProjectileInit {
   age: number;
   seen: Set<object>;
   trail: { x: number; y: number; age: number }[];
+  /** Fused bomb: set once it landed. `target`/`lx`/`ly` is what it is stuck to (null: the open spot); `left` is the fuse time remaining. */
+  stuck?: { target: Combatant | null; lx: number; ly: number; left: number };
+  /** Fused bomb: flight left, px. */
+  rangeLeft?: number;
 }
 
 /** Aux weapons (3 slots). */
@@ -285,7 +291,7 @@ const AUX: AuxDef[] = [
     id: 'flak',
     name: 'Energy Bomb',
     slot: 'aux',
-    desc: 'One slow shell that bursts on impact in a wide blast.',
+    desc: 'One slow shell that sticks where it lands, then bursts in a wide blast about 2 s later (3 live at most).',
     color: '#ff5a4a',
     unlock: 'flak',
     unlockHint: 'Complete Fallen Peace with every chapter on gold.',
@@ -302,6 +308,7 @@ const AUX: AuxDef[] = [
         accel: r.accel,
         maxSpeed: r.maxSpeed,
         blast: { ...r.blast, radius: c.stat('flak.radius', r.blast.radius), energy: c.stat('flak.energy', r.blast.energy) * c.power, damage: r.blast.damage * c.power, coreDamage: r.blast.coreDamage * c.power },
+        fuse: { time: r.fuse, range: r.range, cap: r.maxLive },
         tags: c.tags,
         trailLife: 0.2,
       });
@@ -737,7 +744,9 @@ export class WeaponSystem {
     for (const p of this.projectiles) {
       p.age += dt;
       for (const t of p.trail) t.age += dt;
-      if (p.alive) {
+      if (p.alive && p.stuck) {
+        this.tickFuse(p, dt);
+      } else if (p.alive) {
         if (p.accel) {
           p.speed = Math.min(p.maxSpeed ?? p.speed, p.speed + p.accel * dt);
           p.vx = Math.cos(p.angle) * p.speed;
@@ -757,6 +766,10 @@ export class WeaponSystem {
           }
           sweep.at((i + 1) / steps);
           this.impact(p);
+          if (p.fuse && p.alive && !p.stuck) {
+            p.rangeLeft = (p.rangeLeft ?? p.fuse.range) - Math.hypot(sx, sy);
+            if (p.rangeLeft <= 0) this.land(p, null);
+          }
         }
         sweep.end();
         p.trail.push({ x: p.x, y: p.y, age: 0 });
@@ -764,6 +777,45 @@ export class WeaponSystem {
       p.trail = p.trail.filter((t) => t.age < p.trailLife);
     }
     this.projectiles = this.projectiles.filter((p) => p.alive || p.trail.length > 0);
+  }
+
+  /** A fused bomb lands (stuck to `target`, or on the open spot): the fuse starts; over the live-bomb cap the oldest goes off now. */
+  private land(p: Projectile, target: Combatant | null): void {
+    p.y = Math.max(24, p.y);
+    p.stuck = { target, lx: target ? p.x - target.boss.x : 0, ly: target ? p.y - target.boss.y : 0, left: p.fuse!.time };
+    p.speed = 0;
+    p.vx = 0;
+    p.vy = 0;
+    const live = this.projectiles.filter((q) => q.alive && q.stuck);
+    if (!live.includes(p)) live.push(p);
+    for (let i = 0; i < live.length - p.fuse!.cap; i++) this.detonate(live[i]);
+  }
+
+  private tickFuse(p: Projectile, dt: number): void {
+    const s = p.stuck!;
+    if (s.target) {
+      if (s.target.boss.defeated) s.target = null;
+      else {
+        p.x = s.target.boss.x + s.lx;
+        p.y = s.target.boss.y + s.ly;
+      }
+    }
+    s.left -= dt;
+    if (s.left <= 0) this.detonate(p);
+  }
+
+  /** The blast: every target within reach takes the shock (boss-only, never the player). */
+  private detonate(p: Projectile): void {
+    if (!p.alive || !p.blast) return;
+    const radius = resolveBlast('turret', p.blast).radius;
+    let hit: Combatant | undefined;
+    for (const o of this.host.targets()) {
+      if (o.boss.defeated || !nearBox(o.boss, p.x, p.y, radius)) continue;
+      o.components.playerBlast(p.x, p.y, p.blast);
+      hit ??= o;
+    }
+    if (p.tags && hit) this.host.onHit(p.tags, p.x, p.y, p.blast.energy ?? 0, hit);
+    p.alive = false;
   }
 
   /** Arc missiles: turn toward the (target-local) point with wander; retarget when it is carved away; fizzle if nothing is left. */
@@ -808,6 +860,10 @@ export class WeaponSystem {
       for (const t of targets) {
         if (t.boss.defeated || !nearBox(t.boss, p.x, p.y, 12)) continue;
         if (t.components.componentAt(p.x, p.y) || solidAt(t.boss, p.x, p.y)) {
+          if (p.fuse) {
+            this.land(p, t);
+            return;
+          }
           const radius = resolveBlast('turret', p.blast).radius;
           for (const o of targets) if (!o.boss.defeated && nearBox(o.boss, p.x, p.y, radius)) o.components.playerBlast(p.x, p.y, p.blast);
           if (p.tags) this.host.onHit(p.tags, p.x, p.y, p.blast.energy ?? 0, t);
@@ -979,15 +1035,27 @@ export class WeaponSystem {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(-1, -34, 2, 8);
       } else if (p.weapon === 'flak') {
-        // The flak shell: a red orb (the enemy flak's colours) inside a dashed ring showing the blast it will make.
+        // The Energy Bomb: a red orb inside a dashed ring showing the blast. Once stuck, the fuse runs: the ring shrinks onto the orb and pulses faster.
         ctx.rotate(-(p.angle + Math.PI / 2));
         const br = p.blast?.radius ?? 56;
-        ctx.strokeStyle = 'rgba(255,90,74,0.45)';
-        ctx.lineWidth = 2;
+        const k = p.stuck && p.fuse ? Math.max(0, p.stuck.left / p.fuse.time) : 1;
+        const pulse = p.stuck ? 0.5 + 0.5 * Math.sin(p.age * (8 + 22 * (1 - k))) : 0;
+        ctx.strokeStyle = `rgba(255,${90 + 120 * pulse | 0},74,${0.45 + 0.4 * pulse})`;
+        ctx.lineWidth = 2 + 2 * pulse;
         ctx.setLineDash([5, 5]);
         ctx.beginPath();
-        ctx.arc(0, 0, br, 0, Math.PI * 2);
+        ctx.arc(0, 0, p.stuck ? br * (0.35 + 0.65 * k) : br, 0, Math.PI * 2);
         ctx.stroke();
+        if (p.stuck) {
+          ctx.setLineDash([]);
+          ctx.strokeStyle = 'rgba(255,90,74,0.25)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(0, 0, br, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = `rgba(255,90,74,${0.08 + 0.12 * pulse})`;
+          ctx.fill();
+        }
         ctx.setLineDash([]);
         ctx.fillStyle = 'rgba(255,90,74,0.3)';
         ctx.beginPath();
