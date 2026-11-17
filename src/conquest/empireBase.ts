@@ -282,7 +282,7 @@ export const EMPIRE_BASE_CHALLENGES: ChallengeDef[] = [
     name: 'Scrap the fleet',
     desc: 'Defeat 220 enemies in one run.',
     metric: { kind: 'kills', n: 220 },
-    rewards: [{ kind: 'cards', id: 'demo-chain-overclock' }],
+    rewards: [{ kind: 'cards', id: 'demo-chain-overclock' }, { kind: 'weapons', id: 'mine' }],
   },
   {
     id: 'eb-survive',
@@ -296,7 +296,7 @@ export const EMPIRE_BASE_CHALLENGES: ChallengeDef[] = [
     name: 'Eyes open',
     desc: 'Find 3 hidden items in one run (a lamp that flickers, a seam in a wall).',
     metric: { kind: 'hidden', n: 3 },
-    rewards: [{ kind: 'cards', id: 'demo-gauss-supercharge' }],
+    rewards: [{ kind: 'cards', id: 'demo-gauss-supercharge' }, { kind: 'weapons', id: 'drone' }],
   },
   {
     id: 'eb-aces',
@@ -310,7 +310,7 @@ export const EMPIRE_BASE_CHALLENGES: ChallengeDef[] = [
     name: 'Disarm the flagship',
     desc: 'Destroy every gun housing of the capital ship.',
     metric: { kind: 'bossTurrets', boss: CAPITAL_CONQUEST_ID },
-    rewards: [{ kind: 'cards', id: 'cq-gunsmith-coil' }],
+    rewards: [{ kind: 'cards', id: 'cq-gunsmith-coil' }, { kind: 'weapons', id: 'shield-pulse' }],
   },
   {
     id: 'eb-clear',

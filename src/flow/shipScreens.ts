@@ -121,11 +121,14 @@ function weaponIcon(g: CanvasRenderingContext2D, def: WeaponDef | undefined, x: 
   g.stroke();
   if (silhouette) lockIcon(g, x, y, r * 1.1);
   else {
-    g.fillStyle = '#e8ecf8';
-    g.font = `bold ${Math.round(r * 0.9)}px ${MONO}`;
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText(def ? def.name[0] : '-', x, y + 1);
+    if (def?.icon) def.icon(g, x, y, r);
+    else {
+      g.fillStyle = '#e8ecf8';
+      g.font = `bold ${Math.round(r * 0.9)}px ${MONO}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(def ? def.name[0] : '-', x, y + 1);
+    }
   }
   g.restore();
 }

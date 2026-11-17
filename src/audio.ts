@@ -94,6 +94,13 @@ export class Sfx {
       this.tone(c, 330, 780, 0.34, 'triangle', v * 0.4);
     } else if (id === 'blades') {
       this.tone(c, 700, 300, 0.3, 'triangle', v * 0.6);
+    } else if (id === 'mine') {
+      this.tone(c, 160, 90, 0.14, 'triangle', v * 0.7);
+    } else if (id === 'drone') {
+      this.tone(c, 900, 1500, 0.12, 'sine', v * 0.5);
+    } else if (id === 'shield') {
+      this.tone(c, 300, 900, 0.3, 'sine', v * 0.7);
+      this.tone(c, 600, 1200, 0.25, 'triangle', v * 0.3);
     } else if (id === 'swarm') {
       for (let i = 0; i < 3; i++) setTimeout(() => this.tone(c, 800 + i * 150, 1400, 0.06, 'square', v * 0.35), i * 45);
     } else {
