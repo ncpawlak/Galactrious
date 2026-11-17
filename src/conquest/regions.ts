@@ -1,5 +1,6 @@
 import { applyUnlocks } from '../finale/unlocks';
 import { saveStore } from '../save';
+import { SHIPS } from '../ships';
 import { EMPIRE_BASE } from './empireBase';
 import type { RegionDefinition } from './types';
 
@@ -22,6 +23,9 @@ export function syncChallengeRewards(): void {
   for (const r of REGIONS) {
     const done = new Set(saveStore.challengesDone(r.id));
     for (const ch of r.challenges) if (done.has(ch.id)) applyUnlocks(ch.rewards);
+    // A region cleared before its skins existed (the Rookie skin) still earns them: the run's best says cleared, or the clear challenge is done.
+    const cleared = saveStore.current.conquest.best[r.id]?.cleared || r.challenges.some((ch) => ch.metric.kind === 'clear' && done.has(ch.id));
+    if (cleared) applyUnlocks(SHIPS.flatMap((s) => (s.skins ?? []).filter((k) => k.clearRegion === r.id && k.unlock).map((k) => ({ kind: 'skins' as const, id: k.unlock! }))));
   }
 }
 
