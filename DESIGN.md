@@ -696,7 +696,7 @@ Status: **built** (see 'As built' at the end of this section); skins are still d
 - Slots start filled with the body's **preset loadout**, so START is one tap away. The last used loadout per body stays remembered (existing `saveStore.setLastLoadout`).
 
 ### Skins and awards
-**Deferred: skins are out of scope for the first build of this screen** (tracked as a GitHub issue, 'Ship skins as awards'). The first build has no skin arrows and no skins; the layout leaves room for them under the model. This section is the plan for that later work.
+**Skins are now in scope: see "Content pass: ship redesign, Rookie skin, upgrade rework, new weapons"** (issue #92). The first build of this screen had no skin arrows; the skin system and the arrows come with the content pass. This section is the plan for that work.
 - A **skin** is a palette (and, where it helps, trim) variant of a body. A body always has a **default skin**, unlocked from the start.
 - **Skins are awards.** Each locked skin names its requirement in the UI. They are tied to Campaign, Conquest and Endless results. First slice, kept small (1 or 2 per mode, adding more is a data change):
   - **Campaign:** a skin for finishing "Fallen Peace"; a gold skin for finishing it with all gold medals.
@@ -728,6 +728,51 @@ Status: **built** (see 'As built' at the end of this section); skins are still d
 
 ### Open
 Skin names and the exact award thresholds; Endless milestones; a live weapon preview on the model (optional, not in v1).
+
+## Content pass: ship redesign, Rookie skin, upgrade rework, new weapons (design, not built)
+Status: **design only**, agreed with the owner in a concept review. Three parts: (1) redesign the three player ships (the Empire fighter and the empire enemies stay as they are), plus the skin system (GitHub issue #92) with the first skin, (2) rework the upgrade cards around weapon slots, (3) add three aux weapons. The owner rejected new main weapons for now.
+
+### 1. Ship redesign (look data in `src/ships.ts`, `look.hull/details/cockpit/flame`)
+Inspiration is the shmup and sci-fi lineage (swept deltas, twin-pod gunships, needle interceptors), not copies. Coordinates are in ship units (nose up, 0,0 at the centre, mirrored left to right where marked; the existing hit radius and `look` scale are unchanged).
+- **Vanguard** (cyan all-rounder): swept delta with forward canards, bubble cockpit, twin engines. Hull `[0,-52],[8,-20],[10,10],[6,30],[0,24],[-6,30],[-10,10],[-8,-20]` `#6ee7ff`; wings (mirrored) `[10,-4],[40,30],[38,38],[12,26]` `#2fa8c9`; canards (mirrored) `[8,-22],[22,-12],[8,-10]` `#2fa8c9`; nose cap `[0,-52],[3,-30],[-3,-30]` `#e8fbff`; wing trim (mirrored) `[12,8],[36,30],[34,33],[12,22]` `#1b6f88`; cockpit rounded rect 7x16 at (-3.5,-24) `#0b2a36` with a 4x8 highlight `#bff3ff`; two engine flames orange `#ff8a3c` at (-8,30) and (3,30), 5x8.
+- **Warden** (orange and bronze twin-pod gunship, slowest): two side pods (rects 22x52 at x=-40 and x=18, y=-20, `#b8651a`) with forward barrels (3x16, `#ffd9a8`) and a connecting strut; central body `[0,-46],[14,-28],[16,18],[9,36],[-9,36],[-16,18],[-14,-28]` `#ff9f43`, nose cap `#ffe3b8`, cockpit block 10x14 `#2a1608`, gold pod stripes and three engine flames `#ffd23a`.
+- **Wisp** (purple needle interceptor, smallest): needle hull `[0,-56],[5,-10],[4,26],[0,18],[-4,26],[-5,-10]` `#c77dff`; thin rear-swept wings (mirrored) `[5,2],[30,36],[28,40],[6,24]` `#7dff9a`; tail fins (mirrored) `[4,18],[10,40],[4,34]` `#9a4fd8`; slit cockpit `#f4e6ff`; one green flame.
+- Stats, hitboxes and handling are unchanged by the redesign. The ship builder preview and the in-game ship use the same `look` data.
+- A concept sheet was reviewed by the owner in chat; the polygons above are that sheet. Fine adjustments during the build are allowed if the silhouette stays recognisable at game size.
+
+### 2. Skin system (builds issue #92, now in scope) and the Rookie skin
+- Add `skins: { id, name, palette, unlock, requirement }[]` to ship definitions; the first entry is the default skin, always unlocked. A skin overrides the colours of `look` parts and may add `details` (stripes, emblems).
+- The ship builder gets the skin arrows (`<` `>` at the model's sides, name label, position dots); locked skins are black silhouettes with a lock and the requirement, viewable but not equippable. Save: `unlocks.skins`, the selected skin per body, `seen` flags and NEW dots, save version bump with a migration.
+- **Rookie skin (Vanguard):** green and yellow. Main body `#4cc76a`, wings `#2f9a4c`, wing trim `#1b5e2e`, canards yellow `#ffd21f`, nose cap `#fff0a0`; **two yellow racing stripes** down the body (2.2 wide, from y=-30 to y=24, at x=-4.5 and x=2.3); a **yellow delta emblem on each wing**, placed on the wing surface (outer triangle `[20,9],[26,20],[14,20]` yellow, inner cut-out `[20,13.5],[23,18],[17,18]` in the wing green `#2f9a4c`, mirrored at -x); canopy `#0b2a14` with an `#eaffc8` highlight; flames `#ffb347`. **Unlock: clear the Empire Base region in Conquest.** It is the Vanguard's Rookie skin; the campaign still flies its own preset ship in the chapters.
+- **The campaign keeps the blue original look.** Delta team in the campaign (the player's campaign ship and every friendly Delta ship: the cosmetic Delta allies in scroll levels, the wingmen in chapters 2, 6 and 7, the squad-assist strafers) use the **default blue Vanguard skin** with the redesigned hull. The Rookie skin is a Conquest/Endless-only reward and never appears on the campaign squad. This replaces the old mint, white and teal Delta palette of `delta-rookie`; blue still reads clearly against the empire's slate, bronze and red.
+- Other skins (Warden, Wisp, per-mode awards for Campaign and Endless) stay a later content step; the system is data-driven so adding one is a data change.
+
+### 3. Upgrade rework (cards in `src/upgrades/`)
+Direction agreed: more cards are **slot scoped** instead of tied to one weapon, so they never go dead when the loadout changes.
+- **Layers:** (a) **main-slot cards** act on whatever main weapon is equipped: fire rate, damage, extra barrel or spread, pierce; (b) **aux-slot cards** act on all aux weapons, or on one aux slot (AUX 1, 2 or 3): cooldown, blast or effect size, extra projectile or count; (c) **weapon-specific cards** only where a weapon has its own mechanic (for example the Energy Bomb fuse, the Lance beam width, Mine count); (d) **ship and utility cards** (hull, speed, dodge, hitbox, shield recharge) and a few build-defining cards.
+- **Stat namespaces:** new generic stats `main.fireRate`, `main.damage`, `main.barrels`, `main.pierce`, `aux.cooldown`, `aux.damage`, `aux.count`, `aux.radius`, plus per-slot variants `aux1.*`, `aux2.*`, `aux3.*`. Weapon definitions read the generic stat for their slot in addition to their own `weaponId.*` stat; modifiers multiply as before (`mul`/`add`). The card pool filters out a weapon-specific card whose weapon is not equipped, and a slot card is offered only when its slot is filled.
+- **Slot-targeted cards** name the slot in their text and can be picked for any equipped aux ("Aux 2 overclock").
+- **Synergies:** cards that interact with tags (Burn from the main weapon, a blast that spreads Burn), a few per tag.
+- **Trade-offs:** rare cards with a cost (more damage but a smaller hull, faster fire but slower dodge).
+- **Rarity:** common, rare and (few) epic, with weights, as already supported by `rarity` and `weight`.
+- **Migration:** the existing weapon-specific cards are kept where they have a mechanic of their own, and the plain rate/damage ones (for example Rapid Fire, Heavy Rounds, the per-weapon cooldown cards) are folded into the slot cards. Existing Conquest and demo cards keep working. Card text and numbers are tuned during the build and by playtest.
+
+### 4. New aux weapons (data in `WEAPON_DEFS`, `slot: 'aux'`)
+Tuned like the existing aux weapons: they carve (chip damage and blast energy), and are unlocked through the existing unlock flags (first rewards: Conquest challenges).
+- **Mine Layer:** drops one mine at the ship's position per use (cooldown about 3.5 s, at most 4 live). A mine drifts slowly upward (about 40 px/s) so it meets what is ahead, arms after 0.6 s, and bursts when an enemy unit or a boss layer is inside its trigger radius, or after 8 s. The burst is a small rocket-like blast that carves. Never damages the player. Cards: +1 mine, blast radius, cooldown, shorter arm time.
+- **Drone:** deploys a small drone for about 12 s that follows the ship at a fixed side offset and fires aimed chip shots at the nearest target (about 3 per second, low damage); recharges about 6 s after it expires. Invulnerable (it is a weapon, not a target). Cards: +1 drone, fire rate, duration.
+- **Shield Pulse:** a short defensive bubble (radius about 55 px, about 2.5 s, cooldown about 10 s) that absorbs enemy **bullets** that touch it; it does not stop beams, hazard blasts or contact damage. A visible ring and a fade at the end make the timing readable. Cards: duration, radius, shorter cooldown.
+- **Not now:** new main weapons (rejected by the owner for now); EMP, Chain Lightning and Repair Nanites are ideas parked for later, not part of this pass.
+
+### Build order
+1. Ship redesign (look data and the builder preview).
+2. Skin system, the Rookie skin and its Conquest unlock.
+3. Upgrade rework and the new stats; migrate the pool.
+4. Mine Layer, Drone, Shield Pulse and their cards; first unlock rewards.
+Each step can be its own PR; steps 1 and 2 first.
+
+### Open
+Exact card numbers and rarities; which Conquest challenges unlock the new aux weapons; the Warden and Wisp skins.
 
 ## Combat range
 
