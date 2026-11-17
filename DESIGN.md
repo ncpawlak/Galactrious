@@ -421,7 +421,7 @@ Delta squadron is in a large dogfight above the planet Orini. The player is a ro
 |---|---|---|---|
 | 1 | Dogfight | Fight through fighter waves, reach the command ship, blow up its engine room | objective nodes; armoured capital ship with an exposed engine room |
 | 2 | Retreat | Escape through another dogfight; the player is shot down at the end | timed objective; **scripted event** (the shoot-down is not a death) |
-| 3 | Freefall | Dodge debris and mountain peaks falling past. **You cannot shoot.** Touching an obstacle destroys the ship | scrolling level; obstacles; weapons locked |
+| 3 | Freefall | Dodge debris and mountain peaks falling past. **You cannot shoot.** Touching an obstacle damages the ship (normal health) | scrolling level; obstacles; weapons locked |
 | 4 | Crash and commandeer | Find the enemy base, take an enemy ship | pickup; ship swap |
 | 5 | Surface run | Long scroll across the surface: turrets, wall defences, air squadrons. Goal: do not die | long scrolling level; terrain; turrets |
 | 6 | Escape and reunion | Reach the atmosphere; meet the squad | short narrative level; cosmetic allies |
@@ -435,13 +435,13 @@ Delivery in three slices: **slice 1 = chapters 1 to 3**, slice 2 = chapters 4 an
 - **Medals.** Every chapter is **timed**, with authored thresholds. Gold also needs zero deaths. Chapter 5 gets an **alternate gold objective: destroy all turrets** (medal criteria can include a level-specific objective as well as time and deaths).
 - **Checkpoint.** On death the ship blows up and returns to the start of the current objective with a **full heal**; the enemies, timers and objective reset, the total time keeps running and the death is counted against gold.
 - **Capital ship (chapter 1, reused in chapter 7).** A big unit/boss with an outer **armour** layer that cannot be shot through except in one specific area where the **engine room** sits. Blowing up the engine room (a room with the `engine` function from the room catalog, `explodeOnDisable`) completes the objective. In chapter 7 the same ship is the disabled boss.
-- **Chapter 3.** Weapons are locked; the ship is destroyed on touching an obstacle; no health. Debris and peaks are pixel shapes scrolling past (they could be carvable props in later chapters, not in chapter 3 since you cannot shoot).
+- **Chapter 3.** Weapons are locked; touching an obstacle damages the ship (normal health and i-frames; the ship is destroyed only when health runs out). Debris and peaks are pixel shapes scrolling past (they could be carvable props in later chapters, not in chapter 3 since you cannot shoot).
 
 ### Engine work for slice 1
 1. **Objective node** (new flow node type) with `destroy`, `reach`, `survive`, `escape` and `bossFight` objectives for chapters 1 and 2, a per-objective checkpoint, and a result.
 2. **Campaign framework:** campaign data format, campaign select and level select screens with medals and best times (save system), result screen, the timer and medal pace on the HUD.
 3. **Scripted events and beats:** a small timeline format: show a text beat, force the ship's destruction (no death), lock weapons, set a scroll speed, spawn.
-4. **Scrolling levels:** a distance timeline, scrolling background and an obstacle entity (pixel shapes with touch-kills).
+4. **Scrolling levels:** a distance timeline, scrolling background and an obstacle entity (pixel shapes with contact damage).
 5. **Armoured capital ship:** an armour layer that cannot be carved, with a gap exposing the engine room.
 6. **Cosmetic allies:** wingmen that fly and shoot with no effect.
 7. **Preset ship** for the campaign (no loadout builder, no cards).
@@ -459,3 +459,18 @@ The campaign fights one enemy empire, so **every enemy unit, turret, wall, the c
 - **Roster.** The campaign defines an empire roster of small, big and capital units (fighters, gunships, walls, ground turrets, the capital ship, the final boss), designed together as one family: same materials, same colour language, consistent scale steps from fighter to capital ship. The player's squad (Delta) uses a clearly different palette so friend and foe read instantly.
 - **The commandeered ship** is a member of the roster (a hero version of the fighter), so the player visibly flies a ship that matches the enemy fighters (which is why the squad is in disbelief).
 - **Endless** may keep the generic units, or later use factions as themes; faction kits are data, so a second faction is a new kit and roster.
+
+### Bonus gold objectives and the gold rule
+Every chapter has one **bonus objective**, shown at the start of the level. It rewards mastery of that chapter's own mechanic, not another timer. **Gold = zero deaths AND (beat the gold time OR complete the bonus)**: two routes to gold, speed or mastery. (A "both" tier is left for a later platinum medal.)
+
+| Chapter | Bonus |
+|---|---|
+| 1. Dogfight | **Ace:** shoot down 30 fighters before reaching the command ship |
+| 2. Retreat | **Untouched:** take no hits during the retreat |
+| 3. Freefall | **Undamaged:** take no damage from debris or peaks (you cannot shoot, so this is the mastery) |
+| 4. Commandeer | to be designed with the chapter gameplay (candidates: silent approach, or blow the fuel depot in one chain reaction) |
+| 5. Surface run | **Destroy all turrets** |
+| 6. Reunion | **Fly clean:** reach the atmosphere without using the dodge, or at full health |
+| 7. Finale | **Full dismantle:** destroy every room and turret on the capital ship before the core goes |
+
+Tracking needs only a few counters (kills, hits taken, rooms destroyed, pickups, alarms), kept per level attempt and reset on a checkpoint restart where the objective restarts (the death still counts).
