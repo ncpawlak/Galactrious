@@ -1,3 +1,4 @@
+import { FALLEN_PEACE_SCROLL_LEVELS } from './fallenPeace';
 import { SCROLL_TEST } from './testLevel';
 import type { ScrollLevelDef } from './types';
 
@@ -8,7 +9,7 @@ export { compileTimeline, ScrollRunnerImpl } from './runner';
 export type * from './types';
 
 /** Registered scroll levels, by id (`ScrollNodeDefinition.level`, `game.debug.scroll.start(id)`). The content session adds the real chapters here. */
-export const SCROLL_LEVELS: Record<string, ScrollLevelDef> = { [SCROLL_TEST.id]: SCROLL_TEST };
+export const SCROLL_LEVELS: Record<string, ScrollLevelDef> = Object.fromEntries([SCROLL_TEST, ...FALLEN_PEACE_SCROLL_LEVELS].map((l) => [l.id, l]));
 
 export function scrollLevelById(id: string): ScrollLevelDef {
   const l = SCROLL_LEVELS[id];

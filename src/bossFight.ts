@@ -3,6 +3,7 @@ import { ScriptedScheduler, type AttackStep } from './attackSchedulers';
 import { ComponentSystem } from './components';
 import { consoleSpecs, RoomSystem } from './rooms';
 import { TUNING } from './config';
+import { FACTIONS } from './factions';
 import { Regrowth, type RegrowthSpec } from './regrowth';
 import type { BossDefinition, PhaseDefinition, PhaseTrigger } from './bosses/types';
 import type { Movement, Offset2 } from './movement';
@@ -52,6 +53,11 @@ export class BossFight {
     const rooms = def.rooms ?? [];
     const specs = [...(def.components ?? []), ...consoleSpecs(rooms, this.boss.layers.length - 1)];
     this.components = new ComponentSystem(this.boss, specs, !!def.mirror);
+    const kit = def.faction ? FACTIONS[def.faction] : undefined;
+    if (kit) {
+      this.components.style = { housing: kit.turret.housing, rim: kit.accent, barrel: kit.turret.barrel, light: kit.turret.light };
+      if (!def.coreColor) this.boss.coreColor = kit.core;
+    }
     this.rooms = new RoomSystem(this.components, rooms, (spec) => this.makeRegrowth(spec));
     this.components.vulnerability = () => this.coreVulnerability();
     this.components.applyPhase(this.phase.components);

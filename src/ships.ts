@@ -1,4 +1,5 @@
 import { TUNING } from './config';
+import { DELTA } from './factions';
 import { isUnlocked } from './save';
 
 /**
@@ -109,7 +110,35 @@ export const SHIPS: ShipDefinition[] = [
   },
 ];
 
-export const SHIP_BY_ID = new Map(SHIPS.map((s) => [s.id, s]));
+/**
+ * Campaign-only ships: never shown in the Endless ship select (they are not in `SHIPS`), but `shipById` and `Game.setShip` know them.
+ * `delta-rookie` is the Fallen Peace ship: the Vanguard's numbers and silhouette in the Delta squad palette (mint, white, teal; no red,
+ * so it never reads as an empire ship), preset weapons chain + Gauss, Rocket, Arc.
+ */
+export const DELTA_ROOKIE_ID = 'delta-rookie';
+export const CAMPAIGN_SHIPS: ShipDefinition[] = [
+  {
+    id: DELTA_ROOKIE_ID,
+    name: 'Delta Rookie',
+    desc: 'Delta squad standard issue. Chain gun with Gauss, Rocket and Arc.',
+    look: {
+      hull: { color: DELTA.hull, points: [[0, -22], [15, 16], [0, 9], [-15, 16]] },
+      details: [
+        { color: DELTA.mid, points: [[0, -16], [8, 12], [0, 8], [-8, 12]] },
+        { color: DELTA.trim, points: [[-15, 16], [-9, 13], [-9, 16]] },
+        { color: DELTA.trim, points: [[15, 16], [9, 13], [9, 16]] },
+        { color: DELTA.dark, points: [[-12, 15], [-7, 11], [-7, 15]] },
+        { color: DELTA.dark, points: [[12, 15], [7, 11], [7, 15]] },
+      ],
+      cockpit: { color: '#ffffff', x: -2, y: -6, w: 4, h: 9 },
+      flame: { color: DELTA.flame, x: -3, y: 12, w: 6, len: 4, flicker: 5 },
+    },
+    baseStats: { maxHealth: TUNING.player.maxHealth, speed: TUNING.ship.speed, dodgeCooldown: TUNING.dodge.cooldown, hitbox: TUNING.player.hitbox },
+    startingWeapons: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] },
+  },
+];
+
+export const SHIP_BY_ID = new Map([...SHIPS, ...CAMPAIGN_SHIPS].map((s) => [s.id, s]));
 
 /** The ship's highest allowed y. */
 export function shipMinY(id: string): number {

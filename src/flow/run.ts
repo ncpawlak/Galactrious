@@ -1,7 +1,7 @@
 import { CampaignFlow } from '../campaign/flow';
 import { cleanLoadout, defaultLoadoutFor, initialSelection } from '../loadouts';
 import { saveStore } from '../save';
-import { DEFAULT_SHIP_ID, shipById, SHIPS, type WeaponLoadout } from '../ships';
+import { DEFAULT_SHIP_ID, SHIP_BY_ID, shipById, SHIPS, type WeaponLoadout } from '../ships';
 import type { FlowNode, NodeContext, NodeDefinition, NodeHost, NodePosition, RunDefinition, RunState } from './node';
 import { createNode } from './nodes';
 import { CAMPAIGN_BTN, ENDLESS_BTN, UNLOCKS_BTN, drawRunOver, drawRunWon, drawTitle } from './screens';
@@ -78,7 +78,7 @@ export class Run {
 
   /** Choose the ship and loadout (a debug hook and the Endless screens): applies to the current state at once and to every later run. */
   select(shipId: string, loadout?: WeaponLoadout): void {
-    const id = SHIPS.some((s) => s.id === shipId) ? shipId : DEFAULT_SHIP_ID;
+    const id = SHIP_BY_ID.has(shipId) ? shipId : DEFAULT_SHIP_ID;
     const l = cleanLoadout(loadout ?? defaultLoadoutFor(id), id);
     this.selection = { shipId: id, loadout: l };
     this.state.shipId = id;

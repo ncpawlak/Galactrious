@@ -1,9 +1,11 @@
 import type { BossSpec } from '../boss';
-import { aimedShot, bomb, directVolley } from '../attacks';
+import { bomb } from '../attacks';
 import type { AttackPattern } from '../attacks';
 import type { AttackStep } from '../attackSchedulers';
 import type { ComponentSpec } from '../components';
 import { EMPIRE } from '../factions';
+import { empireShot, empireVolley } from '../enemies/empire';
+import { glowSlit, insignia } from '../enemies/empirePaint';
 import { bob, combine, sway } from '../movement';
 import type { RoomSpec } from '../rooms';
 import type { BossDefinition } from './types';
@@ -89,20 +91,29 @@ function paint(): Painted {
   a.ctx.fillStyle = K.accent;
   a.ctx.fillRect(0, 232, LW, 14);
   a.ctx.fillRect(0, 252, LW, 4);
-  // Chevron insignia either side of the notch.
-  a.ctx.fillStyle = K.accent;
+  // Forward-swept armour panels (the empire silhouette rule) fanning from the notch toward the flanks, then the insignia.
   for (const sx of [-1, 1]) {
-    const cx = 350 + sx * 205;
+    const mx = (x: number): number => 350 + sx * x;
+    a.ctx.fillStyle = K.armourLight;
     a.ctx.beginPath();
-    a.ctx.moveTo(cx - 28, 330);
-    a.ctx.lineTo(cx, 296);
-    a.ctx.lineTo(cx + 28, 330);
-    a.ctx.lineTo(cx + 28, 346);
-    a.ctx.lineTo(cx, 312);
-    a.ctx.lineTo(cx - 28, 346);
+    a.ctx.moveTo(mx(120), 270);
+    a.ctx.lineTo(mx(330), 360);
+    a.ctx.lineTo(mx(330), 392);
+    a.ctx.lineTo(mx(120), 330);
     a.ctx.closePath();
     a.ctx.fill();
+    a.ctx.fillStyle = K.armourDark;
+    a.ctx.beginPath();
+    a.ctx.moveTo(mx(120), 330);
+    a.ctx.lineTo(mx(330), 392);
+    a.ctx.lineTo(mx(330), 404);
+    a.ctx.lineTo(mx(120), 342);
+    a.ctx.closePath();
+    a.ctx.fill();
+    insignia(a.ctx, K, 350 + sx * 205, 300, 64);
   }
+  // Glow slits along the stern (portholes of the same orange as the fighters' canopies).
+  for (let x = 100; x < LW - 90; x += 70) if (Math.abs(x - 350) > 110) glowSlit(a.ctx, K, x, 470, 22, 7);
   // Engine nacelles: dark intakes and nozzle rings at the stern.
   for (const cx of [150, 550]) {
     a.ctx.fillStyle = K.armourDark;
@@ -238,9 +249,9 @@ export const capitalShip: BossDefinition = {
       name: 'Siege',
       movement: combine(sway(20, 14), bob(6, 9)),
       attacks: [
-        every(aimedShot, 1.0, 'guns-outer'),
-        every(directVolley, 1.2, 'guns-inner'),
-        every(aimedShot, 1.0, 'guns-outer'),
+        every(empireShot, 1.0, 'guns-outer'),
+        every(empireVolley, 1.2, 'guns-inner'),
+        every(empireShot, 1.0, 'guns-outer'),
         every(bomb, 1.6, 'guns-inner'),
       ],
     },

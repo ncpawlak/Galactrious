@@ -28,7 +28,7 @@ interface Template {
   h: number;
 }
 
-const SIZES: Record<ObstacleShape, { w: number; h: number }> = {
+export const SIZES: Record<ObstacleShape, { w: number; h: number }> = {
   'debris-s': { w: 26, h: 26 },
   'debris-m': { w: 44, h: 44 },
   'debris-l': { w: 76, h: 76 },

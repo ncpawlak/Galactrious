@@ -23,6 +23,8 @@ export const BULLET_STYLES = {
   /** Aimed shot: hot-magenta circle. */
   aimed: { fill: '#ff2d9a', glow: 'rgba(255, 40, 150, 0.4)', outline: '#ffffff', shape: 'circle', scale: 1 },
   /** Bomb: lime core with a dark centre ring, larger. */
+  /** Empire fire (src/factions.ts): hot orange diamond with a warm white rim; reads against the cyan/mint player and the magenta generic enemies. */
+  imperial: { fill: '#ff6a2a', glow: 'rgba(255, 100, 40, 0.45)', outline: '#fff0c8', shape: 'diamond', scale: 1.15 },
   bomb: { fill: '#9dff2e', glow: 'rgba(150, 255, 40, 0.4)', outline: '#ffffff', shape: 'ring', scale: 1.5 },
 } satisfies Record<string, BulletStyle>;
 
