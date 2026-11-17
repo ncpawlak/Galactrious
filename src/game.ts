@@ -18,6 +18,7 @@ import { Hud } from './hud';
 import { Input } from './input';
 import { MOVEMENT_PRESETS } from './movement';
 import { Dodge, Health } from './player';
+import { DamageFx, type Emit } from './damageFx';
 import { TagSystem, type TagSet } from './tags';
 import { CARDS, CARD_BY_ID } from './upgrades/cards';
 import { RewardNode } from './flow/nodes/reward';
@@ -108,6 +109,11 @@ export class Game {
   private readonly stars: Star[] = [];
   private readonly dodge = new Dodge();
   private readonly health = new Health();
+  private readonly dmgFx = new DamageFx();
+  private readonly emitP: Emit = (x, y, vx, vy, life, color, size) => {
+    if (this.particles.length < MAX_PARTICLES) this.particles.push({ x, y, vx, vy, life, max: life, color, size });
+  };
+  private readonly beep = (v: number): void => this.sfx.lowAlarm(v);
   private readonly attacks = new Attacks();
   /** False in wave nodes: the dormant boss fight is not updated, drawn, targeted or shown in the HUD. */
   private bossActive = true;
@@ -352,6 +358,7 @@ export class Game {
     this.stopScroll();
     const r = new ScrollRunnerImpl(this.scrollHost);
     this.scroll = r;
+    r.onThunder = (k) => this.fx.rumble(0.12 + 0.12 * k);
     r.start(def);
   }
 
@@ -496,8 +503,23 @@ export class Game {
       bullets: this.bullets,
       dodge: this.dodge,
       health: this.health,
+      /** Take n damage now (respects i-frames and the dodge); returns whether it landed. `scrape` uses the obstacle-contact effect. */
+      hurt: (n = 1, scrape = false) => {
+        if (this.state !== 'playing' || !this.health.hit(n, this.dodge.invulnerable)) return false;
+        this.afterPlayerHit(n, scrape);
+        return true;
+      },
+      /** Set the current hull directly (clears i-frames), to test the smoke / fire states. */
+      setHealth: (n: number) => {
+        this.health.hp = Math.max(0, Math.min(this.health.maxHp, n));
+        this.health.invuln = 0;
+        this.health.lostFrom = -1;
+      },
       attacks: this.attacks,
       setAttacks: (on: boolean) => (this.attacks.enabled = on),
+      /** Live pixels per layer not connected to the boss's main mass (must be 0 once settled). */
+      anchoring: () => this.fight.boss.unanchoredPixels(),
+      setUnionAnchoring: (on: boolean) => (this.fight.boss.unionAnchoring = on),
       components: this.fight.components,
       rooms: this.fight.rooms,
       regrowth: this.fight.regrowth,
@@ -578,6 +600,10 @@ export class Game {
           if (this.scroll) this.scroll.paused = on;
         },
         distance: () => this.scroll?.distance ?? 0,
+        /** Weather 0..1 (eased over `ease` s), theme switch, lightning now. */
+        weather: (v: number, ease = 0) => this.scroll?.setWeather(v, ease),
+        theme: (id: string, fade = 0) => this.scroll?.background?.setTheme(id, fade),
+        strike: () => this.scroll?.background?.strike(),
         speed: () => this.scroll?.speed ?? 0,
         levels: Object.keys(SCROLL_LEVELS),
         /** Spawn one obstacle now at its entry edge. */
@@ -793,6 +819,7 @@ export class Game {
     this.clearAt = [];
     this.hull25At = null;
     this.fx.reset();
+    this.dmgFx.reset();
   }
 
   private onKey(code: string): void {
@@ -1084,6 +1111,7 @@ export class Game {
       return;
     }
     this.health.update(dt);
+    if (this.fx.enabled) this.dmgFx.update(dt, this.ship.x, this.ship.y, this.health.hp, this.health.maxHp, this.shipLook(), this.emitP, this.beep);
     const dmg =
       this.attacks.collect(this.ship.x, this.ship.y, this.hitbox) +
       this.attacks.collectHazards(this.ship.x, this.ship.y, this.hitbox);
@@ -1093,18 +1121,21 @@ export class Game {
       const o = this.scroll.obstacles.touch(this.ship.x, this.ship.y, this.hitbox);
       if (o && !this.godMode && this.health.hit(o.damage, this.dodge.invulnerable)) {
         o.flash = 0.3;
-        this.fx.onComponentDestroy(26);
-        this.sfx.componentDestroy(26);
-        this.explode(this.ship.x, this.ship.y, 12);
-        this.afterPlayerHit(o.damage);
+        this.explode(this.ship.x, this.ship.y, 8);
+        this.afterPlayerHit(o.damage, true);
       }
     }
   }
 
   /** The ship was hit and the damage landed: destroyed when the hull is gone. */
-  private afterPlayerHit(dmg: number): void {
+  private afterPlayerHit(dmg: number, scrape = false): void {
     this.combatCounters.hits++;
     this.combatCounters.damage += dmg;
+    this.fx.onPlayerHit(dmg, scrape);
+    if (this.fx.enabled) {
+      this.dmgFx.onHit(this.ship.x, this.ship.y, scrape, this.shipLook(), this.emitP);
+      this.sfx.playerHit(scrape);
+    }
     if (!this.health.dead) return;
     this.state = 'lost';
     this.lostAt = this.elapsed;
@@ -1449,6 +1480,7 @@ export class Game {
     }
     this.fx.drawNumbers(ctx);
     this.fx.endShake(ctx);
+    if (this.fx.enabled && this.state === 'playing') this.dmgFx.drawVignette(ctx, this.health.hp, this.health.maxHp);
     this.health.draw(ctx);
     if (this.bossActive && this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
     if (this.state === 'playing') this.dodge.drawButton(ctx);
@@ -1514,9 +1546,18 @@ export class Game {
     ctx.globalAlpha = 1;
   }
 
+  private shipLook() {
+    return shipById(this.run.state.shipId).look;
+  }
+
   private drawShip(): void {
     const { x, y } = this.ship;
-    drawShipLook(this.ctx, shipById(this.run.state.shipId).look, x, y);
+    if (!this.fx.enabled) {
+      drawShipLook(this.ctx, this.shipLook(), x, y);
+      return;
+    }
+    this.dmgFx.drawShip(this.ctx, this.shipLook(), x, y, this.health.invuln, this.dodge.invulnerable);
+    this.dmgFx.drawFire(this.ctx, x, y, this.health.hp, this.health.maxHp);
   }
 
   private unitLines(): string[] {

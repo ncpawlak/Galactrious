@@ -90,6 +90,16 @@ export class Effects {
     }
   }
 
+  /** The player took damage: a short strong shake (more per damage point, heavier for obstacle scrapes) and a hit stop. */
+  onPlayerHit(dmg: number, scrape: boolean): void {
+    const d = JUICE.damage;
+    if (!this.enabled || !d.enabled) return;
+    const t = (scrape ? d.shake.scrape : d.shake.hit) + d.shake.perDamage * Math.max(0, dmg - 1);
+    this.trauma = Math.min(1, Math.max(this.trauma, Math.min(d.shake.maxTrauma, t)));
+    this.stop = Math.max(this.stop, d.hitStop);
+    this.stopCooldown = Math.max(this.stopCooldown, 0.05);
+  }
+
   onExplosion(): void {
     if (!this.enabled) return;
     this.addTrauma(JUICE.shake.explosion);
@@ -99,6 +109,11 @@ export class Effects {
   onEnrage(): void {
     if (!this.enabled) return;
     this.trauma = 1;
+  }
+
+  /** A soft, low rumble (thunder): a small trauma kick, never above 0.3. */
+  rumble(a: number): void {
+    if (this.enabled) this.addTrauma(a, 0.3);
   }
 
   private addTrauma(a: number, cap = JUICE.shake.maxTrauma): void {

@@ -92,6 +92,7 @@ export const FP2_RETREAT: ScrollLevelDef = {
     strafe(80.5, 3, 160, 110),
     // Into the atmosphere: the sky warms.
     { at: d(85), kind: 'theme', theme: 'atmosphere', fade: 12 },
+    { at: d(85), kind: 'setWeather', intensity: 0.2, ease: 12 },
     flak(88, 150),
     flak(88.5, 390),
     rear(89, 3, 130, 140),
@@ -130,9 +131,14 @@ export const FP3_FREEFALL: ScrollLevelDef = {
   theme: 'atmosphere',
   weaponsLocked: true,
   timeline: [
-    // TODO(weather): when the atmosphere theme's `setWeather` timeline event is on main (the scroll-visuals session adds it),
-    // set the storm here: calm at 0, heavy cloud and wind at 13000, a blizzard in the peak field at 30000. Until then the theme
-    // alone sets the look and this is a no-op.
+    // Weather (the atmosphere theme's storm intensity, 0 calm to 1 violent): calm at the start, cloud building through the peaks, a blizzard
+    // in the tightest stretch, easing down for the crash.
+    { at: 0, kind: 'setWeather', intensity: 0.05, ease: 0.1 },
+    { at: 6000, kind: 'setWeather', intensity: 0.25, ease: 8 },
+    { at: 13000, kind: 'setWeather', intensity: 0.45, ease: 8 },
+    { at: 21000, kind: 'setWeather', intensity: 0.6, ease: 8 },
+    { at: 30000, kind: 'setWeather', intensity: 0.9, ease: 6 },
+    { at: 40000, kind: 'setWeather', intensity: 0.35, ease: 6 },
     // A. Sparse debris, a wide free lane (0 to 6000 px, 25 s at 240 px/s).
     { at: 300, kind: 'field', to: 6000, density: 3, shapes: [{ shape: 'debris-s', weight: 3 }, { shape: 'debris-m', weight: 2 }], motions: ['straight', 'tumble', 'drift-l', 'drift-r'], lane: { x: 270, width: 220 }, laneDrift: { amp: 40, period: 3000 }, seed: 101 },
     // B. Bigger debris, the first peaks (6000 to 13000, 280 px/s).

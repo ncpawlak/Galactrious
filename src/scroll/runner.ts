@@ -68,6 +68,8 @@ export class ScrollRunnerImpl implements ScrollRunner {
   def: ScrollLevelDef | null = null;
   distance = 0;
   onEvent: ((e: ScrollEvent) => void) | null = null;
+  /** Called when thunder arrives after a lightning flash (strength 0 to 1): the game adds a small screen shudder. */
+  onThunder: ((strength: number) => void) | null = null;
   private timeline: Exclude<ScrollEntry, ObstacleField>[] = [];
   private next = 0;
   private curSpeed = 0;
@@ -109,11 +111,17 @@ export class ScrollRunnerImpl implements ScrollRunner {
     this.obstacles.clear();
     this.allies.clear();
     this.log.length = 0;
-    this.background = new ScrollBackground(def.theme);
+    this.background = new ScrollBackground(def.theme, def.weather ?? 0);
+    this.background.onThunder = (s) => this.onThunder?.(s);
     this.host.setWeaponsLocked(!!def.weaponsLocked);
     if (def.allies) this.allies.set(def.allies.count, def.allies.pattern);
     this.emit('level-start');
     this.fireDue(0);
+  }
+
+  /** Set the weather intensity (0 to 1), easing over `ease` seconds. */
+  setWeather(intensity: number, ease = 3): void {
+    this.background?.setWeather(intensity, ease);
   }
 
   setSpeed(v: number, ease = 0.6): void {
@@ -147,7 +155,7 @@ export class ScrollRunnerImpl implements ScrollRunner {
     this.fireDue(this.distance);
     this.obstacles.update(dt, v);
     this.allies.update(dt);
-    this.background?.update(dt);
+    this.background?.update(dt, v);
     if (!wasDone && this.done) this.emit('level-end');
   }
 
@@ -203,6 +211,9 @@ export class ScrollRunnerImpl implements ScrollRunner {
       case 'theme':
         this.background?.setTheme(e.theme, e.fade ?? 2);
         break;
+      case 'setWeather':
+        this.background?.setWeather(e.intensity, e.ease ?? 3);
+        break;
       case 'pickup':
         this.emit('pickup', { name: e.name, x: e.x });
         break;
@@ -213,7 +224,7 @@ export class ScrollRunnerImpl implements ScrollRunner {
   }
 
   drawBackground(ctx: CanvasRenderingContext2D): void {
-    this.background?.draw(ctx, this.distance);
+    this.background?.draw(ctx, this.distance, this.curSpeed);
     this.allies.draw(ctx);
   }
 

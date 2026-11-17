@@ -88,7 +88,7 @@ const CHAPTER_2: CampaignLevel = {
       type: 'escape',
       title: 'Reach the jump gate',
       scroll: 'fp2-retreat',
-      exit: { x: 270, y: 215, r: 95 },
+      exit: { x: 270, y: 340, r: 120 },
       exitAtDistance: FP2_EXIT_DISTANCE,
       // The exit opens at about 110 s; the timer gives the player 30 s past that to get there.
       timer: 145,

@@ -6,6 +6,7 @@ export class Sfx {
   private ctx: AudioContext | null = null;
   private noise: AudioBuffer | null = null;
   private lastCarve = -1;
+  private lastHurt = -1;
 
   /** Call from a user-gesture handler (key/pointer). */
   resume(): void {
@@ -123,6 +124,33 @@ export class Sfx {
     this.envelope(c, src.connect(f), dur, JUICE.audio.volume * (0.8 + 0.7 * size));
     src.start(c.currentTime, Math.random() * 0.4, 0.7);
     this.tone(c, 210 / size, 40, 0.2 + 0.3 * size, 'sine', JUICE.audio.volume * (1 + 0.4 * size));
+  }
+
+  /** The player was hit: a low thud under a metallic crack (scrape = heavier, longer grind). Rate-limited. */
+  playerHit(scrape: boolean): void {
+    const c = this.ready();
+    if (!c || !this.noise) return;
+    if (c.currentTime - this.lastHurt < 0.12) return;
+    this.lastHurt = c.currentTime;
+    const v = JUICE.audio.volume;
+    this.tone(c, 130, 38, 0.28, 'sine', v * 2);
+    this.tone(c, 1500, 380, 0.09, 'square', v * 0.7);
+    const dur = scrape ? 0.3 : 0.12;
+    const src = c.createBufferSource();
+    src.buffer = this.noise;
+    const f = c.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = scrape ? 1800 : 3200;
+    f.Q.value = 2.5;
+    this.envelope(c, src.connect(f), dur, v * 0.9);
+    src.start(c.currentTime, Math.random() * 0.5, dur + 0.02);
+  }
+
+  /** Low-hull warning beep (the caller sets the pace); quiet. */
+  lowAlarm(vol: number): void {
+    const c = this.ready();
+    if (!c) return;
+    this.tone(c, 880, 880, 0.09, 'square', JUICE.audio.volume * vol * 0.5);
   }
 
   /** A room's console was first exposed: a short two-beep warning. */

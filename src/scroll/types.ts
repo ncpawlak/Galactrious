@@ -90,6 +90,8 @@ export type ScrollEntry =
   | { at: number; kind: 'allies'; on: boolean; count?: number; pattern?: AllyPattern }
   /** Switch the background theme (terrain / atmosphere change), cross-faded over `fade` seconds (default 2). */
   | { at: number; kind: 'theme'; theme: string; fade?: number }
+  /** Set the weather intensity (0 calm to 1 violent storm), easing over `ease` seconds (default 3). Drives lightning, turbulence, glow, rain, whiteouts. */
+  | { at: number; kind: 'setWeather'; intensity: number; ease?: number }
   /** A pickup (stub: emits a `pickup` event with `name`; there is no pickup entity yet). */
   | { at: number; kind: 'pickup'; name: string; x: number }
   /** A named event for the campaign framework (scripted beats, objective triggers). Emitted through `ScrollRunner.onEvent`. */
@@ -102,19 +104,51 @@ export type AllyPattern = 'weave' | 'loop' | 'strafe' | 'patrol';
 
 // --- background ----------------------------------------------------------------------------------------------
 
-/** One parallax layer: `speed` is the share of the scroll speed it moves at (0 = frozen, 1 = same as obstacles). */
-export type BackgroundLayer =
-  | { type: 'stars'; speed: number; count: number; color?: string }
+/**
+ * Weather response shared by layers: the layer's strength is `lo + (hi - lo) * weather` (default `[1, 1]` = always the same).
+ * It scales alpha for painted layers and the number of particles drawn for particle layers.
+ */
+export type WeatherRange = [lo: number, hi: number];
+
+/**
+ * One parallax or effect layer, drawn back to front. `speed` is the share of the scroll speed it moves at (0 = frozen, 1 = same
+ * as obstacles). Painted layers are precomputed canvases; particle layers have a capped, fixed particle count.
+ */
+export type BackgroundLayer = (
+  /** Star particles. `streak` > 0 stretches each star into a line of up to that many px at high scroll speed (none at a standstill). */
+  | { type: 'stars'; speed: number; count: number; color?: string; streak?: number; alpha?: number }
   | { type: 'clouds'; speed: number; count: number; color: string; alpha: number; size: [number, number] }
+  /** Jagged peak silhouettes. */
   | { type: 'mountains'; speed: number; color: string; snow?: string; alpha?: number; count?: number; height?: [number, number] }
   | { type: 'snow'; speed: number; count: number; drift: number; color?: string }
-  | { type: 'streaks'; speed: number; count: number; color: string; alpha: number };
+  | { type: 'streaks'; speed: number; count: number; color: string; alpha: number }
+  /** A planet whose curved limb fills the bottom of the screen: ocean, ice and cloud bands, terminator, city lights, atmosphere rim. */
+  | { type: 'planet'; speed: number; top?: number; radius?: number }
+  /** Distant fleet lights, far-off explosions and capital-ship silhouettes. `rate` = events per second. */
+  | { type: 'fleet'; rate: number; maxY?: number }
+  /** Dark roiling storm clouds (tile with wobbling strips). `wobble` = max sideways px at full weather. */
+  | { type: 'stormClouds'; speed: number; count: number; color: string; light: string; alpha: number; size: [number, number]; wobble?: number }
+  /** Wind-blown rain, ice or snow streaks slanting by `slant` (px sideways per px down), gusting. `fall` = px/s of its own fall. */
+  | { type: 'rain'; speed: number; count: number; color: string; alpha: number; slant: number; len: [number, number]; fall: number; width?: number }
+  /** Fast-moving dark debris silhouettes in the far field. */
+  | { type: 'shards'; count: number; alpha?: number }
+  /** Lightning: a soft flash over the whole scene, afterglow, a bolt, and a thunder callback. Frequency is capped (under 3 flashes per second). */
+  | { type: 'lightning'; color?: string }
+  /** Coloured glow at the screen edges that pulses (re-entry heat: orange-red; cold: blue). */
+  | { type: 'edgeGlow'; color: string; base?: number; rate?: number }
+  /** Slow whiteouts (or darkening with a dark colour): the screen washes over for a few seconds. `strength` is the peak alpha (soft, at most 0.6). */
+  | { type: 'whiteout'; color: string; strength: number; rate?: number; seed?: number }
+  /** Camera turbulence: the whole background shakes by up to `amp` px at full weather (kept small). */
+  | { type: 'turbulence'; amp: number }
+) & { weather?: WeatherRange };
 
-/** Background as data: a vertical sky gradient plus parallax layers drawn back to front. */
+/** Background as data: a vertical sky gradient plus layers drawn back to front. */
 export interface ScrollTheme {
   id: string;
   /** Sky gradient stops, top to bottom. */
   sky: string[];
+  /** Sky at full weather, cross-faded in with the weather intensity (optional). */
+  stormSky?: string[];
   layers: BackgroundLayer[];
 }
 
@@ -129,6 +163,8 @@ export interface ScrollLevelDef {
   speed: number;
   /** Theme id (`SCROLL_THEMES`) or an inline theme. */
   theme: string | ScrollTheme;
+  /** Starting weather intensity 0 to 1 (default 0); change it over distance with `setWeather` entries. */
+  weather?: number;
   /** Player weapons locked from the start. */
   weaponsLocked?: boolean;
   /** Cosmetic allies from the start. */
