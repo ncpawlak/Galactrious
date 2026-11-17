@@ -3,8 +3,12 @@
  * of levels, a level is a preset ship + a sequence of objectives + medal rules. The runtime is `session.ts`.
  */
 import type { Medal, UnlockKind } from '../save';
+import type { AssistSpec } from '../finale/assists';
+import type { UnlockSpec } from '../finale/unlocks';
 import type { ScrollLevelDef } from '../scroll/types';
 import type { Cinematic } from './cinematic';
+
+export type { AssistSpec, UnlockSpec };
 
 export type { Medal };
 
@@ -34,7 +38,11 @@ export type BeatAction =
   | { do: 'startObjective'; objective: string }
   | { do: 'completeObjective' }
   /** Play a cinematic now (takes control, pauses the objective's clock and the level timer until it ends). */
-  | { do: 'cinematic'; cinematic: Cinematic };
+  | { do: 'cinematic'; cinematic: Cinematic }
+  /** Squad assist (src/finale/assists.ts): a warning cue and countdown (`assist.warn`, default 4 s), then the wingmen come through. */
+  | { do: 'assist'; assist: AssistSpec }
+  /** The armour becomes hittable if the ship has `empireTech` (src/finale/system.ts), with the resonance cue. Nothing happens otherwise. */
+  | { do: 'armourResonance' };
 
 interface ObjectiveBase {
   id: string;
@@ -106,8 +114,17 @@ export interface BossFightObjective extends ObjectiveBase {
   until?: { component: string } | { room: string };
   /** Capture the boss into this campaign snapshot slot when the objective completes (latest completion replaces). */
   snapshotSlot?: string;
-  /** Restore this slot's snapshot onto the boss when the fight starts (the finale). Ignored when the slot is empty. */
+  /**
+   * Restore this slot's snapshot onto the boss when the fight starts (the finale). When the slot is empty (a debug start, a player who
+   * skipped chapter 1) a generated fallback is used if the boss has one (src/finale/fallback.ts: the capital ship's disabled state).
+   */
   restoreSlot?: string;
+  /** Seconds after the objective starts at which the armour becomes carvable, IF the player's ship has `empireTech` (the armour resonance cue plays). Omitted = never. */
+  armourResonance?: number;
+  /** The boss's death plays the core overload sequence (src/finale/overload.ts) before the objective completes. */
+  overload?: boolean;
+  /** Override the restored core hit points (balance the finale; the snapshot of chapter 1 keeps the core at its full, nearly untouchable value). */
+  coreHp?: number;
 }
 
 /** Fly the scrolling level to its end (`scroll` on the objective is required): done when the distance reaches the level's length. Chapter 3. */
@@ -184,6 +201,11 @@ export interface CampaignDefinition {
   levels: CampaignLevel[];
   /** Awarded when the last level is completed (slice 1: a test flag). */
   completionUnlock?: UnlockAward;
+  /**
+   * Written into the save when the last level is completed, then shown on the unlock reveal screen (src/finale/unlocks.ts).
+   * "Fallen Peace" sets this to `FALLEN_PEACE_UNLOCKS` once chapter 7 is its last level (and drops `completionUnlock`).
+   */
+  unlocks?: UnlockSpec[];
 }
 
 
@@ -200,5 +222,7 @@ export interface LevelResult {
   newBestMedal: boolean;
   /** Labels of unlocks newly awarded by this result. */
   unlocked: string[];
+  /** The `CampaignDefinition.unlocks` that were new with this result (the reveal screen lists them). */
+  newUnlocks?: UnlockSpec[];
   counters: LevelCounters;
 }

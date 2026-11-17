@@ -10,6 +10,7 @@
 /** Every node type, including the reserved ones (not built, `createNode` throws for them). */
 import type { CinematicHost } from '../campaign/cinematic';
 import type { BossSnapshot } from '../campaign/snapshot';
+import type { AssistSpec } from '../finale/assists';
 import type { WaveDefinition } from '../waves';
 import type { ScrollLevelDef, ScrollRunner } from '../scroll/types';
 
@@ -198,6 +199,12 @@ export interface NodeHost {
   shipAlive(): boolean;
   /** State of a component or room of the running boss, by id: `destroyed`, `intact` or `missing` (no such id, or no boss). */
   bossTarget(kind: 'component' | 'room', id: string): 'destroyed' | 'intact' | 'missing';
+  /** Start a squad assist (src/finale/assists.ts). */
+  assist(spec: AssistSpec): void;
+  /** The armour switch: when `on`, the running boss's armour becomes carvable and the resonance cue plays. */
+  armourResonance(on: boolean): void;
+  /** The running boss's death plays the core overload sequence before the fight counts as won. */
+  setOverload(on: boolean): void;
   /** Snapshot of the running boss fight, or null when there is none. */
   captureBoss(): BossSnapshot | null;
   /** Start a wave and turn combat on with no boss (ship, weapons, bullets). The units spawn on the wave's own schedule. Health carries over. */

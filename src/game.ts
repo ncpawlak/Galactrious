@@ -30,6 +30,10 @@ import { AUX_DEFS, AUX_KEYS, MAIN_DEFS, WEAPON_DEFS, Sweep, WeaponSystem, auxByI
 import { drawShipLook, SHIP_BY_ID, shipById, shipMinY, SHIPS } from './ships';
 import { cleanLoadout } from './loadouts';
 import { UnitSystem, type Unit } from './units';
+import { FinaleSystem } from './finale/system';
+import type { AssistSpec } from './finale/assists';
+import { finaleSelfTest } from './finale/selfTest';
+import { ACE_UNITS } from './enemies/empireAces';
 import { divePath, spawnWave, type WaveDefinition } from './waves';
 import type { RoomHost } from './rooms';
 import { UNIT_LIST, WAVE_LIST, unitById } from './enemies';
@@ -120,6 +124,31 @@ export class Game {
   /** False in wave nodes: the dormant boss fight is not updated, drawn, targeted or shown in the HUD. */
   private bossActive = true;
   private readonly units = new UnitSystem(this.ship);
+  /** Finale systems (src/finale): squad assists, named-ace HUD, armour resonance cue, core overload. */
+  private readonly finale = new FinaleSystem({
+    units: () => this.units.units,
+    enemyPoints: () => this.units.live().map((u) => u.center()),
+    clearBullets: (x, y, r) => {
+      let n = 0;
+      for (const b of this.attacks.bullets) {
+        if (b.alive && Math.hypot(b.x - x, b.y - y) <= r) {
+          b.alive = false;
+          n++;
+        }
+      }
+      return n;
+    },
+    hitAt: (x, y, r, e) => this.assistHit(x, y, r, e),
+    blast: (x, y, size) => {
+      this.explode(x, y, size);
+      this.fx.onComponentDestroy(size);
+      this.sfx.componentDestroy(size);
+    },
+    bigBlast: () => {
+      this.fx.onExplosion();
+      this.sfx.explosion();
+    },
+  });
   /** Where room functions fire, drop hazards and launch drones: the boss's rooms and every unit's room. */
   private readonly roomHost: RoomHost = {
     fire: (p, o, alive) => this.attacks.firePattern(p, o, this.ship, alive),
@@ -332,6 +361,13 @@ export class Game {
       },
       shipAlive: () => this.state === 'playing',
       bossTarget: (kind, id) => this.bossTarget(kind, id),
+      assist: (spec) => this.finale.assists.schedule(spec),
+      armourResonance: (on) => {
+        if (!on || !this.bossActive) return;
+        this.fight.armourCarvable = true;
+        this.finale.armourResonance();
+      },
+      setOverload: (on) => (this.finale.overloadEnabled = on),
       captureBoss: () => (this.bossActive ? captureSnapshot(this.fight) : null),
       startWave: (wave, scroll) => {
         this.bossActive = false;
@@ -350,6 +386,7 @@ export class Game {
       },
       endCombat: () => {
         this.combat = false;
+        this.finale.reset();
         this.stopScroll();
         this.weaponsLocked = false;
         this.attacks.clear();
@@ -439,6 +476,9 @@ export class Game {
     const r = new ScrollRunnerImpl(this.scrollHost);
     this.scroll = r;
     r.onThunder = (k) => this.fx.rumble(0.12 + 0.12 * k);
+    r.onEvent = (e) => {
+      if (e.name === 'assist') this.finale.assists.schedule(e.data as AssistSpec); // timeline `event` entries named 'assist' (src/finale/assists.ts)
+    };
     r.start(def);
   }
 
@@ -661,6 +701,24 @@ export class Game {
         counters: () => this.run.campaign.session?.counters() ?? null,
         flow: this.run.campaign,
         snapshotRoundTrip: () => this.snapshotRoundTrip(),
+        /** Open the unlock reveal screen for a campaign (writes its unlocks into the save): showUnlocks('fallen-peace'). */
+        showUnlocks: (campaignId: string) => this.run.showCampaignUnlocks(campaignId),
+      },
+      /**
+       * Finale systems (src/finale), usable in any combat: assist(spec) schedules a squad assist, ace(id, x, y) spawns an ace
+       * ('empire-ace-viper' | 'cinder' | 'raven'), overload() plays the core overload on the current boss now, cue() the armour shimmer,
+       * selfTest() checks the empireTech gate, the fallback snapshot and the restore round trip, system = the live `FinaleSystem`.
+       */
+      finale: {
+        system: this.finale,
+        assist: (spec: AssistSpec) => this.finale.assists.schedule(spec),
+        ace: (id: string = ACE_UNITS[0].id, x = W / 2, y = 220) => this.spawnDebugUnit(id, x, y),
+        overload: () => {
+          this.finale.overloadEnabled = true;
+          this.fight.boss.core.hp = 0;
+        },
+        cue: () => this.finale.armourResonance(),
+        selfTest: () => finaleSelfTest(),
       },
       units: this.units,
       /** Spawn one unit by id at (x, y) (default: near the top centre) in the current combat, entering from above. */
@@ -885,6 +943,7 @@ export class Game {
     }
     this.applyEquipment();
     this.units.clear();
+    this.finale.reset();
     this.targetList = [];
     if (!keepFight) {
       const old = this.fight;
@@ -1133,7 +1192,11 @@ export class Game {
     }
     if (this.scroll && this.state === 'playing') this.scroll.update(dt);
     if (this.bossActive) this.fight.update(dt);
-    this.units.update(dt, this.state === 'playing' && this.attacks.enabled && !this.holdFire, this.attacks, this.ship);
+    // Aim: the ship, or the squad's decoy during a `distract` assist (the same object when none is running).
+    const aim = this.finale.aimPoint(this.ship);
+    for (const f of this.allFights()) f.components.target = aim;
+    this.units.update(dt, this.state === 'playing' && this.attacks.enabled && !this.holdFire, this.attacks, aim);
+    this.finale.update(dt);
     this.refreshTargets();
     for (const f of this.allFights()) for (const d of f.boss.dustEvents.splice(0)) this.spawnDebris(d.x, d.y, 24, false, d.r, d.g, d.b);
 
@@ -1151,12 +1214,38 @@ export class Game {
     if (this.bossActive) this.trackClears();
 
     if (this.state === 'playing' && this.bossActive && this.boss.defeated) {
-      this.state = 'won';
-      this.wonAt = this.elapsed;
+      if (!this.finale.overloadEnabled) this.declareBossWon(true);
+      else if (!this.finale.overload) {
+        // The capital ship's death: the core overload plays first (src/finale/overload.ts), then the win.
+        this.attacks.clear();
+        this.finale.startOverload(this.boss, () => this.declareBossWon(false));
+      }
+    }
+  }
+
+  /** The boss fell: `blast` adds the usual core explosion (the overload sequence has its own). */
+  private declareBossWon(blast: boolean): void {
+    if (this.state !== 'playing') return;
+    this.state = 'won';
+    this.wonAt = this.elapsed;
+    if (blast) {
       this.explode(this.boss.x + this.boss.core.x, this.boss.y + this.boss.core.y, 160);
       this.fx.onExplosion();
       this.sfx.explosion();
     }
+  }
+
+  /**
+   * A squad assist hit at (x, y): enemy units take it like a shot (carve, components), the boss only has its gun housings hit. Never a
+   * boss layer, so armour is unaffected whatever its state.
+   */
+  private assistHit(x: number, y: number, r: number, energy: number): void {
+    for (const u of this.units.units) {
+      if (u.state !== 'alive' || !nearBox(u.fight.boss, x, y, r)) continue;
+      if (u.fight.components.hit(x, y, energy)) continue;
+      this.carveAt(u.fight, x, y, energy, 'default');
+    }
+    if (this.bossActive && !this.boss.defeated && nearBox(this.boss, x, y, r)) this.fight.components.hit(x, y, energy);
   }
 
   /** The boss fight (when active) and every unit's fight. */
@@ -1202,7 +1291,7 @@ export class Game {
   /** Boss fire, player damage and the defeat/reset flow. */
   private updateThreat(dt: number): void {
     const playing = this.state === 'playing';
-    this.attacks.update(dt, this.ship, playing && !(this.bossActive && this.boss.defeated) && !this.holdFire);
+    this.attacks.update(dt, this.finale.aimPoint(this.ship), playing && !(this.bossActive && this.boss.defeated) && !this.holdFire);
     if (!playing) {
       if (this.mode === 'boss' && this.state === 'lost' && this.elapsed - this.lostAt > TUNING.player.defeatTime) this.reset();
       return;
@@ -1586,7 +1675,10 @@ export class Game {
       for (const s of this.stars) ctx.fillRect(s.x, s.y, s.size, s.size);
     }
 
-    if (this.bossActive && (!this.boss.defeated || this.elapsed - this.wonAt < 1.2)) this.enrageTint.render(ctx, this.boss, this.fight);
+    if (this.bossActive && !this.finale.bossHidden && (!this.boss.defeated || this.finale.overload !== null || this.elapsed - this.wonAt < 1.2)) {
+      this.enrageTint.render(ctx, this.boss, this.fight);
+      this.finale.drawArmourCue(ctx, this.fight);
+    }
     this.drawUnits();
     this.scroll?.drawObstacles(ctx);
     this.cineScenery?.(ctx);
@@ -1598,9 +1690,10 @@ export class Game {
     this.weapons.draw(ctx);
     this.tags.draw(ctx);
     this.attacks.draw(ctx);
+    this.finale.drawWorld(ctx);
     this.drawParticles();
     const hideHud = !!this.cineLock?.hideHud;
-    if (this.bossActive && !hideHud) this.hud.draw(ctx, this.boss, this.fight.rooms);
+    if (this.bossActive && !this.finale.bossHidden && !hideHud) this.hud.draw(ctx, this.boss, this.fight.rooms);
     if (this.state === 'playing') {
       this.drawShip();
       if (!this.cinePose) this.dodge.drawShipFx(ctx, this.ship.x, this.ship.y);
@@ -1609,6 +1702,7 @@ export class Game {
     this.fx.endShake(ctx);
     if (this.fx.enabled && this.state === 'playing') this.dmgFx.drawVignette(ctx, this.health.hp, this.health.maxHp);
     if (!hideHud) this.health.draw(ctx);
+    this.finale.drawOverlay(ctx);
     if (this.bossActive && !hideHud && this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
     if (this.state === 'playing' && !hideHud) this.dodge.drawButton(ctx);
     if (this.state === 'playing' && !hideHud) this.hud.drawWeapons(ctx, this.weapons, this.weaponsLocked);
