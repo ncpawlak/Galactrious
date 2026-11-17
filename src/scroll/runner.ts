@@ -1,8 +1,25 @@
 import { W } from '../config';
 import { AllySystem } from './allies';
 import { ScrollBackground } from './background';
-import { mulberry32, ObstacleSystem, SIZES } from './obstacles';
+import { isRockShape, mulberry32, ObstacleSystem, SIZES } from './obstacles';
 import type { MotionPreset, ObstacleField, ObstacleSpawn, ScrollEntry, ScrollEvent, ScrollHost, ScrollLevelDef, ScrollRunner } from './types';
+
+type EdgeChoice = 'top' | 'bottom' | 'left' | 'right';
+
+/** One entry edge for the i-th obstacle of a field: a fixed edge, 'sides' alternating left and right, or a weighted mix. */
+function pickEdge(edge: ObstacleField['edge'], rnd: () => number, i: number): EdgeChoice {
+  const one = (e: 'top' | 'bottom' | 'sides'): EdgeChoice => (e === 'sides' ? (rnd() < 0.5 ? 'left' : 'right') : e);
+  if (!edge) return 'top';
+  if (typeof edge === 'string') return one(edge);
+  const total = edge.reduce((a, c) => a + (c.weight ?? 1), 0);
+  let pick = rnd() * total;
+  for (const c of edge) {
+    pick -= c.weight ?? 1;
+    if (pick <= 0) return one(c.edge);
+  }
+  void i;
+  return one(edge[0].edge);
+}
 
 /** Expand every `field` into individual obstacle spawns (deterministic per seed) and sort the timeline by distance. */
 export function compileTimeline(entries: ScrollEntry[]): Exclude<ScrollEntry, ObstacleField>[] {
@@ -41,7 +58,7 @@ export function compileTimeline(entries: ScrollEntry[]): Exclude<ScrollEntry, Ob
           minL = Math.min(minL, l);
           maxL = Math.max(maxL, l);
         }
-        const body = SIZES[shape].w * (shape.startsWith('peak') ? 0.52 : 0.72) * (1 + 0.1 * rnd());
+        const body = SIZES[shape].w * (isRockShape(shape) ? 0.52 : 0.72) * (1 + 0.1 * rnd());
         const half = e.lane.width / 2 + body;
         if (x > minL - half && x < maxL + half) {
           const leftX = minL - half - rnd() * 30;
@@ -50,7 +67,18 @@ export function compileTimeline(entries: ScrollEntry[]): Exclude<ScrollEntry, Ob
         }
         x = Math.min(W + 60, Math.max(-60, x));
       }
-      out.push({ at, kind: 'obstacle', shape, x, motion: motions[Math.floor(rnd() * motions.length)], carvable: e.carvable, seed: Math.floor(rnd() * 1e6) });
+      const motion = motions[Math.floor(rnd() * motions.length)];
+      const edge = pickEdge(e.edge, rnd, i);
+      const o: ObstacleSpawn = { at, kind: 'obstacle', shape, x, motion, carvable: e.carvable, seed: Math.floor(rnd() * 1e6), damage: e.damage };
+      if (edge === 'bottom') o.edge = 'bottom';
+      else if (edge === 'left' || edge === 'right') {
+        // Side drifters: slide in from the edge to a small inset, starting mid-screen so they cross the ship's zone going up.
+        o.edge = edge;
+        const inset = 40 + rnd() * 110;
+        o.x = edge === 'left' ? inset : W - inset;
+        o.y = 420 + rnd() * 460;
+      }
+      out.push(o);
     }
   }
   return out.sort((a, b) => a.at - b.at);
@@ -113,6 +141,8 @@ export class ScrollRunnerImpl implements ScrollRunner {
     this.log.length = 0;
     this.background = new ScrollBackground(def.theme, def.weather ?? 0);
     this.background.onThunder = (s) => this.onThunder?.(s);
+    this.background.setSkyFlip(!!def.skyFlip);
+    this.host.setEnemyFireScale(def.fireScale ?? 1);
     this.host.setWeaponsLocked(!!def.weaponsLocked);
     if (def.allies) this.allies.set(def.allies.count, def.allies.pattern);
     this.emit('level-start');
@@ -122,6 +152,11 @@ export class ScrollRunnerImpl implements ScrollRunner {
   /** Set the weather intensity (0 to 1), easing over `ease` seconds. */
   setWeather(intensity: number, ease = 3): void {
     this.background?.setWeather(intensity, ease);
+  }
+
+  /** Grow the background planet (cinematics): 0 normal, 1 fills most of the screen. */
+  setPlanetZoom(k: number): void {
+    this.background?.setPlanetZoom(k);
   }
 
   setSpeed(v: number, ease = 0.6): void {
@@ -177,7 +212,11 @@ export class ScrollRunnerImpl implements ScrollRunner {
       case 'obstacle': {
         const o = this.obstacles.spawn(e as ObstacleSpawn);
         // Entries fired late (skipTo, a big frame) start already scrolled in by the distance they missed.
-        if (lag > 0) o.y += lag;
+        if (lag > 0) {
+          // A late entry (skipTo, a big frame) has already been in the world for `lag / speed` seconds.
+          if (o.rise === 0 && o.edge === 'top') o.y += lag;
+          else o.update(lag / Math.max(60, this.curSpeed), this.curSpeed);
+        }
         break;
       }
       case 'unit':

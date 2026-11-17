@@ -8,6 +8,7 @@
  */
 
 /** Every node type, including the reserved ones (not built, `createNode` throws for them). */
+import type { CinematicHost } from '../campaign/cinematic';
 import type { BossSnapshot } from '../campaign/snapshot';
 import type { WaveDefinition } from '../waves';
 import type { ScrollLevelDef, ScrollRunner } from '../scroll/types';
@@ -176,7 +177,9 @@ export interface NodeHost {
    * starts when `bossId` is given (optionally with a restored `BossSnapshot`), otherwise there is no boss. `keepHealth`
    * false heals the ship fully (a checkpoint restart), true keeps its hull. Also unlocks weapons (`setWeaponsLocked`).
    */
-  startCombat(opts?: { bossId?: string; keepHealth?: boolean; restore?: BossSnapshot; scroll?: string | ScrollLevelDef }): void;
+  startCombat(opts?: { bossId?: string; keepHealth?: boolean; restore?: BossSnapshot; scroll?: string | ScrollLevelDef; startHealth?: number; forceDamageFx?: boolean }): void;
+  /** What a cinematic may do (src/campaign/cinematic.ts). */
+  readonly cine: CinematicHost;
   /** Queue one unit (campaign spawn). Needs combat to be on. */
   spawnUnit(req: SpawnRequest): void;
   /** Queue a whole wave by id (`WAVE_LIST`), tagging its units. */

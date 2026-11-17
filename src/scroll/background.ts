@@ -96,6 +96,10 @@ interface Fx {
   shakeY: number;
   /** Strength of reduced-motion damping, 1 = normal. */
   calm: number;
+  /** Sky gradient drawn upside down (a level flown backwards). */
+  flipSky: boolean;
+  /** 0 = the planet as authored, 1 = grown to fill most of the screen (cinematics). */
+  planetZoom: number;
 }
 
 const clamp = (v: number, a = 0, b = 1): number => Math.min(b, Math.max(a, v));
@@ -634,11 +638,17 @@ class ThemeView {
   draw(ctx: CanvasRenderingContext2D, fx: Fx, alpha = 1): void {
     const w = fx.weather;
     ctx.globalAlpha = alpha;
+    if (fx.flipSky) {
+      ctx.save();
+      ctx.translate(0, H);
+      ctx.scale(1, -1);
+    }
     ctx.drawImage(this.sky, 0, 0);
     if (this.storm && w > 0.01) {
       ctx.globalAlpha = alpha * w;
       ctx.drawImage(this.storm, 0, 0);
     }
+    if (fx.flipSky) ctx.restore();
     for (const b of this.built) {
       const l = b.layer;
       const f = wf(l, w);
@@ -781,6 +791,13 @@ class ThemeView {
     const top = pl.top + shift;
     ctx.globalAlpha = alpha;
     ctx.save();
+    if (fx.planetZoom > 0.001) {
+      // Grow about the bottom centre: the limb climbs the screen and the planet fills more and more of it.
+      const sc = 1 + fx.planetZoom * 1.9;
+      ctx.translate(pl.cx, H);
+      ctx.scale(sc, sc);
+      ctx.translate(-pl.cx, -H);
+    }
     ctx.beginPath();
     ctx.arc(pl.cx, top + pl.r, pl.r - 1, 0, TAU);
     ctx.clip();
@@ -789,7 +806,15 @@ class ThemeView {
     ctx.drawImage(pl.tex, 0, Math.round(top + off));
     ctx.drawImage(pl.tex, 0, Math.round(top + off + PLANET_TEX_H));
     ctx.restore();
+    ctx.save();
+    if (fx.planetZoom > 0.001) {
+      const sc = 1 + fx.planetZoom * 1.9;
+      ctx.translate(pl.cx, H);
+      ctx.scale(sc, sc);
+      ctx.translate(-pl.cx, -H);
+    }
     ctx.drawImage(pl.over, 0, Math.round(top - PLANET_PAD));
+    ctx.restore();
   }
 
   private drawFleet(ctx: CanvasRenderingContext2D, events: FarEvent[], alpha: number): void {
@@ -939,7 +964,7 @@ export class ScrollBackground {
   private kick = 0;
 
   private readonly fx: Fx = {
-    dist: 0, time: 0, speed: 0, sp: 0, weather: 0, gust: 0.5, flash: 0, glow: 0, boltIdx: 0, boltX: 270, shakeX: 0, shakeY: 0, calm: 1,
+    dist: 0, time: 0, speed: 0, sp: 0, weather: 0, gust: 0.5, flash: 0, glow: 0, boltIdx: 0, boltX: 270, shakeX: 0, shakeY: 0, calm: 1, flipSky: false, planetZoom: 0,
   };
 
   constructor(theme: string | ScrollTheme, weather = 0) {
@@ -956,6 +981,16 @@ export class ScrollBackground {
       this.views.set(t.id, v);
     }
     return v;
+  }
+
+  /** Flip the sky gradient (a level flown backwards). */
+  setSkyFlip(on: boolean): void {
+    this.fx.flipSky = on;
+  }
+
+  /** Grow the planet: 0 normal, 1 fills most of the screen. */
+  setPlanetZoom(k: number): void {
+    this.fx.planetZoom = clamp(k);
   }
 
   get themeId(): string {

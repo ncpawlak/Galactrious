@@ -133,6 +133,7 @@ export class CampaignFlow {
         let key: string | null;
         while ((key = host.takeKey())) {
           if (key === 'Escape') {
+            if (s.skipCinematic()) continue; // Esc skips a cinematic (after its short delay); it never leaves the level then
             this.shutdown();
             this.levels = new LevelSelectScreen(this.campaign!, () => this.unlockAll);
             this.sub = 'levels';

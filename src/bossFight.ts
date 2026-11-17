@@ -33,6 +33,8 @@ export class BossFight {
   moveTime = 0;
   /** Debug: when false the boss is held at its anchor (movement frozen). */
   movementEnabled = true;
+  /** Extra offset added on top of the phase movement: a scripted lead-in (the capital ship's approach) or a unit flying away. Cosmetic: never part of a snapshot. */
+  extraOffset: Offset2 = { x: 0, y: 0 };
   /** Debug: when set, replaces the phase's movement (live, with the usual ease). */
   movementOverride: Movement | null = null;
   /** True from an enrage phase's start on (later phases keep it). */
@@ -257,7 +259,7 @@ export class BossFight {
       off = { x: off.x + (this.blendFrom.x - off.x) * k, y: off.y + (this.blendFrom.y - off.y) * k };
     }
     this.lastOffset = off;
-    this.boss.setOffset(off.x, off.y);
+    this.boss.setOffset(off.x + this.extraOffset.x, off.y + this.extraOffset.y);
     if (!this.boss.coreSimple) this.boss.coreVuln = this.coreVulnerability(); // reactor look only
     this.boss.update(dt);
     this.components.update(dt);

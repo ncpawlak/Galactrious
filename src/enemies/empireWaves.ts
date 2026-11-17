@@ -9,7 +9,35 @@ const row = (count: number, y: number, spacing: number, x = 270): Formation => (
 const slots = (...pts: [number, number][]): Formation => ({ kind: 'slots', points: pts.map(([x, y]) => ({ x, y })) });
 const group = (unit: string, formation: Formation, rest: Partial<WaveGroup> = {}): WaveGroup => ({ unit, formation, ...rest });
 
+/**
+ * The chapter 1 stream: a continuous, escalating flow of fighters. A new group arrives every 3.1 s at first, every 2.3 s at the end,
+ * 2 to 4 fighters each, so the next group is in the air while the last one is still alive: the screen never goes empty. Two gunship
+ * pairs (t = 22, 40) break up the rhythm. Everything is queued up front by `start` times; the objective's clock (a time gate, not a
+ * kill count) decides when the stream stops (STREAM_SECONDS).
+ */
+export const STREAM_SECONDS = 52;
+
+function streamGroups(): WaveGroup[] {
+  const out: WaveGroup[] = [];
+  const entrances = ['swoop', 'loop', 'drop'] as const;
+  let t = 0;
+  for (let k = 0; t < STREAM_SECONDS; k++) {
+    const n = 2 + Math.floor(t / 28);
+    const x = 150 + ((k * 83) % 240);
+    const y = 150 + ((k * 67) % 220);
+    const f: Formation = k % 3 === 0 ? row(n, y, 62, x) : k % 3 === 1 ? { kind: 'vee', count: n + 1, x, y: y + 40, spacingX: 44, spacingY: 34 } : slots(...Array.from({ length: n }, (_, i): [number, number] => [x - 70 + i * 70, y + (i % 2) * 40]));
+    out.push(group('empire-fighter', f, { entrance: { kind: entrances[k % 3] }, start: t, stagger: 0.28, dive: { first: 4 + (k % 3), every: 7 } }));
+    t += 3.1 - 0.8 * (t / STREAM_SECONDS);
+  }
+  // Gunship pairs with an escort row.
+  out.push(group('empire-gunship', slots([150, 130], [390, 130]), { entrance: { kind: 'drop', time: 2.6 }, start: 22, stagger: 0.8 }));
+  out.push(group('empire-gunship', slots([210, 120], [330, 120]), { entrance: { kind: 'drop', time: 2.6 }, start: 40, stagger: 0.8 }));
+  return out;
+}
+
 export const EMPIRE_WAVES: WaveDefinition[] = [
+  /** Chapter 1, objective 1: the endless-feeling fighter stream (see `streamGroups`). */
+  { id: 'fp1-stream', name: 'Dogfight stream', lower: 40, groups: streamGroups() },
   /** Chapter 1, objective 1: four waves of empire fighters, gunships in the last. 28 fighters and 2 gunships. */
   {
     id: 'fp1-dogfight',

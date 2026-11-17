@@ -7,6 +7,7 @@ import { BOSSES, DEFAULT_BOSS_ID, type BossDefinition } from './bosses';
 import type { CarveShapeName } from './carveShapes';
 import { BLAST, BLAST_DEFAULT_SCALE, H, setBlastScale, TUNING, W, WEAPONS } from './config';
 import { saveStore, type UnlockKind } from './save';
+import type { CinematicHost, ShipPose } from './campaign/cinematic';
 import { setScrollHooks } from './campaign/hooks';
 import { DebugPanel, modifierMult } from './debugControls';
 import { Effects } from './effects';
@@ -19,6 +20,7 @@ import { Input } from './input';
 import { MOVEMENT_PRESETS } from './movement';
 import { Dodge, Health } from './player';
 import { DamageFx, type Emit } from './damageFx';
+import { dodgeTarget } from './debugBot';
 import { TagSystem, type TagSet } from './tags';
 import { CARDS, CARD_BY_ID } from './upgrades/cards';
 import { RewardNode } from './flow/nodes/reward';
@@ -153,9 +155,18 @@ export class Game {
     spawnWave: (w) => this.spawnDebugWave(w),
     spawnBoss: (id) => this.activateBoss(id),
     setWeaponsLocked: (on) => this.setWeaponsLocked(on),
+    setEnemyFireScale: (k) => (this.units.fireScale = k),
   };
   /** Campaign: weapons off (chapter 3). Cleared by every `reset`, so a checkpoint restart re-applies it from the objective. */
   private weaponsLocked = false;
+  /** Cinematic state (src/campaign/cinematic.ts): the lock the running cinematic asked for, and the ship pose it drives (null = the player steers). */
+  private cineLock: Parameters<CinematicHost['begin']>[0] | null = null;
+  private cinePose: ShipPose | null = null;
+  private cineSavedLocked = false;
+  private cineScenery: ((g: CanvasRenderingContext2D) => void) | null = null;
+  /** Two reasons the ship smokes and burns whatever its hull: the level flag (a crippled ship) and a cinematic's `burn`. */
+  private fxForceLevel = false;
+  private fxForceCine = false;
   /** Cumulative combat counters the campaign reads (kills, hits, rooms); never reset. */
   private readonly combatCounters: CombatCounters = { kills: 0, hits: 0, damage: 0, roomsDestroyed: 0, killsByTag: {} };
   private lostAt = 0;
@@ -168,7 +179,9 @@ export class Game {
   /** Time (s) at which 25% of the hull layer (layer 0) was carved away. */
   private hull25At: number | null = null;
   /** Debug: scripted ship control for measuring clear times. 'sweep' = steady side-to-side, 'focus' = aim at the core. */
-  private auto: 'off' | 'sweep' | 'focus' = 'off';
+  private auto: 'off' | 'sweep' | 'focus' | 'dodge' = 'off';
+  /** Debug: the dodging bot's goal zone (e.g. the jump gate), see src/debugBot.ts. */
+  private botGoal: { x: number; y: number; r: number } | null = null;
   private testMode = false;
   private readonly fx = new Effects();
   private readonly sfx = new Sfx();
@@ -297,7 +310,12 @@ export class Game {
       startCombat: (opts) => {
         this.beginCombat({ keepHealth: false, ...opts });
         if (opts?.scroll) this.beginScroll(opts.scroll);
+        // A level that starts the ship crippled: a fresh start and every checkpoint restart begin at this hull, not full.
+        if (opts?.startHealth !== undefined && !opts.keepHealth) this.health.hp = Math.min(this.health.maxHp, Math.max(1, opts.startHealth));
+        this.fxForceLevel = !!opts?.forceDamageFx;
+        this.syncFxForce();
       },
+      cine: this.makeCineHost(),
       spawnUnit: (req) => this.spawnCampaignUnit(req),
       spawnWaveById: (id, tag) => {
         const def = WAVE_LIST.find((w) => w.id === id);
@@ -341,6 +359,12 @@ export class Game {
         this.tags.reset();
         this.bullets = [];
         this.particles = [];
+        this.cineLock = null;
+        this.cinePose = null;
+        this.cineScenery = null;
+        this.fxForceLevel = this.fxForceCine = false;
+        this.syncFxForce();
+        this.fight.extraOffset = { x: 0, y: 0 };
       },
       healFull: () => {
         this.syncShip();
@@ -349,6 +373,62 @@ export class Game {
       takeTap: () => this.taps.shift() ?? null,
       takeKey: () => this.keyPresses.shift() ?? null,
       pointer: () => this.input.hover,
+    };
+  }
+
+  private syncFxForce(): void {
+    this.dmgFx.force = this.fxForceLevel || this.fxForceCine;
+  }
+
+  /** What a running cinematic may do (src/campaign/cinematic.ts). Cosmetic except the listed state changes. */
+  private makeCineHost(): CinematicHost {
+    return {
+      begin: (lock) => {
+        this.cineLock = lock;
+        this.cineSavedLocked = this.weaponsLocked;
+        if (lock.weapons) this.weaponsLocked = true;
+        this.taps.length = 0;
+      },
+      end: () => {
+        const lock = this.cineLock;
+        this.cineLock = null;
+        if (lock?.weapons) this.weaponsLocked = this.cineSavedLocked;
+        if (lock?.bossInvincible) this.refreshTargets();
+        // The ship pose is kept until the next combat starts (a cinematic that sends the ship off-screen leaves it there).
+        if (this.cinePose && lock?.input === false) this.cinePose = null;
+      },
+      setPose: (p) => {
+        this.cinePose = p;
+        if (p) {
+          this.ship.x = p.x;
+          this.ship.y = p.y;
+        }
+      },
+      shipPos: () => ({ x: this.ship.x, y: this.ship.y }),
+      explode: (x, y, radius, shake) => {
+        this.explode(x, y, Math.round(radius * 0.9));
+        this.fx.onComponentDestroy(radius);
+        this.fx.kick(shake);
+        this.sfx.componentDestroy(radius);
+      },
+      anchor: (name) => {
+        const a = this.bossActive ? this.fight.boss.anchors[name] : undefined;
+        return a ? { x: this.fight.boss.x + a.x, y: this.fight.boss.y + a.y } : null;
+      },
+      emit: (x, y, vx, vy, life, color, size) => this.emitP(x, y, vx, vy, life, color, size),
+      shake: (amount) => this.fx.kick(amount),
+      burn: (on) => {
+        this.fxForceCine = on;
+        this.syncFxForce();
+      },
+      dismissUnits: (tag) => this.units.dismiss(tag),
+      setBossOffset: (y) => {
+        this.fight.extraOffset = { x: 0, y };
+      },
+      setScrollSpeed: (v, e) => this.scroll?.setSpeed(v, e),
+      setPlanetZoom: (k) => this.scroll?.setPlanetZoom(k),
+      setWeather: (v, e) => this.scroll?.setWeather(v, e),
+      setScenery: (draw) => (this.cineScenery = draw),
     };
   }
 
@@ -366,6 +446,7 @@ export class Game {
   private stopScroll(): void {
     if (!this.scroll) return;
     this.scroll = null;
+    this.units.fireScale = 1;
     this.weaponsLocked = false;
   }
 
@@ -525,7 +606,7 @@ export class Game {
       regrowth: this.fight.regrowth,
       setComponentDebug: (on: boolean) => (this.fight.components.debug = on),
       /** Advance the sim `seconds` of game time without rendering (for scripted measurements). */
-      simulate: (seconds: number, mode: 'off' | 'sweep' | 'focus' = this.auto) => {
+      simulate: (seconds: number, mode: 'off' | 'sweep' | 'focus' | 'dodge' = this.auto) => {
         this.auto = mode;
         for (let t = 0; t < seconds; t += 1 / 60) this.update(1 / 60);
         return this.clearTimes();
@@ -627,7 +708,11 @@ export class Game {
       },
       setBlastScale: (v: number) => setBlastScale(v),
       setSwept: (on: boolean) => (this.sweptBullets = on),
-      setAuto: (m: 'off' | 'sweep' | 'focus') => (this.auto = m),
+      /** 'sweep' / 'focus' teleport under the target; 'dodge' is the dodging bot (src/debugBot.ts) for measuring levels: `bot.goal({x, y, r})` makes it head for a zone (null clears). */
+      setAuto: (m: 'off' | 'sweep' | 'focus' | 'dodge') => (this.auto = m),
+      bot: {
+        goal: (g: { x: number; y: number; r: number } | null) => (this.botGoal = g),
+      },
       setTestMode: (on: boolean) => this.setTestMode(on),
       reset: () => this.reset(),
       clearTimes: () => this.clearTimes(),
@@ -811,6 +896,12 @@ export class Game {
     this.tags.reset();
     this.particles = [];
     this.weaponsLocked = false;
+    this.cineLock = null;
+    this.cinePose = null;
+    this.cineScenery = null;
+    this.fxForceCine = false;
+    this.syncFxForce();
+    this.fight.extraOffset = { x: 0, y: 0 };
     this.dodge.reset();
     if (!keepHealth) this.health.reset();
     this.attacks.reset();
@@ -994,7 +1085,7 @@ export class Game {
   }
 
   private tryDodge(): void {
-    if (this.state !== 'playing' || !this.inCombat) return;
+    if (this.state !== 'playing' || !this.inCombat || this.cineLock?.input) return;
     let { x, y } = this.input.axis();
     if (x === 0 && y === 0) {
       // Pointer steering: dash toward the finger; otherwise default to a sideways dash.
@@ -1042,12 +1133,12 @@ export class Game {
     }
     if (this.scroll && this.state === 'playing') this.scroll.update(dt);
     if (this.bossActive) this.fight.update(dt);
-    this.units.update(dt, this.state === 'playing' && this.attacks.enabled, this.attacks, this.ship);
+    this.units.update(dt, this.state === 'playing' && this.attacks.enabled && !this.holdFire, this.attacks, this.ship);
     this.refreshTargets();
     for (const f of this.allFights()) for (const d of f.boss.dustEvents.splice(0)) this.spawnDebris(d.x, d.y, 24, false, d.r, d.g, d.b);
 
     if (this.state === 'playing') {
-      this.moveShip(dt);
+      if (!this.cineLock?.input) this.moveShip(dt);
       if (!this.weaponsLocked) this.fire(dt);
     }
     this.weapons.update(dt, this.state === 'playing' && !this.weaponsLocked);
@@ -1075,9 +1166,15 @@ export class Game {
     return out;
   }
 
+  /** A cinematic asked enemies to stop firing. */
+  private get holdFire(): boolean {
+    return this.cineLock !== null && this.cineLock.enemies === 'hold';
+  }
+
   private refreshTargets(): void {
     const t: BossFight[] = [];
-    if (this.bossActive && !this.boss.defeated) t.push(this.fight);
+    // `bossInvincible` (the capital ship's approach): the boss is simply not a target, so shots pass through it.
+    if (this.bossActive && !this.boss.defeated && !this.cineLock?.bossInvincible) t.push(this.fight);
     for (const u of this.units.units) if (u.state === 'alive') t.push(u.fight);
     this.targetList = t;
   }
@@ -1105,13 +1202,15 @@ export class Game {
   /** Boss fire, player damage and the defeat/reset flow. */
   private updateThreat(dt: number): void {
     const playing = this.state === 'playing';
-    this.attacks.update(dt, this.ship, playing && !(this.bossActive && this.boss.defeated));
+    this.attacks.update(dt, this.ship, playing && !(this.bossActive && this.boss.defeated) && !this.holdFire);
     if (!playing) {
       if (this.mode === 'boss' && this.state === 'lost' && this.elapsed - this.lostAt > TUNING.player.defeatTime) this.reset();
       return;
     }
     this.health.update(dt);
     if (this.fx.enabled) this.dmgFx.update(dt, this.ship.x, this.ship.y, this.health.hp, this.health.maxHp, this.shipLook(), this.emitP, this.beep);
+    // A cinematic with `invulnerable` (the default): nothing touches the ship; enemy shots in flight just pass.
+    if (this.cineLock?.invulnerable) return;
     const dmg =
       this.attacks.collect(this.ship.x, this.ship.y, this.hitbox) +
       this.attacks.collectHazards(this.ship.x, this.ship.y, this.hitbox);
@@ -1189,7 +1288,7 @@ export class Game {
       // Waves: 'focus' = under the lowest live unit, 'sweep' = across the span of the live units.
       const live = this.units.live().map((u) => u.center());
       if (live.length === 0) return W / 2;
-      if (this.auto === 'focus') return live.reduce((a, c) => (c.y > a.y ? c : a)).x;
+      if (this.auto === 'focus' || this.auto === 'dodge') return live.reduce((a, c) => (c.y > a.y ? c : a)).x;
       const lo = Math.min(...live.map((c) => c.x)) - 20;
       const hi = Math.max(...live.map((c) => c.x)) + 20;
       const span = Math.max(40, hi - lo);
@@ -1197,7 +1296,7 @@ export class Game {
       return lo + (phase < span ? phase : 2 * span - phase);
     }
     const b = this.boss;
-    if (this.auto === 'focus') return b.x + b.core.x;
+    if (this.auto === 'focus' || this.auto === 'dodge') return b.x + b.core.x;
     // Steady triangle-wave sweep across the boss at 150 px/s.
     const span = b.width - 40;
     const phase = (this.elapsed * 150) % (2 * span);
@@ -1206,6 +1305,32 @@ export class Game {
 
   private moveShip(dt: number): void {
     const ship = this.ship;
+    if (this.auto === 'dodge') {
+      const t = dodgeTarget({
+        ship,
+        speed: this.loadout.get('ship.speed'),
+        hitbox: this.hitbox,
+        minY: shipMinY(this.run.state.shipId),
+        bullets: this.attacks.bullets,
+        hazards: this.attacks.hazards,
+        units: this.units.live().map((u) => u.center()),
+        obstacles: this.scroll?.obstacles.list ?? [],
+        scrollSpeed: this.scroll?.speed ?? 0,
+        wantX: this.autoTarget(),
+        wantY: H - 140,
+        goal: this.botGoal,
+      });
+      const step = this.loadout.get('ship.speed') * dt;
+      const dx = t.x - ship.x;
+      const dy = t.y - ship.y;
+      const d = Math.hypot(dx, dy);
+      const k = d > step ? step / d : 1;
+      ship.x += dx * k;
+      ship.y += dy * k;
+      ship.x = Math.min(W - 18, Math.max(18, ship.x));
+      ship.y = Math.min(H - 36, Math.max(shipMinY(this.run.state.shipId), ship.y));
+      return;
+    }
     if (this.auto !== 'off') {
       ship.x = this.autoTarget();
       ship.y = H - 140;
@@ -1464,6 +1589,7 @@ export class Game {
     if (this.bossActive && (!this.boss.defeated || this.elapsed - this.wonAt < 1.2)) this.enrageTint.render(ctx, this.boss, this.fight);
     this.drawUnits();
     this.scroll?.drawObstacles(ctx);
+    this.cineScenery?.(ctx);
     this.attacks.drawBossDim(ctx);
     if (this.bossActive) this.fight.components.drawFx(ctx);
     if (this.bossActive) this.fight.rooms.drawCues(ctx);
@@ -1473,19 +1599,20 @@ export class Game {
     this.tags.draw(ctx);
     this.attacks.draw(ctx);
     this.drawParticles();
-    if (this.bossActive) this.hud.draw(ctx, this.boss, this.fight.rooms);
+    const hideHud = !!this.cineLock?.hideHud;
+    if (this.bossActive && !hideHud) this.hud.draw(ctx, this.boss, this.fight.rooms);
     if (this.state === 'playing') {
       this.drawShip();
-      this.dodge.drawShipFx(ctx, this.ship.x, this.ship.y);
+      if (!this.cinePose) this.dodge.drawShipFx(ctx, this.ship.x, this.ship.y);
     }
     this.fx.drawNumbers(ctx);
     this.fx.endShake(ctx);
     if (this.fx.enabled && this.state === 'playing') this.dmgFx.drawVignette(ctx, this.health.hp, this.health.maxHp);
-    this.health.draw(ctx);
-    if (this.bossActive && this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
-    if (this.state === 'playing') this.dodge.drawButton(ctx);
-    if (this.state === 'playing') this.hud.drawWeapons(ctx, this.weapons, this.weaponsLocked);
-    this.hud.drawUpgrades(ctx, this.loadout);
+    if (!hideHud) this.health.draw(ctx);
+    if (this.bossActive && !hideHud && this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
+    if (this.state === 'playing' && !hideHud) this.dodge.drawButton(ctx);
+    if (this.state === 'playing' && !hideHud) this.hud.drawWeapons(ctx, this.weapons, this.weaponsLocked);
+    if (!hideHud) this.hud.drawUpgrades(ctx, this.loadout);
     if (this.showDebug) {
       this.drawDebug();
       if (this.panelVisible) this.panel.draw(this.ctx);
@@ -1552,6 +1679,19 @@ export class Game {
 
   private drawShip(): void {
     const { x, y } = this.ship;
+    const pose = this.cinePose;
+    if (pose) {
+      // A cinematic drives the ship: position, scale, rotation and a horizontal flip; the flames lick over it as usual.
+      const g = this.ctx;
+      g.save();
+      g.translate(Math.round(x), Math.round(y));
+      g.rotate(pose.rot);
+      g.scale(pose.scale * pose.flip, pose.scale);
+      drawShipLook(g, this.shipLook(), 0, 0);
+      if (this.fx.enabled) this.dmgFx.drawFire(g, 0, 0, this.health.hp, this.health.maxHp);
+      g.restore();
+      return;
+    }
     if (!this.fx.enabled) {
       drawShipLook(this.ctx, this.shipLook(), x, y);
       return;

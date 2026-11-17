@@ -134,6 +134,9 @@ export class Unit {
   readonly lifetime: number | null;
   /** Campaign tag it was spawned with (objectives and bonus rules address units by it). */
   tag?: string;
+  /** Seconds since a script told it to break off and fly away (null = it fights). A leaving unit never fires and is not a kill when it goes. */
+  leaving: number | null = null;
+  leaveDirX = 1;
   private readonly deathFraction: number;
 
   constructor(
@@ -161,6 +164,13 @@ export class Unit {
   center(): Point {
     const b = this.fight.boss;
     return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  }
+
+  /** Break off: stop firing and fly away off the top of the screen, sideways away from the middle. */
+  leave(): void {
+    if (this.leaving !== null || this.state !== 'alive') return;
+    this.leaving = 0;
+    this.leaveDirX = this.center().x < 270 ? -1 : 1;
   }
 
   /** Core gone or mostly carved away. */
@@ -233,6 +243,15 @@ export class UnitSystem {
     return this.units.filter((u) => u.state === 'alive');
   }
 
+  /** Enemy fire rate multiplier (1 = as authored). A scroll level sets it (`ScrollLevelDef.fireScale`). */
+  fireScale = 1;
+
+  /** Cosmetic: units (all, or with this tag) stop shooting and fly away; queued spawns with the tag are cancelled. Not kills. */
+  dismiss(tag?: string): void {
+    this.pending = this.pending.filter((p) => tag !== undefined && p.tag !== tag);
+    for (const u of this.units) if (tag === undefined || u.tag === tag) u.leave();
+  }
+
   /** Units alive, dying or queued that match a tag and/or def id (no filter = all). */
   countMatching(match: { tag?: string; unit?: string }): number {
     const ok = (tag: string | undefined, id: string): boolean => (match.tag === undefined || tag === match.tag) && (match.unit === undefined || id === match.unit);
@@ -258,6 +277,14 @@ export class UnitSystem {
       }
     }
     for (const u of this.units) {
+      if (u.leaving !== null) {
+        u.leaving += dt;
+        // Ease off, then pull away faster and faster: up and out sideways.
+        const l = u.leaving;
+        u.fight.extraOffset = { x: u.leaveDirX * l * l * 120, y: -(l * 140 + l * l * 420) };
+        const c = u.center();
+        if (c.y < -260 || c.x < -260 || c.x > 800) u.gone = true;
+      }
       u.fight.update(dt);
       u.age += dt;
       if (u.lifetime !== null && u.age >= u.lifetime) {
@@ -269,13 +296,13 @@ export class UnitSystem {
         if (u.dyingFor >= u.dyingTime) u.gone = true;
         continue;
       }
-      if (!firing) continue;
+      if (!firing || u.leaving !== null) continue;
       // A flyby only shoots while it is on screen.
       if (u.lifetime !== null) {
         const c = u.center();
         if (c.x < -10 || c.x > 550 || c.y < -10 || c.y > 970) continue;
       }
-      const p = u.sched.update(dt);
+      const p = u.sched.update(dt * this.fireScale);
       if (!p) continue;
       const src = u.sched.lastSource;
       const sources = src ? u.fight.components.fireFrom(src) : u.fight.components.fireFromAny();

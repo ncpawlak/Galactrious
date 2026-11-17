@@ -4,6 +4,7 @@
  */
 import type { Medal, UnlockKind } from '../save';
 import type { ScrollLevelDef } from '../scroll/types';
+import type { Cinematic } from './cinematic';
 
 export type { Medal };
 
@@ -31,7 +32,9 @@ export type BeatAction =
   | { do: 'setScrollSpeed'; speed: number; ease?: number }
   /** Jump to the objective with this id (the current one counts as completed). */
   | { do: 'startObjective'; objective: string }
-  | { do: 'completeObjective' };
+  | { do: 'completeObjective' }
+  /** Play a cinematic now (takes control, pauses the objective's clock and the level timer until it ends). */
+  | { do: 'cinematic'; cinematic: Cinematic };
 
 interface ObjectiveBase {
   id: string;
@@ -43,6 +46,16 @@ interface ObjectiveBase {
   beats?: Beat[];
   /** Weapons locked from the start of the objective (chapter 3). */
   weaponsLocked?: boolean;
+  /**
+   * Plays when the objective starts (the approach beat before a big fight, a briefing in the air). The objective's clock and beats
+   * start after it. On a checkpoint restart it is applied instantly (its end state), not replayed.
+   */
+  intro?: Cinematic;
+  /**
+   * Plays when the objective is done, after its snapshot is captured and its counters are banked (so nothing it does can change
+   * either). Then the next objective starts, or the level ends (`then: 'result'` ends it early). Every mission ends with one.
+   */
+  outro?: Cinematic;
   /**
    * Run the objective over a scrolling level (id in `SCROLL_LEVELS` or an inline definition): background, obstacles, allies,
    * flybys and the distance timeline. Restarts with the objective. A closed screen with allies is a slow scroll that never ends.
@@ -69,11 +82,15 @@ export interface ReachObjective extends ObjectiveBase {
 export interface SurviveObjective extends ObjectiveBase {
   type: 'survive';
   seconds: number;
+  /** HUD text before the countdown (default 'SURVIVE'): e.g. 'HOLD THE LINE' for a time-gated dogfight. */
+  label?: string;
 }
 
 export interface EscapeObjective extends ObjectiveBase {
   type: 'escape';
   exit: Zone;
+  /** Draw the exit as a jump gate (a ring in space) instead of a dashed zone. */
+  gate?: boolean;
   /** Scrolling levels: the exit is only open (drawn, reachable) once the scroll distance reaches this many px. Omitted = open from the start. */
   exitAtDistance?: number;
   /** Reach the exit within this many seconds or the attempt fails (restarts the objective, counts as a death). */
@@ -143,6 +160,13 @@ export interface CampaignLevel {
   medals: MedalRules;
   /** Level-wide beats (`at` = level seconds, fired once, not repeated after a death). */
   beats?: Beat[];
+  /**
+   * The ship's hull when an objective starts fresh or restarts from a checkpoint (default: full). Chapter 3 is 2: after a death the
+   * ship is crippled again, not repaired. An objective reached by advancing keeps whatever the hull is.
+   */
+  startHealth?: number;
+  /** The ship shows its low-health smoke AND flames for the whole level, whatever the hull (a crippled ship). */
+  forceDamageFx?: boolean;
 }
 
 export interface UnlockAward {
