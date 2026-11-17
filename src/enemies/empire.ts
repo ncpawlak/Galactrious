@@ -36,12 +36,12 @@ export const flakBurst: AttackPattern = {
   },
 };
 
-const every = (pattern: AttackPattern, seconds: number, source: string): AttackStep => ({ pattern, interval: seconds, source });
+export const every = (pattern: AttackPattern, seconds: number, source: string): AttackStep => ({ pattern, interval: seconds, source });
 
 const HULL = 3;
 
 /** A small empire gun housing on a hull. */
-const gun = (id: string, anchor: string, radius: number, hp: number, turret: NonNullable<ComponentSpec['turret']>, group = id): ComponentSpec => ({
+export const gun = (id: string, anchor: string, radius: number, hp: number, turret: NonNullable<ComponentSpec['turret']>, group = id): ComponentSpec => ({
   id,
   type: 'turret',
   anchor,

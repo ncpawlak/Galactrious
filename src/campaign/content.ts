@@ -5,6 +5,7 @@
  * level that proves the framework end to end.
  */
 import { DEBUG_CAMPAIGNS } from '../stealth/testLevel';
+import { FINALE_TEST } from '../finale/finaleTest';
 import { FALLEN_PEACE } from './fallenPeace';
 import type { CampaignDefinition, CampaignLevel } from './types';
 import { TERRAIN_TEST_CAMPAIGN } from '../terrain/surfaceTest';
@@ -48,7 +49,7 @@ export const FRAMEWORK_TEST: CampaignDefinition = {
   completionUnlock: { kind: 'cards', id: 'campaign-test-framework', label: 'TEST UNLOCK: Framework Test' },
 };
 
-export const CAMPAIGNS: CampaignDefinition[] = [FALLEN_PEACE, FRAMEWORK_TEST, TERRAIN_TEST_CAMPAIGN];
+export const CAMPAIGNS: CampaignDefinition[] = [FALLEN_PEACE, FRAMEWORK_TEST, TERRAIN_TEST_CAMPAIGN, FINALE_TEST];
 
 export function findLevel(levelId: string): { campaign: CampaignDefinition; level: CampaignLevel; index: number } | null {
   // Debug campaigns (stealth test) are found by id but not listed in the menu.

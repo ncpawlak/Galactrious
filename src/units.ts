@@ -45,6 +45,19 @@ export interface UnitDefinition {
    * target for the autopilot (`live`), and like a flyby it only fires while its centre is on screen. The terrain system moves and removes it.
    */
   ground?: boolean;
+  /** A named empire ace (DESIGN.md "As built: finale systems"): the HUD shows its callsign above it and a banner when it enters; counts as a kill like any unit. */
+  ace?: boolean;
+  /** Callsign shown on the tag and banner (aces). */
+  callsign?: string;
+  /** Tag / banner colour (aces): the paint accent. */
+  accent?: string;
+  /** A second attack set, switched to when this share (0..100) of the hull pixels is gone (the unit is a two-phase fight). */
+  phase2?: { at: number; attacks: AttackStep[]; attackDelay?: number };
+  /**
+   * Own entrance and dives, used when the spawn does not bring a flyby: the placement derived from the slot replaces the caller's
+   * `entrance`/`entranceTime`/`dive` (campaign `spawn` beats and the debug spawner place units without any, so this is how an ace flies in).
+   */
+  placement?: (slot: Point) => Pick<UnitPlacement, 'entrance' | 'entranceTime' | 'dive'>;
 }
 
 /** How a unit is placed when it spawns. */
@@ -134,7 +147,12 @@ export function toBossDefinition(def: UnitDefinition, p: UnitPlacement, attackDe
     rooms: def.rooms,
     faction: def.faction,
     coreArmor: def.coreArmor ?? { min: 1 },
-    phases: [{ name: 'unit', movement: placementMovement(def, p), attacks: def.attacks, attackDelay: eT + attackDelay }],
+    phases: [
+      { name: 'unit', movement: placementMovement(def, p), attacks: def.attacks, attackDelay: eT + attackDelay },
+      ...(def.phase2
+        ? [{ name: 'unit-2', trigger: { kind: 'damage' as const, percent: def.phase2.at }, movement: placementMovement(def, p), attacks: def.phase2.attacks, attackDelay: def.phase2.attackDelay ?? 0.6 }]
+        : []),
+    ],
   };
   return { def: bossDef, spec };
 }
@@ -144,7 +162,7 @@ const DYING_TIME = { small: 0.22, big: 0.5 };
 
 export class Unit {
   readonly fight: BossFight;
-  readonly sched: ScriptedScheduler;
+  sched: ScriptedScheduler;
   readonly big: boolean;
   state: 'alive' | 'dying' = 'alive';
   dyingFor = 0;
@@ -174,6 +192,7 @@ export class Unit {
     this.fight = new BossFight(bd);
     this.fight.components.target = ship;
     this.sched = this.fight.makeScheduler();
+    if (def.phase2) this.fight.onPhaseChange = () => (this.sched = this.fight.makeScheduler());
     this.big = def.size === 'big';
     this.fight.boss.coreSimple = !this.big;
     this.deathFraction = def.deathFraction ?? (this.big ? 0.75 : 0.6);
@@ -254,6 +273,7 @@ export class UnitSystem {
   /** Spawn now. */
   spawn(def: UnitDefinition, placement: UnitPlacement, tag?: string): Unit {
     const jitter = ((this.counter++ * 0.6180339887) % 1) * 1.4;
+    if (def.placement && !placement.flyby) placement = { ...placement, ...def.placement(placement.slot) };
     const u = new Unit(def, placement, placement.flyby || placement.chase ? jitter * 0.15 : jitter, this.ship);
     u.tag = tag;
     u.fight.components.debug = this.debug;

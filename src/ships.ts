@@ -1,5 +1,5 @@
 import { TUNING } from './config';
-import { DELTA } from './factions';
+import { DELTA, EMPIRE } from './factions';
 import { isUnlocked } from './save';
 
 /**
@@ -59,6 +59,11 @@ export interface ShipDefinition {
   unlockHint?: string;
   /** No guns at all: firing and the weapon rings are off (the escape pod). */
   noWeapons?: boolean;
+  /**
+   * Empire technology (the commandeered empire fighter): its weapons fire on the empire's own frequency, so the capital ship's
+   * armour can be hit (src/finale/armour.ts, `armourResonance`). Omitted = false.
+   */
+  empireTech?: boolean;
 }
 
 export const DEFAULT_SHIP_ID = 'vanguard';
@@ -113,6 +118,32 @@ export const SHIPS: ShipDefinition[] = [
     startingWeapons: { main: 'needle', aux: ['swarm', 'gauss', 'arc'] },
     unlock: 'wisp',
     unlockHint: 'Clear a whole run.',
+  },
+  {
+    // The commandeered empire fighter (Fallen Peace chapters 5 to 7), a hero version of the empire fighter unit: angular, forward-swept
+    // wings, slate plating with a bronze nose, the red chevron insignia. A little tougher and faster than the Vanguard, reaches higher.
+    id: 'empire-fighter',
+    name: 'Empire Fighter',
+    desc: 'Captured empire tech: tougher and faster. Its weapons hurt empire armour. Chain gun with Gauss, Rocket and Arc.',
+    look: {
+      hull: { color: EMPIRE.armour, points: [[0, -22], [4, -10], [8, -8], [24, -16], [22, -2], [15, 15], [7, 13], [4, 19], [0, 21], [-4, 19], [-7, 13], [-15, 15], [-22, -2], [-24, -16], [-8, -8], [-4, -10]] },
+      details: [
+        { color: EMPIRE.armourLight, points: [[8, -6], [21, -13], [19, -3], [9, 4]] },
+        { color: EMPIRE.armourLight, points: [[-8, -6], [-21, -13], [-19, -3], [-9, 4]] },
+        { color: EMPIRE.hull, points: [[0, -22], [3, -11], [-3, -11]] },
+        { color: EMPIRE.accent, points: [[-21, 3], [21, 3], [20, 7], [-20, 7]] },
+        { color: EMPIRE.armourDark, points: [[-4, -10], [4, -10], [4, 13], [0, 19], [-4, 13]] },
+        { color: EMPIRE.accent, points: [[0, -4], [4, 1], [4, 3], [0, -1], [-4, 3], [-4, 1]] },
+        { color: EMPIRE.accentDark, points: [[0, 1], [4, 6], [4, 7], [0, 3], [-4, 7], [-4, 6]] },
+      ],
+      cockpit: { color: EMPIRE.canopy, x: -2, y: -14, w: 4, h: 7 },
+      flame: { color: EMPIRE.glow, x: -3, y: 19, w: 6, len: 4, flicker: 6 },
+    },
+    baseStats: { maxHealth: 6, speed: 500, dodgeCooldown: 2.2, hitbox: TUNING.player.hitbox, minY: 260 },
+    startingWeapons: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] },
+    unlock: 'empire-fighter',
+    unlockHint: 'Finish the Fallen Peace campaign.',
+    empireTech: true,
   },
 ];
 

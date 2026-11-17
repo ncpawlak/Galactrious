@@ -15,6 +15,9 @@
  */
 import { H, W } from '../config';
 import type { CombatCounters, NodeHost } from '../flow/node';
+import { applyUnlocks } from '../finale/unlocks';
+import { fallbackSnapshot } from '../finale/fallback';
+import { shipHasEmpireTech } from '../finale/system';
 import { saveStore } from '../save';
 import { BeatRunner } from './beats';
 import { CinematicRunner, type Cinematic } from './cinematic';
@@ -153,8 +156,9 @@ export class CampaignSession {
     const keepHealth = how === 'advance' && this.host.shipAlive();
     let restore;
     if (def.type === 'bossFight' && def.restoreSlot) {
-      const snap = loadSnapshot(def.restoreSlot);
-      if (snap && snap.bossId === def.bossId) restore = snap;
+      let snap = loadSnapshot(def.restoreSlot);
+      if (!snap || snap.bossId !== def.bossId) snap = fallbackSnapshot(def.bossId); // no chapter 1 on record: a generated disabled ship
+      if (snap) restore = def.coreHp !== undefined ? { ...snap, coreHp: def.coreHp } : snap;
     }
     this.host.startCombat({
       bossId: def.type === 'bossFight' ? def.bossId : undefined,
@@ -172,7 +176,9 @@ export class CampaignSession {
     this.attemptExtra = emptyCounters();
     this.checkpointShip = { ...this.ship };
     for (const s of def.spawns ?? []) this.spawn(s);
-    this.objBeats = def.beats ? new BeatRunner(def.beats, { perform: (a) => this.perform(a) }) : null;
+    const beats = def.type === 'bossFight' && def.armourResonance !== undefined ? [...(def.beats ?? []), { at: def.armourResonance, do: 'armourResonance' } as Beat] : def.beats;
+    this.objBeats = beats ? new BeatRunner(beats, { perform: (a) => this.perform(a) }) : null;
+    if (def.type === 'bossFight' && def.overload) this.host.setOverload(true);
     this.banner = BANNER_SECONDS;
     this.handler.start(this.env());
     // An intro plays before the objective's clock starts; after a death it is applied at once (its end state), not replayed.
@@ -263,6 +269,12 @@ export class CampaignSession {
       case 'completeObjective':
         this.pendingComplete = true;
         break;
+      case 'assist':
+        this.host.assist(a.assist);
+        break;
+      case 'armourResonance':
+        this.host.armourResonance(shipHasEmpireTech(this.ship.id));
+        break;
     }
   }
 
@@ -309,7 +321,8 @@ export class CampaignSession {
       this.complete(j);
       return;
     }
-    if (this.pendingComplete || (this.handler.isDone() && this.host.shipAlive())) this.complete();
+    // A boss kill leaves the game in its 'won' state (shipAlive() is false then), which must still complete a boss objective.
+    if (this.pendingComplete || (this.handler.isDone() && (this.host.shipAlive() || this.host.combatResult() === 'won'))) this.complete();
   }
 
   /** The current objective is done: capture its snapshot, then go on (to `jump`, or the next one, or the end of the level). */
@@ -346,9 +359,17 @@ export class CampaignSession {
     const last = this.campaign.levels[this.campaign.levels.length - 1];
     const award = this.campaign.completionUnlock;
     if (award && last.id === this.level.id && saveStore.unlock(award.kind, award.id)) unlocked.push(award.label);
+    // The campaign's real reward list (src/finale/unlocks.ts): written to the save here, shown by the reveal screen afterwards.
+    const newUnlocks =
+      this.campaign.unlocks && last.id === this.level.id
+        ? applyUnlocks(this.campaign.unlocks)
+            .filter((i) => i.isNew)
+            .map((i) => i.spec)
+        : undefined;
+    for (const u of newUnlocks ?? []) unlocked.push(u.name ?? u.id);
     this.host.endCombat();
     scrollHooks().setSpeed(0);
-    this.result = { campaignId: this.campaign.id, levelId: this.level.id, timeMs, deaths: this.deaths, medal, goldRoute, bonusDone, newBestTime, newBestMedal, unlocked, counters };
+    this.result = { campaignId: this.campaign.id, levelId: this.level.id, timeMs, deaths: this.deaths, medal, goldRoute, bonusDone, newBestTime, newBestMedal, unlocked, newUnlocks, counters };
   }
 
   /** Leave without a result (abandoned from the pause key). */
