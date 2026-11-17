@@ -135,7 +135,7 @@ export type ComponentEvent =
   /** A room's first console just became visible: its reaction starts (telegraph, sound, shake). */
   | { kind: 'roomExposed'; x: number; y: number; name: string }
   /** Every console of a room is gone: its function went offline. `blast` when the room also blew up. */
-  | { kind: 'roomOffline'; x: number; y: number; name: string; blast: boolean };
+  | { kind: 'roomOffline'; x: number; y: number; name: string; blast: boolean; id?: string };
 
 type State = 'active' | 'dying' | 'destroyed' | 'detached';
 

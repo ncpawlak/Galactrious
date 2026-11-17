@@ -23,7 +23,7 @@ export class WaveNode implements FlowNode {
 
   start(ctx: NodeContext): void {
     this.ctx = ctx;
-    ctx.host.startWave(this.def.wave);
+    ctx.host.startWave(this.def.wave, this.def.scroll);
   }
 
   update(dt: number): void {

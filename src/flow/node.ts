@@ -9,8 +9,9 @@
 
 /** Every node type, including the reserved ones (not built, `createNode` throws for them). */
 import type { WaveDefinition } from '../waves';
+import type { ScrollLevelDef, ScrollRunner } from '../scroll/types';
 
-export type NodeType = 'wave' | 'boss' | 'reward' | 'level' | 'interlude';
+export type NodeType = 'wave' | 'boss' | 'reward' | 'level' | 'interlude' | 'scroll';
 
 /** `done` = the player cleared it (go on); `lost` = the player died (the run is over). `null` while running. */
 export type NodeOutcome = 'done' | 'lost';
@@ -21,12 +22,22 @@ export type NodeOutcome = 'done' | 'lost';
 export interface BossNodeDefinition {
   type: 'boss';
   bossId: string;
+  /** Run the fight over a scrolling level (id in `SCROLL_LEVELS` or an inline definition): background, obstacles, allies, timeline. */
+  scroll?: string | ScrollLevelDef;
 }
 
 /** A wave of enemy units (src/waves.ts): the node ends when every unit is dead. */
 export interface WaveNodeDefinition {
   type: 'wave';
   wave: WaveDefinition;
+  /** Run the wave over a scrolling level (id in `SCROLL_LEVELS` or an inline definition). */
+  scroll?: string | ScrollLevelDef;
+}
+
+/** A scrolling level on its own (src/scroll): the node ends when the scroll distance reaches the level's length. */
+export interface ScrollNodeDefinition {
+  type: 'scroll';
+  level: string | ScrollLevelDef;
 }
 
 /** A pick-one-of-N upgrade card screen (see nodes/reward.ts, src/upgrades/). */
@@ -51,6 +62,7 @@ export interface InterludeNodeDefinition {
 export type NodeDefinition =
   | BossNodeDefinition
   | WaveNodeDefinition
+  | ScrollNodeDefinition
   | RewardNodeDefinition
   | LevelNodeDefinition
   | InterludeNodeDefinition;
@@ -133,9 +145,15 @@ export interface NodeHost {
   /** The player's ship position (live; only meaningful while in combat). */
   readonly ship: { x: number; y: number };
   /** Start a boss fight and turn combat on (ship, weapons, bullets, HUD). Health carries over from the last node. */
-  startBossFight(bossId: string): void;
+  startBossFight(bossId: string, scroll?: string | ScrollLevelDef): void;
   /** Start a wave and turn combat on with no boss (ship, weapons, bullets). The units spawn on the wave's own schedule. Health carries over. */
-  startWave(wave: WaveDefinition): void;
+  startWave(wave: WaveDefinition, scroll?: string | ScrollLevelDef): void;
+  /** Start a scrolling level (combat on, no boss unless the timeline spawns one). Health carries over. */
+  startScroll(level: string | ScrollLevelDef): void;
+  /** The running scroll level (distance, speed, `setSpeed`, `onEvent`), or null. */
+  scroll(): ScrollRunner | null;
+  /** Lock or unlock the player's weapons (greys the HUD rings; the dodge still works). Cleared by `endCombat`. */
+  setWeaponsLocked(locked: boolean): void;
   /** Units of the running wave still alive, dying or waiting to spawn. 0 = the wave is cleared. */
   waveRemaining(): number;
   /** Result of the combat started by this node. A short death/explosion beat is already included. Waves only ever report `lost` (clearing is `waveRemaining() === 0`). */

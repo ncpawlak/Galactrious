@@ -9,7 +9,7 @@ export class BossNode implements FlowNode {
 
   start(ctx: NodeContext): void {
     this.ctx = ctx;
-    ctx.host.startBossFight(this.def.bossId);
+    ctx.host.startBossFight(this.def.bossId, this.def.scroll);
   }
 
   update(): void {

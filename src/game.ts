@@ -28,6 +28,7 @@ import { UnitSystem, type Unit } from './units';
 import { divePath, spawnWave, type WaveDefinition } from './waves';
 import type { RoomHost } from './rooms';
 import { UNIT_LIST, WAVE_LIST, unitById } from './enemies';
+import { SCROLL_LEVELS, ScrollRunnerImpl, scrollLevelById, type ScrollHost, type ScrollLevelDef } from './scroll';
 
 export interface ShipStats {
   /** Energy per bullet. */
@@ -131,6 +132,20 @@ export class Game {
     power: () => this.stats.damage / TUNING.ship.damage,
     carveQuiet: (t, x, y, energy, shape) => this.carveAt(t as BossFight, x, y, energy, shape, true) !== null,
   });
+  /** The running scroll level (src/scroll): background, obstacles, allies and the distance timeline. Null = no scrolling. */
+  private scroll: ScrollRunnerImpl | null = null;
+  /** The player's weapons are locked (chapter 3: you cannot shoot). The dodge still works. */
+  private weaponsLocked = false;
+  /** Debug (boss mode): the boss was set aside while a scroll test runs, so stopping the scroll brings it back. */
+  private bossSuspended = false;
+  private lastBlockedSfx = 0;
+  private readonly scrollHost: ScrollHost = {
+    ship: this.ship,
+    spawnUnit: (id, x, y) => this.spawnDebugUnit(id, x, y),
+    spawnWave: (w) => this.spawnDebugWave(w),
+    spawnBoss: (id) => this.activateBoss(id),
+    setWeaponsLocked: (on) => this.setWeaponsLocked(on),
+  };
   private lostAt = 0;
   private fireTimer = 0;
   private state: State = 'playing';
@@ -256,7 +271,7 @@ export class Game {
   private makeNodeHost(): NodeHost {
     return {
       ship: this.ship,
-      startBossFight: (id) => {
+      startBossFight: (id, scroll) => {
         const i = BOSSES.findIndex((b) => b.id === id);
         if (i < 0) throw new Error(`boss node: unknown boss id "${id}"`);
         this.bossDefIndex = i;
@@ -266,15 +281,27 @@ export class Game {
         this.reset(true, true); // health carries over from the previous node
         this.bossActive = true;
         this.combat = true;
+        if (scroll) this.beginScroll(scroll);
       },
-      startWave: (wave) => {
+      startWave: (wave, scroll) => {
         this.bossActive = false;
         this.attacks.sources = null;
         this.attacks.setScript(null);
         this.reset(true, true); // clears units too; health carries over
         this.combat = true;
+        if (scroll) this.beginScroll(scroll);
         spawnWave(this.units, wave, unitById);
       },
+      startScroll: (level) => {
+        this.bossActive = false;
+        this.attacks.sources = null;
+        this.attacks.setScript(null);
+        this.reset(true, true);
+        this.combat = true;
+        this.beginScroll(level);
+      },
+      scroll: () => this.scroll,
+      setWeaponsLocked: (on) => this.setWeaponsLocked(on),
       waveRemaining: () => this.units.remaining(),
       combatResult: (): CombatResult => {
         if (this.state === 'won' && this.elapsed - this.wonAt > WIN_BEAT) return 'won';
@@ -283,6 +310,8 @@ export class Game {
       },
       endCombat: () => {
         this.combat = false;
+        this.stopScroll();
+        this.weaponsLocked = false;
         this.attacks.clear();
         this.units.clear();
         this.targetList = [];
@@ -299,6 +328,61 @@ export class Game {
       takeKey: () => this.keyPresses.shift() ?? null,
       pointer: () => this.input.hover,
     };
+  }
+
+  /** Start a scrolling level over the current combat (the caller decides whether a boss is active). */
+  private beginScroll(level: string | ScrollLevelDef): void {
+    const def = typeof level === 'string' ? scrollLevelById(level) : level;
+    this.stopScroll();
+    const r = new ScrollRunnerImpl(this.scrollHost);
+    this.scroll = r;
+    r.start(def);
+  }
+
+  /** Stop scrolling: the runner goes away, weapons unlock. The starfield comes back. */
+  private stopScroll(): void {
+    if (!this.scroll) return;
+    this.scroll = null;
+    this.weaponsLocked = false;
+  }
+
+  private setWeaponsLocked(on: boolean): void {
+    this.weaponsLocked = on;
+  }
+
+  /** A scroll timeline starts a boss fight on top of the running combat (health, units and the scroll carry on). */
+  private activateBoss(id: string): void {
+    const i = BOSSES.findIndex((b) => b.id === id);
+    if (i < 0) throw new Error(`scroll level: unknown boss id "${id}"`);
+    this.bossDefIndex = i;
+    const old = this.fight;
+    this.fight = this.makeFight(BOSSES[i]);
+    this.carryDebug(old);
+    this.bossActive = true;
+    this.clearAt = [];
+    this.hull25At = null;
+  }
+
+  /** Debug: run a scroll level on its own (the boss is set aside in boss mode and comes back when it stops). */
+  private debugScrollStart(level: string | ScrollLevelDef, opts: { locked?: boolean } = {}): ScrollRunnerImpl {
+    if (this.mode === 'boss' && this.bossActive) {
+      this.bossActive = false;
+      this.bossSuspended = true;
+      this.attacks.sources = null;
+      this.attacks.setScript(null);
+    }
+    this.units.clear();
+    this.attacks.clear();
+    this.beginScroll(level);
+    if (opts.locked !== undefined) this.weaponsLocked = opts.locked;
+    return this.scroll!;
+  }
+
+  private debugScrollStop(): void {
+    this.stopScroll();
+    this.units.clear();
+    this.attacks.clear();
+    if (this.bossSuspended) this.reset(); // brings the boss back (a fresh fight)
   }
 
   /** True when the combat sim runs (always in boss mode; in run mode only during a combat node). */
@@ -390,6 +474,38 @@ export class Game {
       killUnits: () => this.killUnits(),
       unitIds: UNIT_LIST.map((u) => u.id),
       waveIds: WAVE_LIST.map((w) => w.id),
+      /** Scrolling levels (src/scroll). `start(id | def)` runs a level on its own (the boss is set aside in boss mode), `skipTo(distance)`, `setSpeed(v, ease)`. Keys: [Home] start/stop the test level, [PgUp/PgDn] speed, [End] skip 1000 px. */
+      scroll: {
+        start: (level: string | ScrollLevelDef = 'scroll-test', opts?: { locked?: boolean }) => this.debugScrollStart(level, opts),
+        stop: () => this.debugScrollStop(),
+        runner: () => this.scroll,
+        setSpeed: (v: number, ease = 0) => this.scroll?.setSpeed(v, ease),
+        skipTo: (d: number) => this.scroll?.skipTo(d),
+        pause: (on: boolean) => {
+          if (this.scroll) this.scroll.paused = on;
+        },
+        distance: () => this.scroll?.distance ?? 0,
+        speed: () => this.scroll?.speed ?? 0,
+        levels: Object.keys(SCROLL_LEVELS),
+        /** Spawn one obstacle now at its entry edge. */
+        obstacle: (spawn: Omit<import('./scroll').ObstacleSpawn, 'at' | 'kind'>) => this.scroll?.obstacles.spawn({ at: 0, kind: 'obstacle', ...spawn }),
+        /** Cosmetic wingmen on (count, pattern) or off. */
+        allies: (count: number, pattern?: import('./scroll').AllyPattern) => (count > 0 ? this.scroll?.allies.set(count, pattern) : this.scroll?.allies.dismiss()),
+        showBoxes: (on: boolean) => {
+          if (this.scroll) this.scroll.obstacles.debug = on;
+        },
+      },
+      /** Lock / unlock the player's weapons (no firing from any weapon; the dodge still works). */
+      setWeaponsLocked: (on: boolean) => this.setWeaponsLocked(on),
+      weaponsLocked: () => this.weaponsLocked,
+      /** The capital ship: the armour flag (default off) and the engine-room objective event. */
+      capital: {
+        armourCarvable: (on?: boolean) => {
+          if (on !== undefined) this.fight.armourCarvable = on;
+          return this.fight.armourCarvable;
+        },
+        engineDestroyed: () => this.fight.rooms.destroyed('engine'),
+      },
       setBlastScale: (v: number) => setBlastScale(v),
       setSwept: (on: boolean) => (this.sweptBullets = on),
       setAuto: (m: 'off' | 'sweep' | 'focus') => (this.auto = m),
@@ -524,6 +640,12 @@ export class Game {
   private debugWaveCycle = 0;
 
   private reset(keepFight = false, keepHealth = false): void {
+    this.stopScroll();
+    if (this.bossSuspended) {
+      this.bossSuspended = false;
+      this.bossActive = true;
+      keepFight = false;
+    }
     this.applyEquipment();
     this.units.clear();
     this.targetList = [];
@@ -649,7 +771,7 @@ export class Game {
         break;
       }
       case 'KeyQ':
-        if (this.state === 'playing') this.weapons.fireAll();
+        if (this.state === 'playing' && !this.weaponsLocked) this.weapons.fireAll();
         break;
       case 'Comma':
         this.weapons.cooldownScale /= 2;
@@ -659,6 +781,23 @@ export class Game {
         break;
       case 'KeyG':
         this.godMode = !this.godMode;
+        break;
+      case 'Home': // debug: start / stop the scroll test level
+        if (this.scroll) this.debugScrollStop();
+        else this.debugScrollStart('scroll-test');
+        break;
+      case 'PageUp':
+      case 'PageDown':
+        if (this.scroll) this.scroll.setSpeed(Math.max(0, this.scroll.speed + (code === 'PageUp' ? 60 : -60)), 0.3);
+        break;
+      case 'Insert':
+        this.weaponsLocked = !this.weaponsLocked;
+        break;
+      case 'Delete': // debug: the capital ship's armour carvable on/off
+        this.fight.armourCarvable = !this.fight.armourCarvable;
+        break;
+      case 'End':
+        this.scroll?.skipTo(this.scroll.distance + 1000);
         break;
       case 'KeyC':
         this.panel.toggleOpen();
@@ -723,7 +862,7 @@ export class Game {
 
   private update(dt: number): void {
     this.elapsed += dt;
-    for (const s of this.stars) {
+    for (const s of this.scroll ? [] : this.stars) {
       s.y += s.speed * dt;
       if (s.y > H) {
         s.y = 0;
@@ -747,6 +886,7 @@ export class Game {
         return;
       }
     }
+    if (this.scroll && this.state === 'playing') this.scroll.update(dt);
     if (this.bossActive) this.fight.update(dt);
     this.units.update(dt, this.state === 'playing' && this.attacks.enabled, this.attacks, this.ship);
     this.refreshTargets();
@@ -754,9 +894,9 @@ export class Game {
 
     if (this.state === 'playing') {
       this.moveShip(dt);
-      this.fire(dt);
+      if (!this.weaponsLocked) this.fire(dt);
     }
-    this.weapons.update(dt, this.state === 'playing');
+    this.weapons.update(dt, this.state === 'playing' && !this.weaponsLocked);
     this.updateThreat(dt);
     this.updateBullets(dt);
     this.tags.update(dt);
@@ -817,14 +957,27 @@ export class Game {
     const dmg =
       this.attacks.collect(this.ship.x, this.ship.y, this.hitbox) +
       this.attacks.collectHazards(this.ship.x, this.ship.y, this.hitbox);
-    if (dmg > 0 && !this.godMode && this.health.hit(dmg, this.dodge.invulnerable)) {
-      if (this.health.dead) {
-        this.state = 'lost';
-        this.lostAt = this.elapsed;
-        this.fx.onExplosion();
-        this.sfx.explosion();
+    if (dmg > 0 && !this.godMode && this.health.hit(dmg, this.dodge.invulnerable)) this.afterPlayerHit();
+    // Obstacles (debris, peaks): contact damage with the same i-frames and dodge as a bullet; never an instant kill.
+    if (this.scroll && this.state === 'playing') {
+      const o = this.scroll.obstacles.touch(this.ship.x, this.ship.y, this.hitbox);
+      if (o && !this.godMode && this.health.hit(o.damage, this.dodge.invulnerable)) {
+        o.flash = 0.3;
+        this.fx.onComponentDestroy(26);
+        this.sfx.componentDestroy(26);
+        this.explode(this.ship.x, this.ship.y, 12);
+        this.afterPlayerHit();
       }
     }
+  }
+
+  /** The ship was hit and the damage landed: destroyed when the hull is gone. */
+  private afterPlayerHit(): void {
+    if (!this.health.dead) return;
+    this.state = 'lost';
+    this.lostAt = this.elapsed;
+    this.fx.onExplosion();
+    this.sfx.explosion();
   }
 
   /** Juice and sound for what the boss's components did this frame (hits, damage states, destruction). */
@@ -999,6 +1152,11 @@ export class Game {
     const hpBefore = boss.core.hp;
     const res = boss.hit(x, y, budget, shape);
     if (!res) return null;
+    if (res.blocked) {
+      // Armour: a small spark and a quiet tick, nothing else (it is their tech).
+      if (!quiet) this.armourSpark(x, y);
+      return res;
+    }
     if (res.core) {
       // Core armor: a bullet tunnelled straight in only scratches the core until the outer layers are dug away.
       const dealt = hpBefore - boss.core.hp;
@@ -1016,7 +1174,26 @@ export class Game {
     return res;
   }
 
+  /** Armour hit: a few cool-white sparks bouncing back and a rate-limited metallic tick. */
+  private armourSpark(x: number, y: number): void {
+    for (let i = 0; i < 3 && this.particles.length < MAX_PARTICLES; i++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
+      const sp = 90 + Math.random() * 140;
+      const life = 0.12 + Math.random() * 0.14;
+      this.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60, life, max: life, color: Math.random() < 0.5 ? '#e8f4ff' : '#9fd0ff', size: 1 + Math.random() * 1.5 });
+    }
+    if (this.elapsed - this.lastBlockedSfx > 0.09) {
+      this.lastBlockedSfx = this.elapsed;
+      this.sfx.componentHit();
+    }
+  }
+
   private resolveImpact(b: Bullet, targets: readonly Combatant[]): void {
+    // Carvable obstacles (surface run) take the base gun's shots; the freefall's are not carvable, so this is a no-op there.
+    if (this.scroll && this.scroll.obstacles.list.length > 0 && this.scroll.obstacles.shoot(b.x, b.y, b.energy)) {
+      b.alive = false;
+      return;
+    }
     const budget = b.energy * (1 - b.pierce);
     for (const t of targets) {
       if (t.boss.defeated || !nearBox(t.boss, b.x, b.y, 12)) continue;
@@ -1113,11 +1290,15 @@ export class Game {
     }
     this.fx.beginShake(ctx);
 
-    ctx.fillStyle = '#8fa0c8';
-    for (const s of this.stars) ctx.fillRect(s.x, s.y, s.size, s.size);
+    if (this.scroll) this.scroll.drawBackground(ctx);
+    else {
+      ctx.fillStyle = '#8fa0c8';
+      for (const s of this.stars) ctx.fillRect(s.x, s.y, s.size, s.size);
+    }
 
     if (this.bossActive && (!this.boss.defeated || this.elapsed - this.wonAt < 1.2)) this.enrageTint.render(ctx, this.boss, this.fight);
     this.drawUnits();
+    this.scroll?.drawObstacles(ctx);
     this.attacks.drawBossDim(ctx);
     if (this.bossActive) this.fight.components.drawFx(ctx);
     if (this.bossActive) this.fight.rooms.drawCues(ctx);
@@ -1137,7 +1318,7 @@ export class Game {
     this.health.draw(ctx);
     if (this.bossActive && this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
     if (this.state === 'playing') this.dodge.drawButton(ctx);
-    if (this.state === 'playing') this.hud.drawWeapons(ctx, this.weapons);
+    if (this.state === 'playing') this.hud.drawWeapons(ctx, this.weapons, this.weaponsLocked);
     this.hud.drawUpgrades(ctx, this.loadout);
     if (this.showDebug) {
       this.drawDebug();
@@ -1244,6 +1425,7 @@ export class Game {
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component/room hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]  expose room [E]`,
       `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${AUX_KEYS[this.weapons.defs.indexOf(d)]}]`).join('  ')}  fire all [Q]  cooldown x${WEAPONS.cooldownScale} [, .]`,
+      ...this.scrollLines(),
       ...this.regrowthLines(),
       ...(this.units.units.length > 0 ? this.unitLines() : []),
       `blast scale x${BLAST.scale.toFixed(2)} [-/=] (+Shift x4)  r: turret ${BLAST.defaults.turret.radius} expl ${BLAST.defaults.explosive.radius} room ${BLAST.defaults.room.radius}`,
@@ -1258,6 +1440,16 @@ export class Game {
     ctx.textBaseline = 'top';
     lines.forEach((t, i) => ctx.fillText(t, 12, 10 + i * 15));
     ctx.restore();
+  }
+
+  /** Debug overlay: scroll level state, weapons lock and the capital ship's armour flag. */
+  private scrollLines(): string[] {
+    const out: string[] = [];
+    const r = this.scroll;
+    if (r) out.push(`scroll ${r.def?.id} ${Math.floor(r.distance)}/${r.def?.length}px  speed ${Math.round(r.speed)}  obstacles ${r.obstacles.list.length}  allies ${r.allies.count}  [PgUp/PgDn] speed  [End] skip 1000  [Home] stop`);
+    else out.push('scroll [Home] test level');
+    out.push(`weapons ${this.weaponsLocked ? 'LOCKED' : 'free'} [Insert]${this.fight.boss.layers.some((l) => l.armour) ? `  armour ${this.fight.armourCarvable ? 'CARVABLE' : 'indestructible'} [Delete]` : ''}`);
+    return out;
   }
 
   /** Debug overlay lines for hull regrowth (none for bosses that do not regrow). */
