@@ -146,6 +146,8 @@ export class Game {
   /** Debug (boss mode): the boss was set aside while a scroll test runs, so stopping the scroll brings it back. */
   private bossSuspended = false;
   private lastBlockedSfx = 0;
+  /** Ship velocity for ships with an `accel` stat (stealth pod). */
+  private readonly shipVel = { x: 0, y: 0 };
   private readonly scrollHost: ScrollHost = {
     ship: this.ship,
     spawnUnit: (id, x, y) => this.spawnDebugUnit(id, x, y),
@@ -153,6 +155,11 @@ export class Game {
     spawnWave: (w) => this.spawnDebugWave(w),
     spawnBoss: (id) => this.activateBoss(id),
     setWeaponsLocked: (on) => this.setWeaponsLocked(on),
+    hitbox: () => this.hitbox,
+    spawnChaser: (id, placement) => {
+      const u = this.units.spawn(unitById(id), placement);
+      return { alive: () => u.state === 'alive' && !u.gone };
+    },
   };
   /** Campaign: weapons off (chapter 3). Cleared by every `reset`, so a checkpoint restart re-applies it from the objective. */
   private weaponsLocked = false;
@@ -226,6 +233,7 @@ export class Game {
     const lo = this.loadout;
     this.health.setMax(Math.max(1, Math.round(lo.get('ship.maxHealth'))));
     this.dodge.cooldownTime = lo.get('dodge.cooldown');
+    this.dodge.distanceScale = shipById(this.run.state.shipId).baseStats.dodgeScale ?? 1;
   }
 
   constructor(canvas: HTMLCanvasElement) {
@@ -369,6 +377,16 @@ export class Game {
     if (!this.scroll) return;
     this.scroll = null;
     this.weaponsLocked = false;
+  }
+
+  /** The ship has no guns (escape pod). */
+  private get shipNoWeapons(): boolean {
+    return !!shipById(this.run.state.shipId).noWeapons;
+  }
+
+  /** Firing is off: locked by the campaign, or the ship has no weapons. */
+  private get weaponsOff(): boolean {
+    return this.weaponsLocked || this.shipNoWeapons;
   }
 
   private setWeaponsLocked(on: boolean): void {
@@ -591,6 +609,17 @@ export class Game {
       killUnits: () => this.killUnits(),
       unitIds: UNIT_LIST.map((u) => u.id),
       waveIds: WAVE_LIST.map((w) => w.id),
+      /** Stealth (src/stealth): the running level's `StealthSystem` (state, exposure, detections, lights), `detect()` raises an alert now, `sweep(seconds?)` starts a patrol sweep, `state()` is a one-line summary. */
+      stealth: {
+        system: () => this.scroll?.stealth ?? null,
+        detect: () => this.scroll?.stealth?.forceDetect(),
+        probe: (x: number, y: number, ahead = 0) => this.scroll?.stealth?.probe(x, y, ahead),
+        sweep: (seconds = 3.5, dir: 'down' | 'up' = 'down') => this.scroll?.stealth?.startSweep(seconds, dir),
+        state: () => {
+          const st = this.scroll?.stealth;
+          return st ? { state: st.state, hidden: st.hidden, lit: st.lit, exposure: st.exposure, chasers: st.chaserCount, detections: st.detections, hiddenFor: st.hiddenFor } : null;
+        },
+      },
       /** Scrolling levels (src/scroll). `start(id | def)` runs a level on its own (the boss is set aside in boss mode), `skipTo(distance)`, `setSpeed(v, ease)`. Keys: [Home] start/stop the test level, [PgUp/PgDn] speed, [End] skip 1000 px. */
       scroll: {
         start: (level: string | ScrollLevelDef = 'scroll-test', opts?: { locked?: boolean }) => this.debugScrollStart(level, opts),
@@ -816,6 +845,7 @@ export class Game {
     this.particles = [];
     this.weaponsLocked = false;
     this.dodge.reset();
+    this.shipVel.x = this.shipVel.y = 0;
     if (!keepHealth) this.health.reset();
     this.attacks.reset();
     this.state = 'playing';
@@ -929,7 +959,7 @@ export class Game {
         break;
       }
       case 'KeyQ':
-        if (this.state === 'playing' && !this.weaponsLocked) this.weapons.fireAll();
+        if (this.state === 'playing' && !this.weaponsOff) this.weapons.fireAll();
         break;
       case 'Comma':
         this.weapons.cooldownScale /= 2;
@@ -1052,9 +1082,9 @@ export class Game {
 
     if (this.state === 'playing') {
       this.moveShip(dt);
-      if (!this.weaponsLocked) this.fire(dt);
+      if (!this.weaponsOff) this.fire(dt);
     }
-    this.weapons.update(dt, this.state === 'playing' && !this.weaponsLocked);
+    this.weapons.update(dt, this.state === 'playing' && !this.weaponsOff);
     this.updateThreat(dt);
     this.updateBullets(dt);
     this.tags.update(dt);
@@ -1216,21 +1246,35 @@ export class Game {
       return;
     }
     const dash = this.dodge.update(dt);
+    const accel = shipById(this.run.state.shipId).baseStats.accel;
     if (this.dodge.invulnerable || dash.x !== 0 || dash.y !== 0) {
+      this.shipVel.x = this.shipVel.y = 0;
       ship.x += dash.x;
       ship.y += dash.y;
     } else if (this.input.pointerDown) {
       // Offset above the finger so the ship stays visible.
       const tx = this.input.px;
       const ty = this.input.py - 90;
-      const k = Math.min(1, dt * 20 * (this.loadout.get('ship.speed') / TUNING.ship.speed));
+      const k = Math.min(1, dt * 20 * (this.loadout.get('ship.speed') / TUNING.ship.speed) * (accel ? 0.45 : 1));
       ship.x += (tx - ship.x) * k;
       ship.y += (ty - ship.y) * k;
+      this.shipVel.x = this.shipVel.y = 0;
     } else {
       const a = this.input.axis();
       const speed = this.loadout.get('ship.speed');
-      ship.x += a.x * speed * dt;
-      ship.y += a.y * speed * dt;
+      if (accel) {
+        // Ships with an `accel` (the escape pod) ease up to speed and coast to a stop instead of moving instantly.
+        const v = this.shipVel;
+        const step = accel * dt;
+        const ease = (cur: number, want: number): number => cur + Math.max(-step, Math.min(step, want - cur));
+        v.x = ease(v.x, a.x * speed);
+        v.y = ease(v.y, a.y * speed);
+        ship.x += v.x * dt;
+        ship.y += v.y * dt;
+      } else {
+        ship.x += a.x * speed * dt;
+        ship.y += a.y * speed * dt;
+      }
     }
     ship.x = Math.min(W - 18, Math.max(18, ship.x));
     ship.y = Math.min(H - 36, Math.max(shipMinY(this.run.state.shipId), ship.y));
@@ -1506,9 +1550,10 @@ export class Game {
     this.fx.endShake(ctx);
     if (this.fx.enabled && this.state === 'playing') this.dmgFx.drawVignette(ctx, this.health.hp, this.health.maxHp);
     this.health.draw(ctx);
+    if (this.state === 'playing') this.scroll?.stealth?.drawHud(ctx);
     if (this.bossActive && this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
     if (this.state === 'playing') this.dodge.drawButton(ctx);
-    if (this.state === 'playing') this.hud.drawWeapons(ctx, this.weapons, this.weaponsLocked);
+    if (this.state === 'playing' && !this.shipNoWeapons) this.hud.drawWeapons(ctx, this.weapons, this.weaponsLocked);
     this.hud.drawUpgrades(ctx, this.loadout);
     if (this.showDebug) {
       this.drawDebug();

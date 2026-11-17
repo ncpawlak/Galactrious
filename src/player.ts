@@ -113,6 +113,8 @@ export class Dodge {
   cooldown = 0;
   /** Cooldown length after a dodge (base + upgrades; the game keeps it in sync). */
   cooldownTime: number = TUNING.dodge.cooldown;
+  /** Scale on the dash distance (the ship's `dodgeScale`; the escape pod dashes shorter). */
+  distanceScale = 1;
   private dirX = 0;
   private dirY = 0;
 
@@ -146,7 +148,7 @@ export class Dodge {
     if (this.active <= 0) return { x: 0, y: 0 };
     const step = Math.min(dt, this.active);
     this.active -= step;
-    const v = TUNING.dodge.distance / TUNING.dodge.invulnTime;
+    const v = (TUNING.dodge.distance * this.distanceScale) / TUNING.dodge.invulnTime;
     return { x: this.dirX * v * step, y: this.dirY * v * step };
   }
 
