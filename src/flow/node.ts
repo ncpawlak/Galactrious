@@ -95,8 +95,10 @@ export interface RunState {
   nodeIndex: number;
   /** Base max health. The live hit points belong to the combat sim; the host heals them (`NodeHost.healFull`). */
   maxHealth: number;
-  /** Weapon ids the player has equipped. Empty = the default loadout. */
-  loadout: string[];
+  /** The chosen ship (`ShipDefinition.id`, src/ships.ts). Its base stats feed `Loadout`. */
+  shipId: string;
+  /** The weapons in the slots: one main and up to three aux (`WeaponDef.id`, src/weapons.ts). */
+  loadout: { main: string; aux: string[] };
   /** Upgrades picked so far, in order: the place for upgrade modifiers. */
   upgrades: Upgrade[];
   /** Run clock in seconds (only counts while a node is active). */

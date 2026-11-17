@@ -29,7 +29,7 @@ export class RewardNode implements FlowNode {
 
   start(ctx: NodeContext): void {
     this.ctx = ctx;
-    this.cards = drawCards(ctx.run.rng, ctx.run.upgrades, this.def.choices ?? 3);
+    this.cards = drawCards(ctx.run.rng, ctx.run.upgrades, this.def.choices ?? 3, new Set([ctx.run.loadout.main, ...ctx.run.loadout.aux]), ctx.run.shipId);
   }
 
   private cardY(i: number): number {
@@ -98,7 +98,7 @@ export class RewardNode implements FlowNode {
     g.fillStyle = '#6ee7ff';
     g.fillText(held.length ? `YOUR UPGRADES (${held.length})` : 'YOUR UPGRADES: none yet', CARD_X, ys);
     g.restore();
-    drawUpgradeStrip(g, new Loadout(held), CARD_X, ys + 12, CARD_W);
+    drawUpgradeStrip(g, new Loadout(held, this.ctx.run.shipId), CARD_X, ys + 12, CARD_W);
   }
 
   private drawCard(g: CanvasRenderingContext2D, c: CardDef, i: number, held: readonly CardDef[]): void {
@@ -126,7 +126,7 @@ export class RewardNode implements FlowNode {
     g.textAlign = 'right';
     g.font = `13px ${MONO}`;
     g.fillStyle = c.rarity === 'rare' ? '#ffd21f' : '#8fa0c8';
-    const owned = new Loadout(held).stackOf(c.id);
+    const owned = new Loadout(held, this.ctx.run.shipId).stackOf(c.id);
     g.fillText(`${c.rarity === 'rare' ? 'RARE  ' : ''}owned ${owned}/${c.maxStacks ?? 1}`, CARD_X + CARD_W - 16, y + 28);
     g.textAlign = 'left';
     g.fillStyle = '#ffffff';
@@ -135,7 +135,7 @@ export class RewardNode implements FlowNode {
     g.fillStyle = '#b6c2e0';
     g.font = `14px ${MONO}`;
     this.wrap(g, c.desc, CARD_W - 44, 2).forEach((l, k) => g.fillText(l, CARD_X + 22, y + 92 + k * 18));
-    previewCard(c, held).slice(0, 2).forEach((p, k) => {
+    previewCard(c, held, this.ctx.run.shipId).slice(0, 2).forEach((p, k) => {
       const ry = y + 140 + k * 22;
       g.font = `15px ${MONO}`;
       g.fillStyle = '#8fa0c8';

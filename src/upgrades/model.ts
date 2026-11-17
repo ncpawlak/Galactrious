@@ -6,6 +6,8 @@ export interface CardDef extends Upgrade {
   group: string;
   /** One line shown on the card. */
   desc: string;
+  /** Weapon id this card modifies (`WeaponDef.id`). The card is only offered while that weapon is equipped. Omitted = a ship card, always eligible. */
+  weapon?: string;
   /** How many times the card can be held (it is offered until then). Default 1. */
   maxStacks?: number;
   /** Draw weight, default 1. */

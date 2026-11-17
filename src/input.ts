@@ -12,6 +12,8 @@ export class Input {
   onPress: ((code: string) => void) | null = null;
   onPointerDown: (() => void) | null = null;
   onDodge: (() => void) | null = null;
+  /** The on-screen dodge button only takes presses while this returns true (menus and reward screens put their own buttons where it is). */
+  dodgeActive: (() => boolean) | null = null;
   /** Debug UI hook: return true to consume a press (no steering). Logical coordinates. */
   capture: ((x: number, y: number, e: PointerEvent) => boolean) | null = null;
   private steerPointer = -1;
@@ -34,7 +36,7 @@ export class Input {
       const lx = ((e.clientX - rect.left) * W) / rect.width;
       const ly = ((e.clientY - rect.top) * H) / rect.height;
       if (this.capture?.(lx, ly, e)) return;
-      if (inDodgeButton(lx, ly)) {
+      if ((this.dodgeActive?.() ?? true) && inDodgeButton(lx, ly)) {
         this.onDodge?.();
         return;
       }

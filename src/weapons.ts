@@ -1,7 +1,7 @@
 import type { Boss, HitResult } from './boss';
 import type { CarveShapeName } from './carveShapes';
 import { resolveBlast, type BlastSpec, type ComponentSystem } from './components';
-import { H, W, WEAPONS } from './config';
+import { H, MAINS, W, WEAPONS } from './config';
 import type { TagSet } from './tags';
 import { gaussShape } from './upgrades/stats';
 
@@ -10,22 +10,56 @@ import { gaussShape } from './upgrades/stats';
  * function that spawns projectiles described by plain fields (energy, pierce, carve shape, blast, steering).
  * Upgrades later are modifiers on these definitions (copy a def and change cooldown / counts / angles) and on the
  * base gun; nothing here is special-cased by weapon id except drawing. All weapons are boss-only, like blasts.
- * The base chain gun still fires from `Game` but is described here too (`CHAIN_GUN`, `effectiveChain`), so upgrades modify it the same way.
+ * Mains (the constant gun) are data here too (`MainDef`) but fire from `Game`; `WeaponSystem` equips the aux weapons of the run's loadout.
  */
 
-export type WeaponId = 'gauss' | 'rocket' | 'arc';
+export type WeaponId = string;
+export type WeaponSlot = 'main' | 'aux';
 
-export interface WeaponDef {
+/** Fields every weapon has, whatever its slot. */
+interface WeaponBase {
   id: WeaponId;
   name: string;
-  /** Debug key label, for the HUD and overlay. */
-  key: string;
+  /** One short line for the loadout builder. */
+  desc: string;
   color: string;
+  /** Unlock flag (`save.unlocks.weapons`). Omitted = always available. A ship's starting weapons are also available while that ship is unlocked. */
+  unlock?: string;
+  /** Shown in the loadout builder while locked. */
+  unlockHint?: string;
+}
+
+/** An auto-firing aux weapon: fires on its own timer. */
+export interface AuxDef extends WeaponBase {
+  slot: 'aux';
   /** Cooldown in seconds with upgrades applied (before `WEAPONS.cooldownScale`). */
   cooldown: (stat: StatFn) => number;
   /** Spawn this weapon's projectiles. */
   fire(c: FireContext): void;
 }
+
+/**
+ * A main weapon: the ship's constant gun, fired by `Game`. Numbers are relative to the ship's live damage and fire rate
+ * (1 = the chain gun), see `MAINS` in config.ts. Cards modify `<id>.fireRate`, `<id>.damage` and `<id>.barrels`.
+ */
+export interface MainDef extends WeaponBase {
+  slot: 'main';
+  rateMul: number;
+  damageMul: number;
+  projectiles: number;
+  spreadDeg: number;
+  /** Random extra angle per bullet (degrees, +-). */
+  jitterDeg: number;
+  pierce: number;
+  speedMul: number;
+  shape?: CarveShapeName;
+  /** Energy multiplier by distance travelled: `near` up to `start` px, easing to `far` at `end` px where the bullet dies. */
+  fall?: { start: number; end: number; near: number; far: number };
+  /** Bullet look: colour and size in px. */
+  bullet: { color: string; w: number; h: number };
+}
+
+export type WeaponDef = AuxDef | MainDef;
 
 /** Effective value of a stat key (`base` + held upgrades): the weapons never read upgrades directly. */
 export type StatFn = (key: string, base: number) => number;
@@ -39,6 +73,8 @@ export interface FireContext {
   /** Tags this weapon's shots carry (from upgrades), undefined = none. */
   tags: TagSet | undefined;
   spawn(p: ProjectileInit): void;
+  /** Start a timed effect that follows the ship (a held beam, orbiting blades). */
+  effect(e: EffectInit): void;
   /** A random solid pixel of a random live target (the boss or a unit) in its local coordinates, or null when nothing is left. */
   pickTarget(): { target: Combatant; lx: number; ly: number } | null;
 }
@@ -70,6 +106,13 @@ export interface ProjectileInit {
   tags?: TagSet;
 }
 
+/** Timed effects that live on the ship while an aux weapon's cooldown runs. */
+export type EffectInit =
+  | { kind: 'beam'; weapon: WeaponId; duration: number; tick: number; energy: number; pierce: number; shape: CarveShapeName; tags?: TagSet }
+  | { kind: 'blades'; weapon: WeaponId; duration: number; tick: number; energy: number; shape: CarveShapeName; count: number; radius: number; spin: number; tags?: TagSet };
+
+type Effect = EffectInit & { age: number; acc: number; /** beam: where it ends this tick; blades: spin angle. */ endY: number; angle: number };
+
 interface Projectile extends ProjectileInit {
   vx: number;
   vy: number;
@@ -79,11 +122,13 @@ interface Projectile extends ProjectileInit {
   trail: { x: number; y: number; age: number }[];
 }
 
-export const WEAPON_DEFS: WeaponDef[] = [
+/** Aux weapons (3 slots). */
+const AUX: AuxDef[] = [
   {
     id: 'gauss',
     name: 'Gauss',
-    key: 'I',
+    slot: 'aux',
+    desc: 'Slow shot that drills a long shaft through layers.',
     color: '#bff6ff',
     cooldown: (s) => s('gauss.cooldown', WEAPONS.gauss.cooldown),
     fire: (c) => {
@@ -106,7 +151,8 @@ export const WEAPON_DEFS: WeaponDef[] = [
   {
     id: 'rocket',
     name: 'Rocket',
-    key: 'O',
+    slot: 'aux',
+    desc: 'Explodes on the first hit: a wide crater and shock.',
     color: '#ffa94d',
     cooldown: (s) => s('rocket.cooldown', WEAPONS.rocket.cooldown),
     fire: (c) => {
@@ -128,7 +174,8 @@ export const WEAPON_DEFS: WeaponDef[] = [
   {
     id: 'arc',
     name: 'Arc',
-    key: 'L',
+    slot: 'aux',
+    desc: 'Homing pair that curves in to random spots.',
     color: '#7dff9a',
     cooldown: (s) => s('arc.cooldown', WEAPONS.arc.cooldown),
     fire: (c) => {
@@ -165,30 +212,125 @@ export const WEAPON_DEFS: WeaponDef[] = [
       }
     },
   },
+  {
+    id: 'lance',
+    name: 'Lance',
+    slot: 'aux',
+    desc: 'Held beam: drills up through shields and layers.',
+    color: '#ff6bd6',
+    unlock: 'lance',
+    unlockHint: 'Unlock the Warden ship.',
+    cooldown: (s) => s('lance.cooldown', WEAPONS.lance.cooldown),
+    fire: (c) => {
+      const l = WEAPONS.lance;
+      c.effect({ kind: 'beam', weapon: 'lance', duration: l.duration, tick: l.tick, energy: c.stat('lance.energy', l.energy) * c.power, pierce: l.pierce, shape: l.shape, tags: c.tags });
+    },
+  },
+  {
+    id: 'blades',
+    name: 'Blades',
+    slot: 'aux',
+    desc: 'Orbiting blades shred what they touch. Short range.',
+    color: '#e0f0ff',
+    unlock: 'blades',
+    unlockHint: 'Unlock the Warden ship.',
+    cooldown: (s) => s('blades.cooldown', WEAPONS.blades.cooldown),
+    fire: (c) => {
+      const b = WEAPONS.blades;
+      c.effect({ kind: 'blades', weapon: 'blades', duration: b.duration, tick: b.tick, energy: b.energy * c.power, shape: b.shape, count: Math.max(1, Math.round(c.stat('blades.count', b.count))), radius: b.radius, spin: b.spin, tags: c.tags });
+    },
+  },
+  {
+    id: 'swarm',
+    name: 'Swarm',
+    slot: 'aux',
+    desc: 'A cloud of small homing missiles, each a small bite.',
+    color: '#ff78dc',
+    unlock: 'swarm',
+    unlockHint: 'Unlock the Wisp ship.',
+    cooldown: (s) => s('swarm.cooldown', WEAPONS.swarm.cooldown),
+    fire: (c) => {
+      const w = WEAPONS.swarm;
+      const count = Math.max(1, Math.round(c.stat('swarm.count', w.count)));
+      for (let n = 0; n < count; n++) {
+        const t = c.pickTarget();
+        if (!t) continue;
+        const fan = count === 1 ? 0 : (n / (count - 1) - 0.5) * 2; // -1..1 across the volley
+        c.spawn({
+          weapon: 'swarm',
+          x: c.ship.x + fan * 12,
+          y: c.ship.y - 14,
+          tags: c.tags,
+          angle: -Math.PI / 2 + fan * 1.1 + (Math.random() - 0.5) * 0.25,
+          speed: w.speed,
+          energy: w.energy * c.power,
+          pierce: w.pierce,
+          shape: w.shape,
+          componentPierce: true,
+          steer: { target: t.target, lx: t.lx, ly: t.ly, turn: w.turn, amp: 0.5, freq: 4 + Math.random() * 3, phase: Math.random() * Math.PI * 2, wanderTime: w.wanderTime },
+          trailLife: 0.35,
+        });
+      }
+    },
+  },
 ];
 
-/**
- * The base chain gun in weapon format (enough for upgrades): its stats are the live `ShipStats` (debug keys adjust them),
- * and `effectiveChain` layers the held upgrades on top (`chain.fireRate`, `chain.damage`, `chain.barrels`). Its shots carry
- * the tags of the `chain.tag.*` stats. With no upgrades the result equals the base stats.
- */
-export const CHAIN_GUN = { id: 'chain', name: 'Chain gun' } as const;
+/** Main weapons (1 slot): the Game fires these. The chain gun is the original base gun, exactly as before. */
+const MAIN: MainDef[] = [
+  { id: 'chain', name: 'Chain gun', slot: 'main', desc: 'Steady fast stream of bullets.', color: '#ffd21f', ...MAINS.chain, bullet: { color: '#fff7a8', w: 3, h: 10 } },
+  {
+    id: 'scatter',
+    name: 'Scatter',
+    slot: 'main',
+    desc: 'Wide shotgun: devastating up close, weak at range.',
+    color: '#ff9f43',
+    unlock: 'scatter',
+    unlockHint: 'Unlock the Warden ship.',
+    ...MAINS.scatter,
+    bullet: { color: '#ffc27a', w: 3, h: 6 },
+  },
+  {
+    id: 'needle',
+    name: 'Needler',
+    slot: 'main',
+    desc: 'Very fast narrow rounds that bore thin deep tunnels.',
+    color: '#c77dff',
+    unlock: 'needle',
+    unlockHint: 'Unlock the Wisp ship.',
+    ...MAINS.needle,
+    bullet: { color: '#e9c8ff', w: 2, h: 14 },
+  },
+];
 
-export interface ChainStats {
+/** The weapon registry: every weapon, main and aux. To add one, add a def to `MAIN` or `AUX` above (DESIGN.md "Ships and weapon slots: as built"). */
+export const WEAPON_DEFS: WeaponDef[] = [...MAIN, ...AUX];
+export const MAIN_DEFS = MAIN;
+export const AUX_DEFS = AUX;
+export const DEFAULT_MAIN_ID = 'chain';
+export const DEFAULT_AUX_IDS = ['gauss', 'rocket', 'arc'];
+
+export function mainById(id: string): MainDef {
+  return MAIN.find((d) => d.id === id) ?? MAIN[0];
+}
+export function auxById(id: string): AuxDef | undefined {
+  return AUX.find((d) => d.id === id);
+}
+
+/**
+ * The main gun's effective numbers: the ship's live base stats (the debug keys adjust them) times the main's multipliers,
+ * then the held upgrades (`<id>.fireRate`, `<id>.damage`, `<id>.barrels`). The chain gun with no upgrades equals the base stats.
+ */
+export interface MainStats {
   damage: number;
   fireRate: number;
   projectiles: number;
-  spreadDeg: number;
-  pierce: number;
 }
 
-export function effectiveChain(base: ChainStats, stat: StatFn): ChainStats {
+export function effectiveMain(def: MainDef, base: { damage: number; fireRate: number }, stat: StatFn): MainStats {
   return {
-    damage: stat('chain.damage', base.damage),
-    fireRate: stat('chain.fireRate', base.fireRate),
-    projectiles: Math.max(1, Math.round(base.projectiles + stat('chain.barrels', 1) - 1)),
-    spreadDeg: base.spreadDeg,
-    pierce: base.pierce,
+    damage: stat(`${def.id}.damage`, base.damage * def.damageMul),
+    fireRate: stat(`${def.id}.fireRate`, base.fireRate * def.rateMul),
+    projectiles: Math.max(1, Math.round(def.projectiles + stat(`${def.id}.barrels`, 1) - 1)),
   };
 }
 
@@ -272,14 +414,32 @@ function wrapAngle(a: number): number {
   return a;
 }
 
+/** Debug key label of aux slot i (I, O, L), shown in the debug text. */
+export const AUX_KEYS = ['I', 'O', 'L'];
+
 export class WeaponSystem {
-  readonly defs = WEAPON_DEFS;
-  readonly enabled: Record<WeaponId, boolean> = { gauss: true, rocket: true, arc: true };
-  private readonly timers: Record<WeaponId, number> = { gauss: 0, rocket: 0, arc: 0 };
+  /** The equipped aux weapons, in slot order (at most 3). */
+  defs: AuxDef[] = DEFAULT_AUX_IDS.map((id) => auxById(id)!);
+  readonly enabled: Record<WeaponId, boolean> = {};
+  private readonly timers: Record<WeaponId, number> = {};
   private projectiles: Projectile[] = [];
+  private effects: Effect[] = [];
   private flashes: { x: number; y: number; color: string; t: number }[] = [];
 
-  constructor(private readonly host: WeaponHost) {}
+  constructor(private readonly host: WeaponHost) {
+    this.equip(this.defs);
+  }
+
+  /** Equip these aux weapons (slots in order, max 3). Timers, effects and projectiles restart. */
+  equip(aux: readonly AuxDef[]): void {
+    this.defs = aux.slice(0, 3);
+    for (const d of this.defs) {
+      this.enabled[d.id] ??= true;
+      this.timers[d.id] = 0;
+    }
+    this.projectiles = [];
+    this.effects = [];
+  }
 
   /** Debug: scale every cooldown (0.1 .. 10). */
   get cooldownScale(): number {
@@ -291,6 +451,7 @@ export class WeaponSystem {
 
   reset(): void {
     this.projectiles = [];
+    this.effects = [];
     this.flashes = [];
     for (const d of this.defs) this.timers[d.id] = 0;
   }
@@ -302,7 +463,7 @@ export class WeaponSystem {
   }
 
   /** Effective cooldown of a weapon in seconds (upgrades and the debug scale applied). */
-  cd(d: WeaponDef): number {
+  cd(d: AuxDef): number {
     return d.cooldown(this.host.stat) * WEAPONS.cooldownScale;
   }
 
@@ -322,7 +483,7 @@ export class WeaponSystem {
     for (const d of this.defs) if (this.enabled[d.id]) this.fire(d);
   }
 
-  private fire(d: WeaponDef): void {
+  private fire(d: AuxDef): void {
     this.timers[d.id] = 0;
     this.host.onFire(d.id);
     const ship = this.host.ship;
@@ -333,6 +494,7 @@ export class WeaponSystem {
       stat: this.host.stat,
       tags: this.host.tags(d.id),
       spawn: (p) => this.spawn(p),
+      effect: (e) => this.effects.push({ ...e, age: 0, acc: 0, endY: 0, angle: 0 }),
       pickTarget: () => this.pickTarget(),
     });
   }
@@ -384,9 +546,70 @@ export class WeaponSystem {
         if (this.timers[d.id] >= this.cd(d)) this.fire(d);
       }
     }
+    this.updateEffects(dt);
     this.updateProjectiles(dt);
     for (const f of this.flashes) f.t -= dt;
     this.flashes = this.flashes.filter((f) => f.t > 0);
+  }
+
+  /** A throwaway projectile used to run one hit through `impact` (beam ticks and blade touches share the bullets' hit rules). */
+  private probe(weapon: WeaponId, x: number, y: number, energy: number, pierce: number, shape: CarveShapeName, tags: TagSet | undefined): Projectile {
+    return { weapon, x, y, angle: 0, speed: 0, energy, pierce, shape, componentPierce: true, tags, trailLife: 0, vx: 0, vy: 0, alive: true, age: 0, seen: new Set(), trail: [] };
+  }
+
+  private updateEffects(dt: number): void {
+    if (this.effects.length === 0) return;
+    const ship = this.host.ship;
+    const targets = this.host.targets();
+    for (const e of this.effects) {
+      e.age += dt;
+      e.acc += dt;
+      if (e.kind === 'blades') e.angle += e.spin * dt;
+      if (targets.every((t) => t.boss.defeated)) {
+        e.age = e.duration; // nothing left to hit: the effect ends
+        continue;
+      }
+      while (e.acc >= e.tick) {
+        e.acc -= e.tick;
+        if (e.kind === 'beam') this.beamTick(e, ship.x, ship.y - 26, targets);
+        else this.bladeTick(e, ship.x, ship.y, targets);
+      }
+    }
+    this.effects = this.effects.filter((e) => e.age < e.duration);
+  }
+
+  /** One beam tick: march up from the ship (starting just below the lowest target box over the beam, for cost) until the beam's energy is spent. */
+  private beamTick(e: Effect & { kind: 'beam' }, x: number, y0: number, targets: readonly Combatant[]): void {
+    let start = y0;
+    let any = false;
+    for (const t of targets) {
+      const b = t.boss;
+      if (b.defeated || x < b.x - 12 || x > b.x + b.width + 12) continue;
+      any = true;
+      start = Math.min(start, b.y + b.height + 12);
+    }
+    e.endY = -20;
+    if (!any) return;
+    const p = this.probe(e.weapon, x, start, e.energy, e.pierce, e.shape, e.tags);
+    for (let y = start; y > -20; y -= 5) {
+      p.y = y;
+      this.impact(p);
+      if (!p.alive) {
+        e.endY = y;
+        return;
+      }
+    }
+  }
+
+  /** One blade tick: each blade carves whatever it overlaps (a blade is a point probe at its orbit position). */
+  private bladeTick(e: Effect & { kind: 'blades' }, sx: number, sy: number, targets: readonly Combatant[]): void {
+    for (let i = 0; i < e.count; i++) {
+      const a = e.angle + (i * Math.PI * 2) / e.count;
+      const x = sx + Math.cos(a) * e.radius;
+      const y = sy + Math.sin(a) * e.radius;
+      if (!targets.some((t) => !t.boss.defeated && nearBox(t.boss, x, y, 12))) continue;
+      this.impact(this.probe(e.weapon, x, y, e.energy, 0, e.shape, e.tags));
+    }
   }
 
   private updateProjectiles(dt: number): void {
@@ -519,15 +742,62 @@ export class WeaponSystem {
       ctx.fill();
     }
     ctx.restore();
+    for (const e of this.effects) this.drawEffect(ctx, e);
     for (const p of this.projectiles) this.drawProjectile(ctx, p);
+  }
+
+  private drawEffect(ctx: CanvasRenderingContext2D, e: Effect): void {
+    const ship = this.host.ship;
+    const fade = Math.max(0, Math.min(1, (e.duration - e.age) / 0.2, e.age / 0.08));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    if (e.kind === 'beam') {
+      const x = ship.x;
+      const y0 = ship.y - 26;
+      const w = 5 + Math.sin(e.age * 60) * 1.5;
+      ctx.globalAlpha = 0.5 * fade;
+      ctx.fillStyle = '#ff6bd6';
+      ctx.fillRect(x - w, e.endY, w * 2, y0 - e.endY);
+      ctx.globalAlpha = 0.9 * fade;
+      ctx.fillStyle = '#ffd6f4';
+      ctx.fillRect(x - 2, e.endY, 4, y0 - e.endY);
+      ctx.beginPath();
+      ctx.arc(x, e.endY, 9 + Math.random() * 4, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      for (let i = 0; i < e.count; i++) {
+        const a = e.angle + (i * Math.PI * 2) / e.count;
+        const x = ship.x + Math.cos(a) * e.radius;
+        const y = ship.y + Math.sin(a) * e.radius;
+        ctx.globalAlpha = 0.9 * fade;
+        ctx.strokeStyle = 'rgba(224,240,255,0.35)';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(ship.x, ship.y, e.radius, a - 0.5, a);
+        ctx.stroke();
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(a + e.age * 12);
+        ctx.fillStyle = '#e0f0ff';
+        ctx.beginPath();
+        ctx.moveTo(0, -11);
+        ctx.lineTo(4, 0);
+        ctx.lineTo(0, 11);
+        ctx.lineTo(-4, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    ctx.restore();
   }
 
   private drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile): void {
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    const col = p.weapon === 'gauss' ? '191,246,255' : p.weapon === 'rocket' ? '255,169,77' : '125,255,154';
-    const width = p.weapon === 'gauss' ? 7 : p.weapon === 'rocket' ? 5 : 4;
+    const col = p.weapon === 'gauss' ? '191,246,255' : p.weapon === 'rocket' ? '255,169,77' : p.weapon === 'swarm' ? '255,120,220' : '125,255,154';
+    const width = p.weapon === 'gauss' ? 7 : p.weapon === 'rocket' ? 5 : p.weapon === 'swarm' ? 2.5 : 4;
     ctx.globalCompositeOperation = 'lighter';
     // Trail: segments fade and thin with age.
     for (let i = 1; i < p.trail.length; i++) {
@@ -583,7 +853,8 @@ export class WeaponSystem {
         ctx.fillRect(-6, 3, 3, 6);
         ctx.fillRect(3, 3, 3, 6);
       } else {
-        ctx.fillStyle = 'rgba(125,255,154,0.35)';
+        if (p.weapon === 'swarm') ctx.scale(0.55, 0.55);
+        ctx.fillStyle = p.weapon === 'swarm' ? 'rgba(255,120,220,0.4)' : 'rgba(125,255,154,0.35)';
         ctx.beginPath();
         ctx.arc(0, 0, 8, 0, Math.PI * 2);
         ctx.fill();

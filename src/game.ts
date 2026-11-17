@@ -21,7 +21,9 @@ import { CARDS, CARD_BY_ID } from './upgrades/cards';
 import { RewardNode } from './flow/nodes/reward';
 import type { FlowNode, NodeContext } from './flow/node';
 import { Loadout } from './upgrades/stats';
-import { Sweep, WeaponSystem, effectiveChain, nearBox, type Combatant } from './weapons';
+import { AUX_DEFS, AUX_KEYS, MAIN_DEFS, WEAPON_DEFS, Sweep, WeaponSystem, auxById, effectiveMain, mainById, nearBox, type AuxDef, type Combatant } from './weapons';
+import { drawShipLook, shipById, SHIPS } from './ships';
+import { cleanLoadout } from './loadouts';
 import { UnitSystem, type Unit } from './units';
 import { divePath, spawnWave, type WaveDefinition } from './waves';
 import type { RoomHost } from './rooms';
@@ -58,6 +60,12 @@ interface Bullet {
   alive: boolean;
   /** Elemental tags the shot carries (from upgrades). */
   tags?: TagSet;
+  /** Main-weapon extras (src/weapons.ts `MainDef`); the chain gun sets none of these, so its bullets behave exactly as before. */
+  speed?: number;
+  shape?: CarveShapeName;
+  look?: { color: string; w: number; h: number };
+  /** Distance fall-off: `base` energy x a factor that eases from `near` to `far` between `start` and `end` px; the bullet dies at `end`. */
+  fall?: { start: number; end: number; near: number; far: number; base: number; travelled: number };
 }
 
 interface Particle {
@@ -157,16 +165,31 @@ export class Game {
   private readonly run: Run = new Run(DEFAULT_RUN, this.nodeHost);
   /** Debug: a flow node (the reward screen) shown over everything with the sim paused. */
   private overlay: FlowNode | null = null;
-  private loadoutCache: { ref: unknown; len: number; lo: Loadout } | null = null;
+  private loadoutCache: { ref: unknown; len: number; ship: string; lo: Loadout } | null = null;
+
+  /** The debug panel sits at the bottom-left, over the menu buttons: it is neither drawn nor clickable on menu screens (run mode, no combat). */
+  private get panelVisible(): boolean {
+    return this.showDebug && !this.overlay && (this.mode !== 'run' || this.combat);
+  }
 
   /** Effective stats: base definitions + the held upgrades (`run.state.upgrades`). Cached until the list changes. */
   get loadout(): Loadout {
     const u = this.run.state.upgrades;
+    const ship = this.run.state.shipId;
     const c = this.loadoutCache;
-    if (c && c.ref === u && c.len === u.length) return c.lo;
-    const lo = new Loadout(u);
-    this.loadoutCache = { ref: u, len: u.length, lo };
+    if (c && c.ref === u && c.len === u.length && c.ship === ship) return c.lo;
+    const lo = new Loadout(u, ship);
+    this.loadoutCache = { ref: u, len: u.length, ship, lo };
     return lo;
+  }
+
+  /** Put the run's weapon loadout in the slots: the aux weapons into the `WeaponSystem` (the main is read from `run.state` when it fires). */
+  private applyEquipment(): void {
+    const aux = this.run.state.loadout.aux.map((id) => auxById(id)).filter((d): d is AuxDef => !!d);
+    const cur = this.weapons.defs;
+    if (aux.length === cur.length && aux.every((d, i) => d === cur[i])) return;
+    this.weapons.equip(aux);
+    this.panel?.layout();
   }
 
   /** Push upgrade-derived ship stats (max hull, dodge cooldown) into the player objects. */
@@ -215,12 +238,13 @@ export class Game {
     );
     // Clicks on the debug panel are consumed here so they never steer the ship.
     this.input.capture = (x, y, e) => {
-      if (!this.showDebug || !this.panel.handlePointer(x, y, e)) return false;
+      if (!this.panelVisible || !this.panel.handlePointer(x, y, e)) return false;
       this.sfx.resume();
       return true;
     };
     this.input.onPress = (code) => this.onKey(code);
     this.input.onDodge = () => this.tryDodge();
+    this.input.dodgeActive = () => this.inCombat && !this.overlay;
     this.input.onPointerDown = () => {
       this.sfx.resume();
       if (this.mode === 'run' || this.overlay) this.taps.push({ x: this.input.px, y: this.input.py });
@@ -328,6 +352,12 @@ export class Game {
       tags: this.tags,
       /** Effective stats (base + held upgrades). */
       loadout: () => this.loadout,
+      /** Choose the ship by id (its starting weapons are equipped). Applies at once, also in `?mode=boss`. */
+      setShip: (id: string) => this.setShip(id),
+      /** Choose the weapons: `{ main, aux: [a, b, c] }` (weapon ids, see `weaponIds`). Applies at once. */
+      setLoadout: (l: { main: string; aux: string[] }) => this.setLoadout(l),
+      shipIds: SHIPS.map((s) => s.id),
+      weaponIds: { main: MAIN_DEFS.map((d) => d.id), aux: AUX_DEFS.map((d) => d.id) },
       /** Held upgrades as { id: stacks }. */
       upgrades: () => Object.fromEntries(this.loadout.held().map((h) => [h.card.id, h.n])),
       /** Grant a card by id (stacks, ignoring the max-stack limit). Applies in run mode and in the one-boss test mode. */
@@ -343,8 +373,13 @@ export class Game {
       save: saveStore,
       unlock: (kind: UnlockKind, id: string) => saveStore.unlock(kind, id),
       isUnlocked: (kind: UnlockKind, id: string) => saveStore.isUnlocked(kind, id),
-      /** Unlock every card flag (ships and weapons have no content yet). */
-      unlockAll: () => saveStore.unlockAll({ cards: CARDS.flatMap((c) => (c.unlock ? [c.unlock] : [])) }),
+      /** Unlock every card, ship and weapon flag. */
+      unlockAll: () =>
+        saveStore.unlockAll({
+          cards: CARDS.flatMap((c) => (c.unlock ? [c.unlock] : [])),
+          ships: SHIPS.flatMap((s) => (s.unlock ? [s.unlock] : [])),
+          weapons: WEAPON_DEFS.flatMap((w) => (w.unlock ? [w.unlock] : [])),
+        }),
       resetSave: () => saveStore.reset(),
       run: this.run,
       units: this.units,
@@ -362,6 +397,25 @@ export class Game {
       reset: () => this.reset(),
       clearTimes: () => this.clearTimes(),
     };
+  }
+
+  private setShip(id: string): void {
+    if (!SHIPS.some((s) => s.id === id)) throw new Error(`unknown ship "${id}" (${SHIPS.map((s) => s.id).join(', ')})`);
+    this.run.select(id);
+    this.afterLoadoutChange();
+  }
+
+  private setLoadout(l: { main: string; aux: string[] }): void {
+    const clean = cleanLoadout(l, this.run.state.shipId);
+    if (clean.main !== l.main || clean.aux.length !== l.aux.length) throw new Error(`bad loadout: unknown main or aux id, or duplicate aux (mains: ${MAIN_DEFS.map((d) => d.id).join(', ')}; aux: ${AUX_DEFS.map((d) => d.id).join(', ')})`);
+    this.run.select(this.run.state.shipId, clean);
+    this.afterLoadoutChange();
+  }
+
+  private afterLoadoutChange(): void {
+    this.applyEquipment();
+    this.syncShip();
+    this.health.reset();
   }
 
   private grant(id: string, n = 1): void {
@@ -470,6 +524,7 @@ export class Game {
   private debugWaveCycle = 0;
 
   private reset(keepFight = false, keepHealth = false): void {
+    this.applyEquipment();
     this.units.clear();
     this.targetList = [];
     if (!keepFight) {
@@ -586,14 +641,13 @@ export class Game {
         this.panel.adjustBlast(code === 'Minus' ? -1 : 1, this.heldMult() > 1 ? 4 : 1);
         break;
       case 'KeyI':
-        this.weapons.enabled.gauss = !this.weapons.enabled.gauss;
-        break;
       case 'KeyO':
-        this.weapons.enabled.rocket = !this.weapons.enabled.rocket;
+      case 'KeyL': {
+        // Debug: toggle the aux weapon in slot 1 / 2 / 3.
+        const d = this.weapons.defs[AUX_KEYS.indexOf(code.slice(3))];
+        if (d) this.weapons.enabled[d.id] = !this.weapons.enabled[d.id];
         break;
-      case 'KeyL':
-        this.weapons.enabled.arc = !this.weapons.enabled.arc;
-        break;
+      }
       case 'KeyQ':
         if (this.state === 'playing') this.weapons.fireAll();
         break;
@@ -861,7 +915,7 @@ export class Game {
   }
 
   private fire(dt: number): void {
-    const interval = 1 / effectiveChain(this.stats, (k, b) => this.loadout.get(k, b)).fireRate;
+    const interval = 1 / effectiveMain(mainById(this.run.state.loadout.main), this.stats, (k, b) => this.loadout.get(k, b)).fireRate;
     this.fireTimer += dt;
     while (this.fireTimer >= interval) {
       this.fireTimer -= interval;
@@ -871,21 +925,31 @@ export class Game {
 
   private shoot(): void {
     const lo = this.loadout;
-    const { projectiles, spreadDeg, damage, pierce } = effectiveChain(this.stats, (k, b) => lo.get(k, b));
-    const tags = lo.tags('chain');
+    const def = mainById(this.run.state.loadout.main);
+    const { projectiles, damage } = effectiveMain(def, this.stats, (k, b) => lo.get(k, b));
+    const tags = lo.tags(def.id);
+    const custom = def.id !== 'chain';
     for (let i = 0; i < projectiles; i++) {
       const offset = i - (projectiles - 1) / 2;
-      const angle = (offset * spreadDeg * Math.PI) / 180;
-      this.bullets.push({
+      const jitter = def.jitterDeg ? (Math.random() * 2 - 1) * def.jitterDeg : 0;
+      const angle = ((offset * def.spreadDeg + jitter) * Math.PI) / 180;
+      const bullet: Bullet = {
         x: this.ship.x + offset * 6,
         y: this.ship.y - 22,
         dx: Math.sin(angle),
         dy: -Math.cos(angle),
         energy: damage,
-        pierce,
+        pierce: def.pierce,
         alive: true,
         tags,
-      });
+      };
+      if (custom) {
+        bullet.speed = TUNING.bulletSpeed * def.speedMul;
+        bullet.shape = def.shape;
+        bullet.look = def.bullet;
+        if (def.fall) bullet.fall = { ...def.fall, base: damage, travelled: 0 };
+      }
+      this.bullets.push(bullet);
     }
   }
 
@@ -900,7 +964,17 @@ export class Game {
     const targets = this.targetList;
     const sweep = new Sweep(targets, this.sweptBullets);
     for (const b of this.bullets) {
-      const dist = TUNING.bulletSpeed * dt;
+      const dist = (b.speed ?? TUNING.bulletSpeed) * dt;
+      if (b.fall) {
+        const f = b.fall;
+        f.travelled += dist;
+        if (f.travelled > f.end) {
+          b.alive = false;
+          continue;
+        }
+        const k = Math.min(1, Math.max(0, (f.travelled - f.start) / (f.end - f.start)));
+        b.energy = f.base * (f.near + (f.far - f.near) * k);
+      }
       const steps = Math.max(1, Math.ceil(dist), Math.ceil(sweep.maxMove));
       const sx = (b.dx * dist) / steps;
       const sy = (b.dy * dist) / steps;
@@ -952,7 +1026,7 @@ export class Game {
         b.alive = false;
         return;
       }
-      const res = this.carveAt(t as BossFight, b.x, b.y, budget, 'default');
+      const res = this.carveAt(t as BossFight, b.x, b.y, budget, b.shape ?? 'default');
       if (!res) continue;
       if (b.tags) this.tags.onHit(b.tags, b.x, b.y, b.energy, t);
       if (res.core || res.carved === 0) {
@@ -1067,7 +1141,7 @@ export class Game {
     this.hud.drawUpgrades(ctx, this.loadout);
     if (this.showDebug) {
       this.drawDebug();
-      this.panel.draw(this.ctx);
+      if (this.panelVisible) this.panel.draw(this.ctx);
       this.drawHitbox();
     }
     if (this.state === 'won' && this.bossActive) this.drawWin();
@@ -1106,7 +1180,13 @@ export class Game {
   private drawBullets(): void {
     const ctx = this.ctx;
     ctx.fillStyle = '#fff7a8';
-    for (const b of this.bullets) ctx.fillRect(Math.round(b.x) - 1, Math.round(b.y) - 5, 3, 10);
+    for (const b of this.bullets) {
+      if (b.look) {
+        ctx.fillStyle = b.look.color;
+        ctx.fillRect(Math.round(b.x - b.look.w / 2), Math.round(b.y - b.look.h / 2), b.look.w, b.look.h);
+        ctx.fillStyle = '#fff7a8';
+      } else ctx.fillRect(Math.round(b.x) - 1, Math.round(b.y) - 5, 3, 10);
+    }
   }
 
   private drawParticles(): void {
@@ -1120,23 +1200,8 @@ export class Game {
   }
 
   private drawShip(): void {
-    const ctx = this.ctx;
     const { x, y } = this.ship;
-    ctx.save();
-    ctx.translate(Math.round(x), Math.round(y));
-    ctx.fillStyle = '#6ee7ff';
-    ctx.beginPath();
-    ctx.moveTo(0, -22);
-    ctx.lineTo(15, 16);
-    ctx.lineTo(0, 9);
-    ctx.lineTo(-15, 16);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(-2, -6, 4, 9);
-    ctx.fillStyle = '#ff8a3c';
-    ctx.fillRect(-3, 12, 6, 4 + Math.random() * 5);
-    ctx.restore();
+    drawShipLook(this.ctx, shipById(this.run.state.shipId).look, x, y);
   }
 
   private unitLines(): string[] {
@@ -1155,7 +1220,7 @@ export class Game {
       ...this.unitLines(),
       `DMG ${s.damage.toLocaleString('en-US')}  [1/2]  rate ${s.fireRate} [3/4]  god mode ${this.godMode ? 'ON' : 'off'} [G]  TEST MODE ${this.testMode ? 'ON' : 'off'} [Y]  autopilot ${this.auto} [P]`,
       `hp ${this.health.hp}/${this.health.maxHp}  enemy attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  dodge ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}  juice ${this.fx.enabled ? 'on' : 'off'} [J]`,
-      `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${d.key}]`).join('  ')}  fire all [Q]`,
+      `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${AUX_KEYS[this.weapons.defs.indexOf(d)]}]`).join('  ')}  fire all [Q]`,
     ] : [
       `${this.fps.toFixed(0)} fps  t=${this.elapsed.toFixed(1)}s`,
       ...this.boss.layers.map(
@@ -1178,7 +1243,7 @@ export class Game {
       `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${this.health.maxHp}  hitbox r=${this.hitbox.toFixed(1)}`,
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component/room hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]  expose room [E]`,
-      `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${d.key}]`).join('  ')}  fire all [Q]  cooldown x${WEAPONS.cooldownScale} [, .]`,
+      `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${AUX_KEYS[this.weapons.defs.indexOf(d)]}]`).join('  ')}  fire all [Q]  cooldown x${WEAPONS.cooldownScale} [, .]`,
       ...this.regrowthLines(),
       ...(this.units.units.length > 0 ? this.unitLines() : []),
       `blast scale x${BLAST.scale.toFixed(2)} [-/=] (+Shift x4)  r: turret ${BLAST.defaults.turret.radius} expl ${BLAST.defaults.explosive.radius} room ${BLAST.defaults.room.radius}`,

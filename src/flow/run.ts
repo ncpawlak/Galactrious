@@ -1,11 +1,14 @@
-import { TUNING } from '../config';
+import { cleanLoadout, defaultLoadoutFor, initialSelection } from '../loadouts';
+import { saveStore } from '../save';
+import { DEFAULT_SHIP_ID, shipById, SHIPS, type WeaponLoadout } from '../ships';
 import type { FlowNode, NodeContext, NodeDefinition, NodeHost, NodePosition, RunDefinition, RunState } from './node';
 import { createNode } from './nodes';
-import { UNLOCKS_BTN, drawRunOver, drawRunWon, drawTitle } from './screens';
+import { ENDLESS_BTN, UNLOCKS_BTN, drawRunOver, drawRunWon, drawTitle } from './screens';
+import { LoadoutScreen, ShipSelectScreen } from './shipScreens';
 import { UnlocksScreen } from './unlocksScreen';
 
 /** title -> node (the current level's nodes, then its reward) -> ... -> won; death at any node -> over. */
-export type RunPhase = 'title' | 'unlocks' | 'node' | 'over' | 'won';
+export type RunPhase = 'title' | 'unlocks' | 'ships' | 'loadout' | 'node' | 'over' | 'won';
 
 /** Seconds a result screen ignores input, so the press that ended the last node cannot skip it. */
 const SCREEN_LOCKOUT = 1;
@@ -27,9 +30,15 @@ function mulberry32(seed: number): () => number {
  */
 export class Run {
   phase: RunPhase = 'title';
+  /** The ship and weapons the next run starts with. Default ship and loadout until the Endless screens (or a debug hook) pick others. */
+  selection: { shipId: string; loadout: WeaponLoadout } = { shipId: DEFAULT_SHIP_ID, loadout: defaultLoadoutFor(DEFAULT_SHIP_ID) };
   state: RunState = this.freshState(0);
+  /** Names of ships unlocked during the current run (shown on the result screens). */
+  private unlockedNames: string[] = [];
   private node: FlowNode | null = null;
   private unlocksScreen: UnlocksScreen | null = null;
+  private shipScreen: ShipSelectScreen | null = null;
+  private loadoutScreen: LoadoutScreen | null = null;
   /** Seconds in the current phase (screen blink and lockout). */
   private phaseTime = 0;
 
@@ -46,12 +55,24 @@ export class Run {
   }
 
   private freshState(seed: number): RunState {
-    return { seed, rng: mulberry32(seed), levelIndex: 0, nodeIndex: 0, maxHealth: TUNING.player.maxHealth, loadout: [], upgrades: [], time: 0 };
+    const sel = this.selection;
+    return { seed, rng: mulberry32(seed), levelIndex: 0, nodeIndex: 0, maxHealth: shipById(sel.shipId).baseStats.maxHealth, shipId: sel.shipId, loadout: { main: sel.loadout.main, aux: [...sel.loadout.aux] }, upgrades: [], time: 0 };
+  }
+
+  /** Choose the ship and loadout (a debug hook and the Endless screens): applies to the current state at once and to every later run. */
+  select(shipId: string, loadout?: WeaponLoadout): void {
+    const id = SHIPS.some((s) => s.id === shipId) ? shipId : DEFAULT_SHIP_ID;
+    const l = cleanLoadout(loadout ?? defaultLoadoutFor(id), id);
+    this.selection = { shipId: id, loadout: l };
+    this.state.shipId = id;
+    this.state.maxHealth = shipById(id).baseStats.maxHealth;
+    this.state.loadout = { main: l.main, aux: [...l.aux] };
   }
 
   /** Begin a new run at level 1, node 1. */
   start(seed: number = (Date.now() & 0x7fffffff) >>> 0): void {
     this.endNode();
+    this.unlockedNames = [];
     this.state = this.freshState(seed);
     this.host.healFull();
     this.enterNode();
@@ -102,15 +123,23 @@ export class Run {
     if (s.nodeIndex >= this.levelNodes().length) {
       s.levelIndex++;
       s.nodeIndex = 0;
+      if (s.levelIndex === 1) this.unlockShip('warden'); // the first boss is down
       if (s.levelIndex >= this.def.levels.length) {
         s.levelIndex = this.def.levels.length - 1;
         s.nodeIndex = this.levelNodes().length - 1;
+        this.unlockShip('wisp'); // the run is won
         this.setPhase('won');
         return;
       }
       this.host.healFull();
     }
     this.enterNode();
+  }
+
+  /** Unlock a ship by flag (`SHIPS[].unlock`); remembered for the result screen when it is new. */
+  private unlockShip(flag: string): void {
+    const ship = SHIPS.find((s) => s.unlock === flag);
+    if (ship && saveStore.unlock('ships', flag)) this.unlockedNames.push(ship.name);
   }
 
   update(dt: number): void {
@@ -131,20 +160,51 @@ export class Run {
       if (this.unlocksScreen!.update(dt, this.host)) this.toTitle();
       return;
     }
-    // title / over / won: any tap or key continues (result screens after a short lockout).
+    if (this.phase === 'ships') {
+      const r = this.shipScreen!.update(dt, this.host);
+      if (r === 'back') this.toTitle();
+      else if (r === 'next') {
+        const ship = this.shipScreen!.ship;
+        // Keep the saved weapons when the same ship is picked again, else start from the ship's own.
+        const last = saveStore.current.lastLoadout;
+        this.loadoutScreen = new LoadoutScreen(ship.id, last && last.ship === ship.id ? last : defaultLoadoutFor(ship.id));
+        this.setPhase('loadout');
+      }
+      return;
+    }
+    if (this.phase === 'loadout') {
+      const r = this.loadoutScreen!.update(dt, this.host);
+      if (r === 'back') this.setPhase('ships');
+      else if (r === 'start') {
+        const ship = this.shipScreen!.ship;
+        const l = this.loadoutScreen!.loadout;
+        this.select(ship.id, l);
+        saveStore.setLastLoadout({ ship: ship.id, main: l.main, aux: l.aux });
+        this.startFromTitle();
+      }
+      return;
+    }
+    // title / over / won: result screens continue on any tap or key after a short lockout; the title has buttons.
     const tap = this.host.takeTap();
     const key = this.host.takeKey();
     if (!tap && !key) return;
     if (this.phase === 'title') {
-      const b = UNLOCKS_BTN;
-      if (key === 'KeyU' || (tap && tap.x >= b.x && tap.x <= b.x + b.w && tap.y >= b.y && tap.y <= b.y + b.h)) {
+      const inBtn = (b: { x: number; y: number; w: number; h: number }): boolean => !!tap && tap.x >= b.x && tap.x <= b.x + b.w && tap.y >= b.y && tap.y <= b.y + b.h;
+      if (key === 'KeyU' || inBtn(UNLOCKS_BTN)) {
         this.unlocksScreen = new UnlocksScreen();
         this.setPhase('unlocks');
-        return;
+      } else if (key === 'Enter' || key === 'Space' || key === 'KeyE' || inBtn(ENDLESS_BTN)) {
+        const sel = initialSelection();
+        this.shipScreen = new ShipSelectScreen(sel.shipId);
+        this.setPhase('ships');
       }
-      const seed = new URLSearchParams(location.search).get('seed');
-      this.start(seed !== null && seed !== '' && !Number.isNaN(+seed) ? +seed : undefined);
+      // The CAMPAIGN and CONQUEST buttons are "coming soon": taps do nothing.
     } else if (this.phaseTime > SCREEN_LOCKOUT) this.toTitle();
+  }
+
+  private startFromTitle(): void {
+    const seed = new URLSearchParams(location.search).get('seed');
+    this.start(seed !== null && seed !== '' && !Number.isNaN(+seed) ? +seed : undefined);
   }
 
   /** True while a node is current (as opposed to the title and result screens). */
@@ -154,13 +214,19 @@ export class Run {
 
   /** Draws the current node or screen, plus a small progress label while a node is running. */
   draw(g: CanvasRenderingContext2D): void {
-    const summary = { level: this.state.levelIndex + 1, levels: this.def.levels.length, time: this.state.time, upgrades: this.state.upgrades.map((u) => u.name) };
+    const summary = { level: this.state.levelIndex + 1, levels: this.def.levels.length, time: this.state.time, upgrades: this.state.upgrades.map((u) => u.name), unlocked: this.unlockedNames };
     switch (this.phase) {
       case 'title':
         drawTitle(g, this.phaseTime, this.def.levels.length);
         break;
       case 'unlocks':
         this.unlocksScreen!.draw(g);
+        break;
+      case 'ships':
+        this.shipScreen!.draw(g);
+        break;
+      case 'loadout':
+        this.loadoutScreen!.draw(g);
         break;
       case 'over':
         drawRunOver(g, this.phaseTime, summary);

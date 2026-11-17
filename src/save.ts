@@ -5,11 +5,13 @@
  * game must still work, so the data then lives in memory only. A corrupt or unreadable blob falls back to defaults.
  * `?nosave` in the URL (and the one-boss debug mode) uses a pure in-memory save, so tests and debug sims never touch the real one.
  *
+ * Version 2 added `lastLoadout`.
+ *
  * To add a new field: add it to `SaveData`, give it a default in `defaults()`, bump `SAVE_VERSION` and add a step to `MIGRATIONS`.
  */
 
 export const SAVE_KEY = 'galactrious.save';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export type UnlockKind = 'cards' | 'ships' | 'weapons';
 export type Medal = 'bronze' | 'silver' | 'gold';
@@ -19,10 +21,18 @@ export interface MedalRecord {
   bestTimeMs?: number;
 }
 
+/** The ship and weapons chosen last in the loadout builder (Endless), remembered between sessions. */
+export interface LastLoadout {
+  ship: string;
+  main: string;
+  aux: string[];
+}
+
 export interface SaveData {
   version: number;
   unlocks: Record<UnlockKind, string[]>;
   medals: Record<string, MedalRecord>;
+  lastLoadout?: LastLoadout;
   stats?: { runs?: number; bossesKilled?: number };
 }
 
@@ -34,7 +44,9 @@ export function defaults(): SaveData {
 }
 
 /** MIGRATIONS[n] upgrades a version-n blob to version n+1. Empty until the format first changes. */
-const MIGRATIONS: Record<number, (d: Record<string, unknown>) => Record<string, unknown>> = {};
+const MIGRATIONS: Record<number, (d: Record<string, unknown>) => Record<string, unknown>> = {
+  1: (d) => d, // v2 only added the optional `lastLoadout`
+};
 
 /** Validate and migrate an arbitrary parsed value; returns null when it is unusable. */
 function normalize(raw: unknown): SaveData | null {
@@ -65,6 +77,10 @@ function normalize(raw: unknown): SaveData | null {
       if (typeof r.bestTimeMs === 'number' && Number.isFinite(r.bestTimeMs)) clean.bestTimeMs = r.bestTimeMs;
       out.medals[id] = clean;
     }
+  }
+  const ll = d.lastLoadout as Record<string, unknown> | undefined;
+  if (ll && typeof ll === 'object' && typeof ll.ship === 'string' && typeof ll.main === 'string' && Array.isArray(ll.aux)) {
+    out.lastLoadout = { ship: ll.ship, main: ll.main, aux: ll.aux.filter((x): x is string => typeof x === 'string').slice(0, 3) };
   }
   const s = d.stats;
   if (s && typeof s === 'object' && !Array.isArray(s)) {
@@ -146,6 +162,12 @@ export class SaveStore {
     this.data.unlocks[kind].push(id);
     this.save();
     return true;
+  }
+
+  /** Remember the last ship and loadout the player started a run with. */
+  setLastLoadout(l: LastLoadout): void {
+    this.data.lastLoadout = { ship: l.ship, main: l.main, aux: [...l.aux] };
+    this.save();
   }
 
   /** Record a result for a level: keeps the better medal and the faster time. */

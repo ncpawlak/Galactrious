@@ -31,6 +31,10 @@ export const CARVE_SHAPES = {
   ember1: { lateralPenalty: 1, backPenalty: 1, reach: 8 } as CarveShape,
   ember2: { lateralPenalty: 1, backPenalty: 1, reach: 11 } as CarveShape,
   ember3: { lateralPenalty: 1, backPenalty: 1, reach: 14 } as CarveShape,
+  /** Needler main gun: a thin, deepish tunnel. */
+  needle: { lateralPenalty: 2.6, backPenalty: 2.5, reach: 70 } as CarveShape,
+  /** Swarm missile: a small round bite. */
+  swarm: { lateralPenalty: 1.2, backPenalty: 1.2, reach: 22 } as CarveShape,
   /** Arc missile: a round, medium crater whatever direction it arrives from. */
   round: { lateralPenalty: 1, backPenalty: 1, reach: 24 } as CarveShape,
 };

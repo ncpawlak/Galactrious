@@ -1,9 +1,10 @@
-import { TUNING, WEAPONS } from '../config';
+import { MAINS, TUNING, WEAPONS } from '../config';
 import { CARVE_SHAPES, type CarveShapeName } from '../carveShapes';
 import type { Upgrade } from '../flow/node';
 import { TAG_IDS, type TagSet } from '../tags';
 import { CARD_BY_ID, CARDS } from './cards';
 import { isUnlocked } from '../save';
+import { shipBase } from '../ships';
 import type { CardDef } from './model';
 
 /**
@@ -42,6 +43,17 @@ export const STATS: Record<string, StatInfo> = {
   'rocket.cooldown': { label: 'Rocket cooldown', base: () => WEAPONS.rocket.cooldown, good: 'down', show: secs },
   'arc.count': { label: 'Arc missiles', base: () => 2, good: 'up', show: num },
   'arc.cooldown': { label: 'Arc cooldown', base: () => WEAPONS.arc.cooldown, good: 'down', show: secs },
+  'scatter.fireRate': { label: 'Scatter rate', base: () => TUNING.ship.fireRate * MAINS.scatter.rateMul, good: 'up', show: (v) => `${num(v)}/s` },
+  'scatter.damage': { label: 'Scatter damage', base: () => TUNING.ship.damage * MAINS.scatter.damageMul, good: 'up', show: num },
+  'scatter.barrels': { label: 'Scatter pellets', base: () => MAINS.scatter.projectiles, good: 'up', show: (v) => num(v + MAINS.scatter.projectiles - 1) },
+  'needle.fireRate': { label: 'Needler rate', base: () => TUNING.ship.fireRate * MAINS.needle.rateMul, good: 'up', show: (v) => `${num(v)}/s` },
+  'needle.damage': { label: 'Needler damage', base: () => TUNING.ship.damage * MAINS.needle.damageMul, good: 'up', show: num },
+  'lance.energy': { label: 'Lance energy', base: () => WEAPONS.lance.energy, good: 'up', show: num },
+  'lance.cooldown': { label: 'Lance cooldown', base: () => WEAPONS.lance.cooldown, good: 'down', show: secs },
+  'blades.count': { label: 'Blades', base: () => WEAPONS.blades.count, good: 'up', show: num },
+  'blades.cooldown': { label: 'Blades cooldown', base: () => WEAPONS.blades.cooldown, good: 'down', show: secs },
+  'swarm.count': { label: 'Swarm missiles', base: () => WEAPONS.swarm.count, good: 'up', show: num },
+  'swarm.cooldown': { label: 'Swarm cooldown', base: () => WEAPONS.swarm.cooldown, good: 'down', show: secs },
   'ship.maxHealth': { label: 'Max hull', base: () => TUNING.player.maxHealth, good: 'up', show: num },
   'dodge.cooldown': { label: 'Dodge cooldown', base: () => TUNING.dodge.cooldown, good: 'down', show: secs },
   'ship.speed': { label: 'Ship speed', base: () => TUNING.ship.speed, good: 'up', show: num },
@@ -61,8 +73,14 @@ export class Loadout {
   private readonly mul = new Map<string, number>();
   private readonly stacks = new Map<string, number>();
   readonly count: number;
+  /** The ship's base values for the ship stats (max hull, speed, hitbox, dodge cooldown); everything else uses `STATS[..].base`. */
+  private readonly shipStats: Record<string, number>;
 
-  constructor(readonly upgrades: readonly Upgrade[]) {
+  constructor(
+    readonly upgrades: readonly Upgrade[],
+    readonly shipId?: string,
+  ) {
+    this.shipStats = shipBase(shipId ?? '');
     this.count = upgrades.length;
     for (const u of upgrades) {
       this.stacks.set(u.id, (this.stacks.get(u.id) ?? 0) + 1);
@@ -74,7 +92,7 @@ export class Loadout {
   }
 
   /** Effective value of a stat. `base` defaults to the stat's own base; pass one for a live-adjusted base (debug damage). */
-  get(stat: string, base: number = STATS[stat]?.base() ?? 0): number {
+  get(stat: string, base: number = this.shipStats[stat] ?? STATS[stat]?.base() ?? 0): number {
     return (base + (this.add.get(stat) ?? 0)) * (this.mul.get(stat) ?? 1);
   }
 
@@ -106,8 +124,8 @@ export class Loadout {
 }
 
 /** A loadout with one more copy of `card` (for the "now -> becomes" preview). */
-export function withCard(held: readonly Upgrade[], card: CardDef): Loadout {
-  return new Loadout([...held, card]);
+export function withCard(held: readonly Upgrade[], card: CardDef, shipId?: string): Loadout {
+  return new Loadout([...held, card], shipId);
 }
 
 /** True when the card is always available or its unlock flag is set in the save. */
@@ -115,14 +133,16 @@ export function cardUnlocked(card: CardDef): boolean {
   return !card.unlock || isUnlocked('cards', card.unlock);
 }
 
-export function canOffer(card: CardDef, lo: Loadout): boolean {
+/** `equipped` = the weapon ids in the run's slots: a card for a weapon that is not equipped is never offered. */
+export function canOffer(card: CardDef, lo: Loadout, equipped?: ReadonlySet<string>): boolean {
+  if (card.weapon && equipped && !equipped.has(card.weapon)) return false;
   return cardUnlocked(card) && lo.stackOf(card.id) < (card.maxStacks ?? 1);
 }
 
 /** Pick up to `n` distinct cards, weighted, without replacement, using the run's seeded `rng`. Cards at max stacks are skipped. */
-export function drawCards(rng: () => number, held: readonly Upgrade[], n: number): CardDef[] {
-  const lo = new Loadout(held);
-  const pool = CARDS.filter((c) => canOffer(c, lo));
+export function drawCards(rng: () => number, held: readonly Upgrade[], n: number, equipped?: ReadonlySet<string>, shipId?: string): CardDef[] {
+  const lo = new Loadout(held, shipId);
+  const pool = CARDS.filter((c) => canOffer(c, lo, equipped));
   const out: CardDef[] = [];
   while (out.length < n && pool.length > 0) {
     const total = pool.reduce((s, c) => s + (c.weight ?? 1), 0);
@@ -145,9 +165,9 @@ export interface StatPreview {
 }
 
 /** What taking `card` would change, one row per stat it touches: "Rocket radius 88 -> 106". */
-export function previewCard(card: CardDef, held: readonly Upgrade[]): StatPreview[] {
-  const now = new Loadout(held);
-  const next = withCard(held, card);
+export function previewCard(card: CardDef, held: readonly Upgrade[], shipId?: string): StatPreview[] {
+  const now = new Loadout(held, shipId);
+  const next = withCard(held, card, shipId);
   const keys = [...new Set(card.modifiers.map((m) => m.stat))];
   return keys.map((k) => {
     const info = STATS[k];

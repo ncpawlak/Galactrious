@@ -1,0 +1,148 @@
+import { TUNING } from './config';
+import { isUnlocked } from './save';
+
+/**
+ * Ships as data. A ship is a look (drawn on the canvas), base stats, the weapons it starts with and an optional unlock flag.
+ * Ships never contain behaviour: the game reads `baseStats` through `Loadout` (src/upgrades/stats.ts), the look through `drawShipLook`,
+ * and the loadout builder starts from `startingWeapons` (any unlocked weapons can then be swapped in).
+ * To add a ship: add an entry to `SHIPS` below (see DESIGN.md "Ships and weapon slots: as built").
+ */
+
+/** A polygon part of a ship silhouette, in ship-local px (the ship's nose is at -y, its centre at 0,0). */
+export interface ShipPart {
+  color: string;
+  points: [number, number][];
+}
+
+/** What a ship looks like: a main hull polygon, extra polygons on top, a cockpit slit and an exhaust flame. All plain data. */
+export interface ShipLook {
+  hull: ShipPart;
+  /** Drawn after the hull, in order (wings, fins, stripes). */
+  details?: ShipPart[];
+  cockpit: { color: string; x: number; y: number; w: number; h: number };
+  /** Exhaust rect: `len` is the flicker base length, `flicker` the random extra. */
+  flame: { color: string; x: number; y: number; w: number; len: number; flicker: number };
+}
+
+export interface ShipStats {
+  maxHealth: number;
+  /** Keyboard move speed, px/s (the pointer follow rate scales with it). */
+  speed: number;
+  dodgeCooldown: number;
+  /** Collision circle radius, px. */
+  hitbox: number;
+}
+
+export interface WeaponLoadout {
+  main: string;
+  aux: string[];
+}
+
+export interface ShipDefinition {
+  id: string;
+  name: string;
+  /** One line for the select screen. */
+  desc: string;
+  look: ShipLook;
+  baseStats: ShipStats;
+  startingWeapons: WeaponLoadout;
+  /** Unlock flag (`save.unlocks.ships`). Omitted = always unlocked. */
+  unlock?: string;
+  /** Shown on the select screen while locked: how to get it. */
+  unlockHint?: string;
+}
+
+export const DEFAULT_SHIP_ID = 'vanguard';
+
+export const SHIPS: ShipDefinition[] = [
+  {
+    // The original ship: same numbers and the same polygon as before ships existed.
+    id: DEFAULT_SHIP_ID,
+    name: 'Vanguard',
+    desc: 'Balanced all-rounder. Chain gun with Gauss, Rocket and Arc.',
+    look: {
+      hull: { color: '#6ee7ff', points: [[0, -22], [15, 16], [0, 9], [-15, 16]] },
+      cockpit: { color: '#ffffff', x: -2, y: -6, w: 4, h: 9 },
+      flame: { color: '#ff8a3c', x: -3, y: 12, w: 6, len: 4, flicker: 5 },
+    },
+    baseStats: { maxHealth: TUNING.player.maxHealth, speed: TUNING.ship.speed, dodgeCooldown: TUNING.dodge.cooldown, hitbox: TUNING.player.hitbox },
+    startingWeapons: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] },
+  },
+  {
+    id: 'warden',
+    name: 'Warden',
+    desc: 'Heavy hull, slow to turn. Scatter shotgun with Blades, Rocket and Lance.',
+    look: {
+      hull: { color: '#ff9f43', points: [[0, -20], [10, -8], [24, 6], [24, 18], [10, 14], [0, 18], [-10, 14], [-24, 18], [-24, 6], [-10, -8]] },
+      details: [
+        { color: '#7a4a1c', points: [[-24, 6], [-16, 6], [-16, 18], [-24, 18]] },
+        { color: '#7a4a1c', points: [[24, 6], [16, 6], [16, 18], [24, 18]] },
+        { color: '#ffe3b8', points: [[0, -14], [4, -4], [-4, -4]] },
+      ],
+      cockpit: { color: '#2a1608', x: -3, y: -2, w: 6, h: 10 },
+      flame: { color: '#ffd23a', x: -6, y: 14, w: 12, len: 4, flicker: 6 },
+    },
+    baseStats: { maxHealth: 7, speed: 390, dodgeCooldown: 3, hitbox: 6 },
+    startingWeapons: { main: 'scatter', aux: ['blades', 'rocket', 'lance'] },
+    unlock: 'warden',
+    unlockHint: 'Defeat the first boss in a run.',
+  },
+  {
+    id: 'wisp',
+    name: 'Wisp',
+    desc: 'Frail and fast, tiny hitbox. Needler with Swarm, Gauss and Arc.',
+    look: {
+      hull: { color: '#c77dff', points: [[0, -24], [7, 4], [4, 18], [0, 12], [-4, 18], [-7, 4]] },
+      details: [
+        { color: '#7dff9a', points: [[7, 2], [20, 14], [6, 12]] },
+        { color: '#7dff9a', points: [[-7, 2], [-20, 14], [-6, 12]] },
+      ],
+      cockpit: { color: '#f4e6ff', x: -1, y: -10, w: 2, h: 10 },
+      flame: { color: '#7dff9a', x: -2, y: 12, w: 4, len: 5, flicker: 6 },
+    },
+    baseStats: { maxHealth: 3, speed: 560, dodgeCooldown: 2, hitbox: 4 },
+    startingWeapons: { main: 'needle', aux: ['swarm', 'gauss', 'arc'] },
+    unlock: 'wisp',
+    unlockHint: 'Clear a whole run.',
+  },
+];
+
+export const SHIP_BY_ID = new Map(SHIPS.map((s) => [s.id, s]));
+
+export function shipById(id: string): ShipDefinition {
+  return SHIP_BY_ID.get(id) ?? SHIP_BY_ID.get(DEFAULT_SHIP_ID)!;
+}
+
+/** True when the ship is always available or its flag is set in the save. */
+export function shipUnlocked(s: ShipDefinition): boolean {
+  return !s.unlock || isUnlocked('ships', s.unlock);
+}
+
+/** Stat-key overrides a ship applies as the base of `Loadout` (upgrades then stack on top). */
+export function shipBase(id: string): Record<string, number> {
+  const b = shipById(id).baseStats;
+  return { 'ship.maxHealth': b.maxHealth, 'ship.speed': b.speed, 'dodge.cooldown': b.dodgeCooldown, 'ship.hitbox': b.hitbox };
+}
+
+/** Draws a ship centred at (x, y) at `scale` (1 = in-game size). The flame flickers with Math.random, as the in-game ship always did. */
+export function drawShipLook(g: CanvasRenderingContext2D, look: ShipLook, x: number, y: number, scale = 1): void {
+  g.save();
+  g.translate(Math.round(x), Math.round(y));
+  if (scale !== 1) g.scale(scale, scale);
+  const poly = (p: ShipPart): void => {
+    g.fillStyle = p.color;
+    g.beginPath();
+    p.points.forEach(([px, py], i) => (i === 0 ? g.moveTo(px, py) : g.lineTo(px, py)));
+    g.closePath();
+    g.fill();
+  };
+  poly(look.hull);
+  for (const d of look.details ?? []) poly(d);
+  const c = look.cockpit;
+  g.fillStyle = c.color;
+  g.fillRect(c.x, c.y, c.w, c.h);
+  const f = look.flame;
+  g.fillStyle = f.color;
+  g.fillRect(f.x, f.y, f.w, f.len + Math.random() * f.flicker);
+  g.restore();
+}

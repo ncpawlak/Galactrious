@@ -139,4 +139,23 @@ export const WEAPONS = {
     /** Seconds before it stops wandering and flies straight at the target. */
     wanderTime: 4,
   },
+  /** Lance (aux): a held beam. For `duration` s it carves straight up from the ship every `tick` s (`energy` per tick, scaled by power), keeping `pierce` of its energy through each layer and passing through components. */
+  lance: { cooldown: 6.5, duration: 1.6, tick: 0.05, energy: 75, pierce: 0.7, shape: 'narrow2' as const },
+  /** Blades (aux): `count` blades orbit the ship at `radius` px for `duration` s (`spin` rad/s); a blade touching a target carves `energy` every `tick` s. */
+  blades: { cooldown: 7, duration: 4.5, count: 3, radius: 80, spin: 5.5, tick: 0.1, energy: 70, shape: 'ember3' as const },
+  /** Swarm (aux): `count` small homing missiles at random solid spots of the targets. */
+  swarm: { cooldown: 6.5, count: 6, energy: 340, pierce: 0.3, shape: 'swarm' as const, speed: 560, turn: 4.5, wanderTime: 2.2 },
+};
+
+/**
+ * Main weapons (src/weapons.ts `MAIN_DEFS`). Everything is relative to the ship's live damage and fire rate (the chain gun
+ * is 1x of both), so the debug damage keys and test mode scale every main. `projectiles` per shot, `spreadDeg` between
+ * neighbours, `pierce` as for bullets. `near`/`far` (optional): energy multiplier at point blank and at `end` px, linear in between from `start`; the bullet dies at `end`.
+ */
+export const MAINS = {
+  chain: { rateMul: 1, damageMul: 1, projectiles: 1, spreadDeg: 5, jitterDeg: 0, pierce: 0, speedMul: 1 },
+  /** Wide shotgun: 8 pellets, slow, strong up close, weak and short ranged far away. */
+  scatter: { rateMul: 0.3, damageMul: 0.5, projectiles: 8, spreadDeg: 6, jitterDeg: 2, pierce: 0, speedMul: 0.8, fall: { start: 110, end: 440, near: 1.7, far: 0.25 } },
+  /** Needler: very fast, narrow, thin deep tunnels. */
+  needle: { rateMul: 2.4, damageMul: 0.42, projectiles: 1, spreadDeg: 0, jitterDeg: 0.6, pierce: 0.35, speedMul: 1.25, shape: 'needle' as const },
 };

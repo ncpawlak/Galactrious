@@ -13,13 +13,14 @@ import type { CardDef } from './model';
  */
 export const CARDS: CardDef[] = [
   // --- chain gun (the base gun) ---
-  { id: 'chain-rate', name: 'Rapid Fire', group: 'Chain gun', desc: 'Chain gun fires 20% faster.', maxStacks: 4, modifiers: [{ stat: 'chain.fireRate', op: 'mul', value: 1.2 }] },
-  { id: 'chain-damage', name: 'Heavy Rounds', group: 'Chain gun', desc: 'Chain gun bullets hit 25% harder.', maxStacks: 4, modifiers: [{ stat: 'chain.damage', op: 'mul', value: 1.25 }] },
-  { id: 'chain-barrel', name: 'Extra Barrel', group: 'Chain gun', desc: 'One more bullet per chain gun shot, in a spread.', maxStacks: 2, weight: 0.8, modifiers: [{ stat: 'chain.barrels', op: 'add', value: 1 }] },
+  { id: 'chain-rate', name: 'Rapid Fire', group: 'Chain gun', weapon: 'chain', desc: 'Chain gun fires 20% faster.', maxStacks: 4, modifiers: [{ stat: 'chain.fireRate', op: 'mul', value: 1.2 }] },
+  { id: 'chain-damage', name: 'Heavy Rounds', group: 'Chain gun', weapon: 'chain', desc: 'Chain gun bullets hit 25% harder.', maxStacks: 4, modifiers: [{ stat: 'chain.damage', op: 'mul', value: 1.25 }] },
+  { id: 'chain-barrel', name: 'Extra Barrel', group: 'Chain gun', weapon: 'chain', desc: 'One more bullet per chain gun shot, in a spread.', maxStacks: 2, weight: 0.8, modifiers: [{ stat: 'chain.barrels', op: 'add', value: 1 }] },
   {
     id: 'chain-burn',
     name: 'Burn',
     group: 'Chain gun',
+    weapon: 'chain',
     desc: 'On hit, +1 burn: chain gun shots set the target ablaze, burning a small area for a short time.',
     maxStacks: 3,
     weight: 0.7,
@@ -27,16 +28,32 @@ export const CARDS: CardDef[] = [
     modifiers: [{ stat: 'chain.tag.burn', op: 'add', value: 1 }],
   },
   // --- gauss ---
-  { id: 'gauss-reach', name: 'Deep Bore', group: 'Gauss', desc: 'Gauss shots carry 30% more energy, drilling much deeper.', maxStacks: 3, modifiers: [{ stat: 'gauss.energy', op: 'mul', value: 1.3 }] },
-  { id: 'gauss-width', name: 'Wide Shaft', group: 'Gauss', desc: 'Gauss shots drill a wider shaft.', maxStacks: 3, modifiers: [{ stat: 'gauss.width', op: 'add', value: 1 }] },
-  { id: 'gauss-cooldown', name: 'Gauss Capacitor', group: 'Gauss', desc: 'Gauss recharges 15% faster.', maxStacks: 4, modifiers: [{ stat: 'gauss.cooldown', op: 'mul', value: 0.85 }] },
+  { id: 'gauss-reach', name: 'Deep Bore', group: 'Gauss', weapon: 'gauss', desc: 'Gauss shots carry 30% more energy, drilling much deeper.', maxStacks: 3, modifiers: [{ stat: 'gauss.energy', op: 'mul', value: 1.3 }] },
+  { id: 'gauss-width', name: 'Wide Shaft', group: 'Gauss', weapon: 'gauss', desc: 'Gauss shots drill a wider shaft.', maxStacks: 3, modifiers: [{ stat: 'gauss.width', op: 'add', value: 1 }] },
+  { id: 'gauss-cooldown', name: 'Gauss Capacitor', group: 'Gauss', weapon: 'gauss', desc: 'Gauss recharges 15% faster.', maxStacks: 4, modifiers: [{ stat: 'gauss.cooldown', op: 'mul', value: 0.85 }] },
   // --- rocket ---
-  { id: 'rocket-radius', name: 'Wide Warhead', group: 'Rocket', desc: 'Rocket blasts are 18 px wider.', maxStacks: 3, modifiers: [{ stat: 'rocket.radius', op: 'add', value: 18 }] },
-  { id: 'rocket-energy', name: 'Shaped Charge', group: 'Rocket', desc: 'Rocket blasts carry 30% more carving energy.', maxStacks: 3, modifiers: [{ stat: 'rocket.energy', op: 'mul', value: 1.3 }] },
-  { id: 'rocket-cooldown', name: 'Rocket Autoloader', group: 'Rocket', desc: 'Rocket reloads 15% faster.', maxStacks: 4, modifiers: [{ stat: 'rocket.cooldown', op: 'mul', value: 0.85 }] },
+  { id: 'rocket-radius', name: 'Wide Warhead', group: 'Rocket', weapon: 'rocket', desc: 'Rocket blasts are 18 px wider.', maxStacks: 3, modifiers: [{ stat: 'rocket.radius', op: 'add', value: 18 }] },
+  { id: 'rocket-energy', name: 'Shaped Charge', group: 'Rocket', weapon: 'rocket', desc: 'Rocket blasts carry 30% more carving energy.', maxStacks: 3, modifiers: [{ stat: 'rocket.energy', op: 'mul', value: 1.3 }] },
+  { id: 'rocket-cooldown', name: 'Rocket Autoloader', group: 'Rocket', weapon: 'rocket', desc: 'Rocket reloads 15% faster.', maxStacks: 4, modifiers: [{ stat: 'rocket.cooldown', op: 'mul', value: 0.85 }] },
   // --- arc ---
-  { id: 'arc-count', name: 'Arc Swarm', group: 'Arc', desc: 'Arc launches one more homing missile.', maxStacks: 3, weight: 0.8, modifiers: [{ stat: 'arc.count', op: 'add', value: 1 }] },
-  { id: 'arc-cooldown', name: 'Arc Relay', group: 'Arc', desc: 'Arc recharges 15% faster.', maxStacks: 4, modifiers: [{ stat: 'arc.cooldown', op: 'mul', value: 0.85 }] },
+  { id: 'arc-count', name: 'Arc Swarm', group: 'Arc', weapon: 'arc', desc: 'Arc launches one more homing missile.', maxStacks: 3, weight: 0.8, modifiers: [{ stat: 'arc.count', op: 'add', value: 1 }] },
+  { id: 'arc-cooldown', name: 'Arc Relay', group: 'Arc', weapon: 'arc', desc: 'Arc recharges 15% faster.', maxStacks: 4, modifiers: [{ stat: 'arc.cooldown', op: 'mul', value: 0.85 }] },
+  // --- scatter (main) ---
+  { id: 'scatter-pellets', name: 'Extra Pellets', group: 'Scatter', weapon: 'scatter', desc: 'Scatter fires 2 more pellets per shot.', maxStacks: 3, modifiers: [{ stat: 'scatter.barrels', op: 'add', value: 2 }] },
+  { id: 'scatter-rate', name: 'Pump Action', group: 'Scatter', weapon: 'scatter', desc: 'Scatter fires 20% faster.', maxStacks: 4, modifiers: [{ stat: 'scatter.fireRate', op: 'mul', value: 1.2 }] },
+  { id: 'scatter-damage', name: 'Heavy Shot', group: 'Scatter', weapon: 'scatter', desc: 'Scatter pellets hit 25% harder.', maxStacks: 4, modifiers: [{ stat: 'scatter.damage', op: 'mul', value: 1.25 }] },
+  // --- needler (main) ---
+  { id: 'needle-rate', name: 'Rapid Needles', group: 'Needler', weapon: 'needle', desc: 'Needler fires 20% faster.', maxStacks: 4, modifiers: [{ stat: 'needle.fireRate', op: 'mul', value: 1.2 }] },
+  { id: 'needle-damage', name: 'Hardened Tips', group: 'Needler', weapon: 'needle', desc: 'Needler rounds hit 25% harder.', maxStacks: 4, modifiers: [{ stat: 'needle.damage', op: 'mul', value: 1.25 }] },
+  // --- lance ---
+  { id: 'lance-energy', name: 'Focused Beam', group: 'Lance', weapon: 'lance', desc: 'Lance beam carries 30% more energy per tick.', maxStacks: 3, modifiers: [{ stat: 'lance.energy', op: 'mul', value: 1.3 }] },
+  { id: 'lance-cooldown', name: 'Lance Capacitor', group: 'Lance', weapon: 'lance', desc: 'Lance recharges 15% faster.', maxStacks: 4, modifiers: [{ stat: 'lance.cooldown', op: 'mul', value: 0.85 }] },
+  // --- blades ---
+  { id: 'blades-count', name: 'More Blades', group: 'Blades', weapon: 'blades', desc: 'One more orbiting blade.', maxStacks: 3, weight: 0.8, modifiers: [{ stat: 'blades.count', op: 'add', value: 1 }] },
+  { id: 'blades-cooldown', name: 'Blade Dock', group: 'Blades', weapon: 'blades', desc: 'Blades recharge 15% faster.', maxStacks: 4, modifiers: [{ stat: 'blades.cooldown', op: 'mul', value: 0.85 }] },
+  // --- swarm ---
+  { id: 'swarm-count', name: 'Bigger Swarm', group: 'Swarm', weapon: 'swarm', desc: 'Swarm launches 2 more missiles.', maxStacks: 3, modifiers: [{ stat: 'swarm.count', op: 'add', value: 2 }] },
+  { id: 'swarm-cooldown', name: 'Swarm Hive', group: 'Swarm', weapon: 'swarm', desc: 'Swarm recharges 15% faster.', maxStacks: 4, modifiers: [{ stat: 'swarm.cooldown', op: 'mul', value: 0.85 }] },
   // --- ship ---
   { id: 'hull-plating', name: 'Hull Plating', group: 'Ship', desc: '+1 max hull, repaired right away.', maxStacks: 3, modifiers: [{ stat: 'ship.maxHealth', op: 'add', value: 1 }] },
   { id: 'dodge-cooldown', name: 'Quick Thrusters', group: 'Ship', desc: 'Dodge recharges 20% faster.', maxStacks: 3, modifiers: [{ stat: 'dodge.cooldown', op: 'mul', value: 0.8 }] },
