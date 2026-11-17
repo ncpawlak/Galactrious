@@ -1,6 +1,6 @@
 import type { Boss, HitResult } from './boss';
 import type { CarveShapeName } from './carveShapes';
-import type { BlastSpec, ComponentSystem } from './components';
+import { resolveBlast, type BlastSpec, type ComponentSystem } from './components';
 import { H, W, WEAPONS } from './config';
 
 /**
@@ -31,8 +31,8 @@ export interface FireContext {
   /** Live ship damage / default damage: the debug damage keys scale weapon energy through this. */
   power: number;
   spawn(p: ProjectileInit): void;
-  /** A random solid pixel of the boss in boss-local coordinates, or null when nothing is left. */
-  pickTarget(): { lx: number; ly: number } | null;
+  /** A random solid pixel of a random live target (the boss or a unit) in its local coordinates, or null when nothing is left. */
+  pickTarget(): { target: Combatant; lx: number; ly: number } | null;
 }
 
 export interface ProjectileInit {
@@ -55,7 +55,7 @@ export interface ProjectileInit {
   /** Detonates as a boss blast on the first solid pixel or component (rocket). */
   blast?: BlastSpec;
   /** Homing on a random solid boss pixel (arc). */
-  steer?: { lx: number; ly: number; turn: number; amp: number; freq: number; phase: number; wanderTime: number };
+  steer?: { target: Combatant; lx: number; ly: number; turn: number; amp: number; freq: number; phase: number; wanderTime: number };
   /** Seconds the trail stays visible. */
   trailLife: number;
 }
@@ -136,6 +136,7 @@ export const WEAPON_DEFS: WeaponDef[] = [
           shape: a.shape,
           componentPierce: true,
           steer: {
+            target: t.target,
             lx: t.lx,
             ly: t.ly,
             turn: a.turn,
@@ -151,15 +152,21 @@ export const WEAPON_DEFS: WeaponDef[] = [
   },
 ];
 
+/** Anything the player's shots can hit: the boss's fight or a unit's fight (a `BossFight` satisfies this). */
+export interface Combatant {
+  readonly boss: Boss;
+  readonly components: ComponentSystem;
+}
+
 /** What the weapons need from the game (kept narrow so game.ts stays small). */
 export interface WeaponHost {
   ship: { x: number; y: number };
-  boss(): Boss;
-  components(): ComponentSystem;
+  /** Everything currently hittable (the live boss plus live units). Refreshed by the game once per frame. */
+  targets(): readonly Combatant[];
   /** Live ship damage / default damage. */
   power(): number;
-  /** Carve at a screen point (core armor, juice and sound are the game's business). */
-  carve(x: number, y: number, energy: number, shape: CarveShapeName): HitResult | null;
+  /** Carve `target` at a screen point (core armor, juice and sound are the game's business). */
+  carve(target: Combatant, x: number, y: number, energy: number, shape: CarveShapeName): HitResult | null;
   /** A weapon fired (sound). */
   onFire(id: WeaponId): void;
 }
@@ -169,6 +176,48 @@ function solidAt(boss: Boss, x: number, y: number): boolean {
   const ly = Math.floor(y - boss.y);
   for (let i = 0; i < boss.layers.length; i++) if (boss.isSolid(i, lx, ly)) return true;
   return false;
+}
+
+/** Cheap pre-check: is (x, y) inside the target's bounding box grown by `margin` px? */
+export function nearBox(boss: Boss, x: number, y: number, margin: number): boolean {
+  return x >= boss.x - margin && y >= boss.y - margin && x <= boss.x + boss.width + margin && y <= boss.y + boss.height + margin;
+}
+
+/**
+ * Swept hit tests against several moving targets: during a frame every target moves from `prev` to its end position,
+ * so each projectile sub-step tests against the positions interpolated for that sub-step (fast movers cannot be skipped).
+ * `at(f)` places every target for fraction f of the frame; `end()` puts them back at their end positions.
+ */
+export class Sweep {
+  readonly maxMove: number;
+  private readonly t: readonly Combatant[];
+  private readonly ex: number[];
+  private readonly ey: number[];
+
+  constructor(targets: readonly Combatant[], enabled = true) {
+    this.t = targets;
+    this.ex = targets.map((c) => c.boss.x);
+    this.ey = targets.map((c) => c.boss.y);
+    let m = 0;
+    if (enabled) for (const c of targets) m = Math.max(m, Math.hypot(c.boss.x - c.boss.prevX, c.boss.y - c.boss.prevY));
+    this.maxMove = m;
+  }
+
+  at(f: number): void {
+    if (this.maxMove === 0) return;
+    for (let i = 0; i < this.t.length; i++) {
+      const b = this.t[i].boss;
+      b.x = b.prevX + (this.ex[i] - b.prevX) * f;
+      b.y = b.prevY + (this.ey[i] - b.prevY) * f;
+    }
+  }
+
+  end(): void {
+    for (let i = 0; i < this.t.length; i++) {
+      this.t[i].boss.x = this.ex[i];
+      this.t[i].boss.y = this.ey[i];
+    }
+  }
 }
 
 function wrapAngle(a: number): number {
@@ -247,19 +296,24 @@ export class WeaponSystem {
     });
   }
 
-  /** Random solid pixel of the boss (any layer), boss-local. */
-  private pickTarget(): { lx: number; ly: number } | null {
-    const boss = this.host.boss();
-    if (boss.defeated) return null;
-    for (let i = 0; i < 400; i++) {
-      const lx = Math.floor(Math.random() * boss.width);
-      const ly = Math.floor(Math.random() * boss.height);
-      for (let li = 0; li < boss.layers.length; li++) if (boss.isSolid(li, lx, ly)) return { lx, ly };
-    }
-    // Almost nothing left: scan for any solid pixel.
-    for (let ly = 0; ly < boss.height; ly++) {
-      for (let lx = 0; lx < boss.width; lx++) {
-        for (let li = 0; li < boss.layers.length; li++) if (boss.isSolid(li, lx, ly)) return { lx, ly };
+  /** Random solid pixel (any layer) of a random live target, target-local. */
+  private pickTarget(): { target: Combatant; lx: number; ly: number } | null {
+    const all = this.host.targets().filter((t) => !t.boss.defeated);
+    if (all.length === 0) return null;
+    const first = Math.floor(Math.random() * all.length);
+    for (let k = 0; k < all.length; k++) {
+      const target = all[(first + k) % all.length];
+      const boss = target.boss;
+      for (let i = 0; i < 400; i++) {
+        const lx = Math.floor(Math.random() * boss.width);
+        const ly = Math.floor(Math.random() * boss.height);
+        for (let li = 0; li < boss.layers.length; li++) if (boss.isSolid(li, lx, ly)) return { target, lx, ly };
+      }
+      // Almost nothing left: scan for any solid pixel.
+      for (let ly = 0; ly < boss.height; ly++) {
+        for (let lx = 0; lx < boss.width; lx++) {
+          for (let li = 0; li < boss.layers.length; li++) if (boss.isSolid(li, lx, ly)) return { target, lx, ly };
+        }
       }
     }
     return null;
@@ -267,7 +321,7 @@ export class WeaponSystem {
 
   /** `active` = the ship is alive and playing: timers only run then. */
   update(dt: number, active: boolean): void {
-    if (active && !this.host.boss().defeated) {
+    if (active && this.host.targets().some((t) => !t.boss.defeated)) {
       for (const d of this.defs) {
         if (!this.enabled[d.id]) {
           this.timers[d.id] = 0;
@@ -283,12 +337,8 @@ export class WeaponSystem {
   }
 
   private updateProjectiles(dt: number): void {
-    const boss = this.host.boss();
-    const endX = boss.x;
-    const endY = boss.y;
-    const mx = endX - boss.prevX;
-    const my = endY - boss.prevY;
-    const bossMove = Math.hypot(mx, my);
+    const sweep = new Sweep(this.host.targets());
+    const bossMove = sweep.maxMove;
     for (const p of this.projectiles) {
       p.age += dt;
       for (const t of p.trail) t.age += dt;
@@ -310,13 +360,10 @@ export class WeaponSystem {
             p.alive = false;
             break;
           }
-          const f = (i + 1) / steps;
-          boss.x = boss.prevX + mx * f;
-          boss.y = boss.prevY + my * f;
+          sweep.at((i + 1) / steps);
           this.impact(p);
         }
-        boss.x = endX;
-        boss.y = endY;
+        sweep.end();
         p.trail.push({ x: p.x, y: p.y, age: 0 });
       }
       p.trail = p.trail.filter((t) => t.age < p.trailLife);
@@ -324,23 +371,20 @@ export class WeaponSystem {
     this.projectiles = this.projectiles.filter((p) => p.alive || p.trail.length > 0);
   }
 
-  /** Arc missiles: turn toward the (boss-local) target with wander; retarget when it is carved away; fizzle if the boss is gone. */
+  /** Arc missiles: turn toward the (target-local) point with wander; retarget when it is carved away; fizzle if nothing is left. */
   private steer(p: Projectile, dt: number): void {
     const s = p.steer!;
-    const boss = this.host.boss();
-    if (boss.defeated) {
-      p.alive = false;
-      return;
-    }
-    if (!solidAtLocal(boss, s.lx, s.ly)) {
+    if (s.target.boss.defeated || !solidAtLocal(s.target.boss, s.lx, s.ly)) {
       const t = this.pickTarget();
       if (!t) {
         p.alive = false;
         return;
       }
+      s.target = t.target;
       s.lx = t.lx;
       s.ly = t.ly;
     }
+    const boss = s.target.boss;
     const tx = boss.x + s.lx;
     const ty = boss.y + s.ly;
     const dx = tx - p.x;
@@ -356,24 +400,32 @@ export class WeaponSystem {
     // Arrived: spend what is left right here.
     if (dist < 5) {
       const energy = p.energy ?? 0;
-      this.host.carve(p.x, p.y, energy, p.shape ?? 'default');
+      this.host.carve(s.target, p.x, p.y, energy, p.shape ?? 'default');
       p.alive = false;
     }
   }
 
   private impact(p: Projectile): void {
-    const boss = this.host.boss();
-    const comps = this.host.components();
+    const targets = this.host.targets();
     if (p.blast) {
-      if (comps.componentAt(p.x, p.y) || solidAt(boss, p.x, p.y)) {
-        comps.playerBlast(p.x, p.y, p.blast);
-        p.alive = false;
+      // The blast goes off at the first target solid or component under it; neighbours within reach take the shock too.
+      for (const t of targets) {
+        if (t.boss.defeated || !nearBox(t.boss, p.x, p.y, 12)) continue;
+        if (t.components.componentAt(p.x, p.y) || solidAt(t.boss, p.x, p.y)) {
+          const radius = resolveBlast('turret', p.blast).radius;
+          for (const o of targets) if (!o.boss.defeated && nearBox(o.boss, p.x, p.y, radius)) o.components.playerBlast(p.x, p.y, p.blast);
+          p.alive = false;
+          return;
+        }
       }
       return;
     }
     let energy = p.energy ?? 0;
     if (p.componentPierce) {
-      energy -= comps.hitThrough(p.x, p.y, energy, p.seen);
+      for (const t of targets) {
+        if (t.boss.defeated || !nearBox(t.boss, p.x, p.y, 12)) continue;
+        energy -= t.components.hitThrough(p.x, p.y, energy, p.seen);
+      }
       if (energy < 1) {
         p.alive = false;
         return;
@@ -381,17 +433,19 @@ export class WeaponSystem {
     }
     const pierce = p.pierce ?? 0;
     const budget = energy * (1 - pierce);
-    const res = this.host.carve(p.x, p.y, budget, p.shape ?? 'default');
-    if (!res) {
-      p.energy = energy;
+    for (const t of targets) {
+      if (t.boss.defeated || !nearBox(t.boss, p.x, p.y, 12)) continue;
+      const res = this.host.carve(t, p.x, p.y, budget, p.shape ?? 'default');
+      if (!res) continue;
+      if (res.core || res.carved === 0) {
+        p.alive = false;
+        return;
+      }
+      p.energy = energy - res.spent;
+      if (p.energy < 1 || pierce === 0) p.alive = false;
       return;
     }
-    if (res.core || res.carved === 0) {
-      p.alive = false;
-      return;
-    }
-    p.energy = energy - res.spent;
-    if (p.energy < 1 || pierce === 0) p.alive = false;
+    p.energy = energy;
   }
 
   // --- drawing ------------------------------------------------------------------------------

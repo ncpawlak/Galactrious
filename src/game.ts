@@ -15,7 +15,10 @@ import { Hud } from './hud';
 import { Input } from './input';
 import { MOVEMENT_PRESETS } from './movement';
 import { Dodge, Health } from './player';
-import { WeaponSystem } from './weapons';
+import { Sweep, WeaponSystem, nearBox, type Combatant } from './weapons';
+import { UnitSystem, type Unit } from './units';
+import { spawnWave, type WaveDefinition } from './waves';
+import { UNIT_LIST, WAVE_LIST, unitById } from './enemies';
 
 export interface ShipStats {
   /** Energy per bullet. */
@@ -86,12 +89,16 @@ export class Game {
   private readonly dodge = new Dodge();
   private readonly health = new Health();
   private readonly attacks = new Attacks();
+  /** False in wave nodes: the dormant boss fight is not updated, drawn, targeted or shown in the HUD. */
+  private bossActive = true;
+  private readonly units = new UnitSystem(this.ship);
+  /** Everything the player's shots can hit this frame: the live boss plus live units (refreshed once per update). */
+  private targetList: BossFight[] = [];
   private readonly weapons: WeaponSystem = new WeaponSystem({
     ship: this.ship,
-    boss: () => this.boss,
-    components: () => this.fight.components,
+    targets: () => this.targetList,
     power: () => this.stats.damage / TUNING.ship.damage,
-    carve: (x, y, energy, shape) => this.carveAt(x, y, energy, shape),
+    carve: (t, x, y, energy, shape) => this.carveAt(t as BossFight, x, y, energy, shape),
     onFire: (id) => this.sfx.weapon(id),
   });
   private lostAt = 0;
@@ -129,6 +136,7 @@ export class Game {
     this.ctx = canvas.getContext('2d')!;
     this.input = new Input(canvas);
     this.fight = this.makeFight();
+    this.units.onDeath = (u) => this.onUnitDeath(u);
 
     for (let i = 0; i < 90; i++) {
       this.stars.push({
@@ -187,8 +195,18 @@ export class Game {
         this.fight = this.makeFight(BOSSES[i]);
         this.carryDebug(old);
         this.reset(true, true); // health carries over from the previous node
+        this.bossActive = true;
         this.combat = true;
       },
+      startWave: (wave) => {
+        this.bossActive = false;
+        this.attacks.sources = null;
+        this.attacks.setScript(null);
+        this.reset(true, true); // clears units too; health carries over
+        this.combat = true;
+        spawnWave(this.units, wave, unitById);
+      },
+      waveRemaining: () => this.units.remaining(),
       combatResult: (): CombatResult => {
         if (this.state === 'won' && this.elapsed - this.wonAt > WIN_BEAT) return 'won';
         if (this.state === 'lost' && this.elapsed - this.lostAt > TUNING.player.defeatTime) return 'lost';
@@ -197,6 +215,9 @@ export class Game {
       endCombat: () => {
         this.combat = false;
         this.attacks.clear();
+        this.units.clear();
+        this.targetList = [];
+        this.weapons.reset();
         this.bullets = [];
         this.particles = [];
       },
@@ -254,6 +275,14 @@ export class Game {
         return this.clearTimes();
       },
       weapons: this.weapons,
+      units: this.units,
+      /** Spawn one unit by id at (x, y) (default: near the top centre) in the current combat, entering from above. */
+      spawnUnit: (id: string, x = W / 2, y = 200) => this.spawnDebugUnit(id, x, y),
+      /** Spawn a whole wave (a WaveDefinition or the id of one in WAVE_LIST) in the current combat. */
+      spawnWave: (w: WaveDefinition | string) => this.spawnDebugWave(w),
+      killUnits: () => this.killUnits(),
+      unitIds: UNIT_LIST.map((u) => u.id),
+      waveIds: WAVE_LIST.map((w) => w.id),
       setBlastScale: (v: number) => setBlastScale(v),
       setSwept: (on: boolean) => (this.sweptBullets = on),
       setAuto: (m: 'off' | 'sweep' | 'focus') => (this.auto = m),
@@ -320,7 +349,28 @@ export class Game {
     this.fight.setMovementOverride(i + 1 < MOVEMENT_PRESETS.length ? MOVEMENT_PRESETS[i + 1] : null);
   }
 
+  private spawnDebugUnit(id: string, x: number, y: number): void {
+    this.units.spawn(unitById(id), { slot: { x, y }, entrance: (u) => ({ x, y: -40 + (y + 40) * Math.sin((u * Math.PI) / 2) }), entranceTime: 1 });
+  }
+
+  private spawnDebugWave(w: WaveDefinition | string): void {
+    const def = typeof w === 'string' ? WAVE_LIST.find((x) => x.id === w) : w;
+    if (!def) throw new Error(`unknown wave "${w}"`);
+    spawnWave(this.units, def, unitById);
+  }
+
+  /** Debug: blow every unit up now. */
+  private killUnits(): void {
+    for (const u of this.units.units) u.fight.boss.core.hp = 0;
+    this.units.checkDeaths();
+  }
+
+  private debugUnitCycle = 0;
+  private debugWaveCycle = 0;
+
   private reset(keepFight = false, keepHealth = false): void {
+    this.units.clear();
+    this.targetList = [];
     if (!keepFight) {
       const old = this.fight;
       this.fight = this.makeFight();
@@ -375,6 +425,16 @@ export class Game {
         break;
       case 'KeyH':
         this.fight.components.debug = !this.fight.components.debug;
+        this.units.setDebug(this.fight.components.debug);
+        break;
+      case 'Semicolon':
+        this.spawnDebugUnit(UNIT_LIST[this.debugUnitCycle++ % UNIT_LIST.length].id, W / 2, 200);
+        break;
+      case 'Quote':
+        this.spawnDebugWave(WAVE_LIST[this.debugWaveCycle++ % WAVE_LIST.length]);
+        break;
+      case 'Backslash':
+        this.killUnits();
         break;
       case 'KeyJ':
         this.fx.enabled = this.sfx.enabled = !this.fx.enabled;
@@ -518,8 +578,10 @@ export class Game {
         return;
       }
     }
-    this.fight.update(dt);
-    for (const d of this.boss.dustEvents.splice(0)) this.spawnDebris(d.x, d.y, 24, false, d.r, d.g, d.b);
+    if (this.bossActive) this.fight.update(dt);
+    this.units.update(dt, this.state === 'playing' && this.attacks.enabled, this.attacks, this.ship);
+    this.refreshTargets();
+    for (const f of this.allFights()) for (const d of f.boss.dustEvents.splice(0)) this.spawnDebris(d.x, d.y, 24, false, d.r, d.g, d.b);
 
     if (this.state === 'playing') {
       this.moveShip(dt);
@@ -528,24 +590,50 @@ export class Game {
     this.weapons.update(dt, this.state === 'playing');
     this.updateThreat(dt);
     this.updateBullets(dt);
-    this.drainComponentEvents();
+    for (const f of this.allFights()) this.drainComponentEvents(f);
+    this.units.checkDeaths();
     this.updateParticles(dt);
-    this.trackClears();
+    if (this.bossActive) this.trackClears();
 
-    if (this.state === 'playing' && this.boss.defeated) {
+    if (this.state === 'playing' && this.bossActive && this.boss.defeated) {
       this.state = 'won';
       this.wonAt = this.elapsed;
-      this.explode();
+      this.explode(this.boss.x + this.boss.core.x, this.boss.y + this.boss.core.y, 160);
       this.fx.onExplosion();
       this.sfx.explosion();
     }
   }
 
+  /** The boss fight (when active) and every unit's fight. */
+  private allFights(): BossFight[] {
+    const out = this.bossActive ? [this.fight] : [];
+    for (const u of this.units.units) out.push(u.fight);
+    return out;
+  }
+
+  private refreshTargets(): void {
+    const t: BossFight[] = [];
+    if (this.bossActive && !this.boss.defeated) t.push(this.fight);
+    for (const u of this.units.units) if (u.state === 'alive') t.push(u.fight);
+    this.targetList = t;
+  }
+
+  private onUnitDeath(u: Unit): void {
+    const c = u.center();
+    if (u.big) {
+      this.explode(c.x, c.y, 60);
+      this.fx.onComponentDestroy(60);
+      this.sfx.componentDestroy(60);
+    } else {
+      this.explode(c.x, c.y, 14);
+      this.sfx.componentDestroy(18);
+    }
+  }
+
   /** Boss fire, player damage and the defeat/reset flow. */
   private updateThreat(dt: number): void {
-    const b = this.boss;
     const playing = this.state === 'playing';
-    this.attacks.update(dt, this.ship, playing && !b.defeated);
+    this.attacks.update(dt, this.ship, playing && !(this.bossActive && this.boss.defeated));
     if (!playing) {
       if (this.mode === 'boss' && this.state === 'lost' && this.elapsed - this.lostAt > TUNING.player.defeatTime) this.reset();
       return;
@@ -565,8 +653,8 @@ export class Game {
   }
 
   /** Juice and sound for what the boss's components did this frame (hits, damage states, destruction). */
-  private drainComponentEvents(): void {
-    for (const e of this.fight.components.events.splice(0)) {
+  private drainComponentEvents(fight: BossFight): void {
+    for (const e of fight.components.events.splice(0)) {
       switch (e.kind) {
         case 'hit':
           this.fx.onComponentHit();
@@ -604,6 +692,17 @@ export class Game {
   }
 
   private autoTarget(): number {
+    if (!this.bossActive) {
+      // Waves: 'focus' = under the lowest live unit, 'sweep' = across the span of the live units.
+      const live = this.units.live().map((u) => u.center());
+      if (live.length === 0) return W / 2;
+      if (this.auto === 'focus') return live.reduce((a, c) => (c.y > a.y ? c : a)).x;
+      const lo = Math.min(...live.map((c) => c.x)) - 20;
+      const hi = Math.max(...live.map((c) => c.x)) + 20;
+      const span = Math.max(40, hi - lo);
+      const phase = (this.elapsed * 150) % (2 * span);
+      return lo + (phase < span ? phase : 2 * span - phase);
+    }
     const b = this.boss;
     if (this.auto === 'focus') return b.x + b.core.x;
     // Steady triangle-wave sweep across the boss at 150 px/s.
@@ -674,15 +773,11 @@ export class Game {
   sweptBullets = true;
 
   private updateBullets(dt: number): void {
-    const boss = this.boss;
-    const endX = boss.x;
-    const endY = boss.y;
-    const mx = endX - boss.prevX;
-    const my = endY - boss.prevY;
-    const bossMove = this.sweptBullets ? Math.hypot(mx, my) : 0;
+    const targets = this.targetList;
+    const sweep = new Sweep(targets, this.sweptBullets);
     for (const b of this.bullets) {
       const dist = TUNING.bulletSpeed * dt;
-      const steps = Math.max(1, Math.ceil(dist), Math.ceil(bossMove));
+      const steps = Math.max(1, Math.ceil(dist), Math.ceil(sweep.maxMove));
       const sx = (b.dx * dist) / steps;
       const sy = (b.dy * dist) / steps;
       for (let i = 0; i < steps && b.alive; i++) {
@@ -692,54 +787,58 @@ export class Game {
           b.alive = false;
           break;
         }
-        if (bossMove > 0) {
-          const f = (i + 1) / steps;
-          boss.x = boss.prevX + mx * f;
-          boss.y = boss.prevY + my * f;
-        }
-        this.resolveImpact(b);
+        sweep.at((i + 1) / steps);
+        this.resolveImpact(b, targets);
       }
     }
-    boss.x = endX;
-    boss.y = endY;
+    sweep.end();
     this.bullets = this.bullets.filter((b) => b.alive);
   }
 
-  /** Carve the boss at a screen point (core armor, juice, sound, debris). Shared by the base gun and the weapons. */
-  private carveAt(x: number, y: number, budget: number, shape: CarveShapeName): HitResult | null {
-    const hpBefore = this.boss.core.hp;
-    const res = this.boss.hit(x, y, budget, shape);
+  /** Carve a target (the boss or a unit) at a screen point (core armor, juice, sound, debris). Shared by the base gun and the weapons. */
+  private carveAt(t: BossFight, x: number, y: number, budget: number, shape: CarveShapeName): HitResult | null {
+    const boss = t.boss;
+    const hpBefore = boss.core.hp;
+    const res = boss.hit(x, y, budget, shape);
     if (!res) return null;
     if (res.core) {
       // Core armor: a bullet tunnelled straight in only scratches the core until the outer layers are dug away.
-      const dealt = hpBefore - this.boss.core.hp;
-      this.boss.core.hp = hpBefore - dealt * this.fight.coreVulnerability();
+      const dealt = hpBefore - boss.core.hp;
+      boss.core.hp = hpBefore - dealt * t.coreVulnerability();
+      // Armor scales the damage, not the last hit point: without this a nearly dead core decays towards 0 and never dies.
+      if (boss.core.hp < 1) boss.core.hp = 0;
     }
-    this.fx.onHit(x, y, res.carved, res.spent, res.core);
+    // Small units are hit constantly: sound and debris only, no shake, hit stop or numbers.
+    const small = t !== this.fight && this.units.units.some((u) => u.fight === t && !u.big);
+    if (!small) this.fx.onHit(x, y, res.carved, res.spent, res.core);
     if (res.core) this.sfx.coreHit();
     else this.sfx.carve(res.carved);
     this.spawnDebris(x, y, res.carved, res.core, res.r, res.g, res.b);
     return res;
   }
 
-  private resolveImpact(b: Bullet): void {
+  private resolveImpact(b: Bullet, targets: readonly Combatant[]): void {
     const budget = b.energy * (1 - b.pierce);
-    // A component under the bullet takes the hit (hidden hp, no numbers) and consumes the bullet.
-    if (this.fight.components.hit(b.x, b.y, b.energy)) {
-      b.alive = false;
+    for (const t of targets) {
+      if (t.boss.defeated || !nearBox(t.boss, b.x, b.y, 12)) continue;
+      // A component under the bullet takes the hit (hidden hp, no numbers) and consumes the bullet.
+      if (t.components.hit(b.x, b.y, b.energy)) {
+        b.alive = false;
+        return;
+      }
+      const res = this.carveAt(t as BossFight, b.x, b.y, budget, 'default');
+      if (!res) continue;
+      if (res.core || res.carved === 0) {
+        b.alive = false;
+        return;
+      }
+      if (b.pierce > 0) {
+        b.energy = b.energy * b.pierce + (budget - res.spent);
+        if (b.energy < 1) b.alive = false;
+      } else {
+        b.alive = false;
+      }
       return;
-    }
-    const res = this.carveAt(b.x, b.y, budget, 'default');
-    if (!res) return;
-    if (res.core || res.carved === 0) {
-      b.alive = false;
-      return;
-    }
-    if (b.pierce > 0) {
-      b.energy = b.energy * b.pierce + (budget - res.spent);
-      if (b.energy < 1) b.alive = false;
-    } else {
-      b.alive = false;
     }
   }
 
@@ -770,10 +869,8 @@ export class Game {
     }
   }
 
-  private explode(): void {
-    const cx = this.boss.x + this.boss.core.x;
-    const cy = this.boss.y + this.boss.core.y;
-    for (let i = 0; i < 160 && this.particles.length < MAX_PARTICLES; i++) {
+  private explode(cx: number, cy: number, count: number): void {
+    for (let i = 0; i < count && this.particles.length < MAX_PARTICLES; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = 80 + Math.random() * 420;
       const life = 0.5 + Math.random() * 0.9;
@@ -817,15 +914,16 @@ export class Game {
     ctx.fillStyle = '#8fa0c8';
     for (const s of this.stars) ctx.fillRect(s.x, s.y, s.size, s.size);
 
-    if (!this.boss.defeated || this.elapsed - this.wonAt < 1.2) this.enrageTint.render(ctx, this.boss, this.fight);
+    if (this.bossActive && (!this.boss.defeated || this.elapsed - this.wonAt < 1.2)) this.enrageTint.render(ctx, this.boss, this.fight);
+    this.drawUnits();
     this.attacks.drawBossDim(ctx);
-    this.fight.components.drawFx(ctx);
-    if (this.fight.components.debug) this.fight.components.drawDebug(ctx);
+    if (this.bossActive) this.fight.components.drawFx(ctx);
+    if (this.bossActive && this.fight.components.debug) this.fight.components.drawDebug(ctx);
     this.drawBullets();
     this.weapons.draw(ctx);
     this.attacks.draw(ctx);
     this.drawParticles();
-    this.hud.draw(ctx, this.boss, this.fight.rooms);
+    if (this.bossActive) this.hud.draw(ctx, this.boss, this.fight.rooms);
     if (this.state === 'playing') {
       this.drawShip();
       this.dodge.drawShipFx(ctx, this.ship.x, this.ship.y);
@@ -833,7 +931,7 @@ export class Game {
     this.fx.drawNumbers(ctx);
     this.fx.endShake(ctx);
     this.health.draw(ctx);
-    if (this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
+    if (this.bossActive && this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
     if (this.state === 'playing') this.dodge.drawButton(ctx);
     if (this.state === 'playing') this.hud.drawWeapons(ctx, this.weapons);
     if (this.showDebug) {
@@ -841,9 +939,35 @@ export class Game {
       this.panel.draw(this.ctx);
       this.drawHitbox();
     }
-    if (this.state === 'won') this.drawWin();
+    if (this.state === 'won' && this.bossActive) this.drawWin();
     if (this.state === 'lost') this.drawLost();
     if (this.mode === 'run') this.run.draw(ctx);
+  }
+
+  /** Every unit's hull and parts (dying ones fade), plus the debug boxes. */
+  private drawUnits(): void {
+    const ctx = this.ctx;
+    for (const u of this.units.units) {
+      const dying = u.state === 'dying';
+      if (dying) ctx.globalAlpha = Math.max(0, 1 - u.dyingFor / u.dyingTime);
+      u.fight.boss.render(ctx);
+      u.fight.components.drawFx(ctx);
+      ctx.globalAlpha = 1;
+      if (this.showDebug && this.units.debug && !dying) {
+        const b = u.fight.boss;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,120,120,0.8)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(Math.round(b.x) + 0.5, Math.round(b.y) + 0.5, b.width, b.height);
+        ctx.fillStyle = '#ff9a9a';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`${u.def.id} ${Math.ceil(b.core.hp)}hp ${u.fight.pixelDamagePercent.toFixed(0)}%`, b.x + b.width / 2, b.y - 2);
+        ctx.restore();
+        u.fight.components.drawDebug(ctx);
+      }
+    }
   }
 
   private drawBullets(): void {
@@ -882,10 +1006,24 @@ export class Game {
     ctx.restore();
   }
 
+  private unitLines(): string[] {
+    const live = this.units.live();
+    const small = live.filter((u) => !u.big).length;
+    return [
+      `units ${live.length} alive (${small} small, ${live.length - small} big)  queued ${this.units.remaining() - this.units.units.length}  enemy bullets ${this.attacks.bullets.length}  spawn unit [;]  spawn wave [']  kill all [\\]  boxes [H]`,
+    ];
+  }
+
   private drawDebug(): void {
     const ctx = this.ctx;
     const s = this.stats;
-    const lines = [
+    const lines = !this.bossActive ? [
+      `${this.fps.toFixed(0)} fps  t=${this.elapsed.toFixed(1)}s  WAVE MODE (no boss)`,
+      ...this.unitLines(),
+      `DMG ${s.damage.toLocaleString('en-US')}  [1/2]  rate ${s.fireRate} [3/4]  god mode ${this.godMode ? 'ON' : 'off'} [G]  TEST MODE ${this.testMode ? 'ON' : 'off'} [Y]  autopilot ${this.auto} [P]`,
+      `hp ${this.health.hp}/${TUNING.player.maxHealth}  enemy attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  dodge ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}  juice ${this.fx.enabled ? 'on' : 'off'} [J]`,
+      `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${d.key}]`).join('  ')}  fire all [Q]`,
+    ] : [
       `${this.fps.toFixed(0)} fps  t=${this.elapsed.toFixed(1)}s`,
       ...this.boss.layers.map(
         (l, i) =>
@@ -909,6 +1047,7 @@ export class Game {
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component/room hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]  expose room [E]`,
       `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${d.key}]`).join('  ')}  fire all [Q]  cooldown x${WEAPONS.cooldownScale} [, .]`,
       ...this.regrowthLines(),
+      ...(this.units.units.length > 0 ? this.unitLines() : []),
       `blast scale x${BLAST.scale.toFixed(2)} [-/=] (+Shift x4)  r: turret ${BLAST.defaults.turret.radius} expl ${BLAST.defaults.explosive.radius} room ${BLAST.defaults.room.radius}`,
     ];
     ctx.save();

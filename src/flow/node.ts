@@ -8,6 +8,8 @@
  */
 
 /** Every node type, including the reserved ones (not built, `createNode` throws for them). */
+import type { WaveDefinition } from '../waves';
+
 export type NodeType = 'wave' | 'boss' | 'reward' | 'level' | 'interlude';
 
 /** `done` = the player cleared it (go on); `lost` = the player died (the run is over). `null` while running. */
@@ -21,13 +23,10 @@ export interface BossNodeDefinition {
   bossId: string;
 }
 
-/**
- * A wave of enemy units. STUB: for now it only carries an optional id. The "units and waves" work extends
- * this interface (formation, units, entrance paths...) and fills in `nodes/wave.ts`; nothing else changes.
- */
+/** A wave of enemy units (src/waves.ts): the node ends when every unit is dead. */
 export interface WaveNodeDefinition {
   type: 'wave';
-  id?: string;
+  wave: WaveDefinition;
 }
 
 /** A pick-one-of-N reward screen. STUB: placeholder cards (see nodes/reward.ts). */
@@ -133,7 +132,11 @@ export interface NodeHost {
   readonly ship: { x: number; y: number };
   /** Start a boss fight and turn combat on (ship, weapons, bullets, HUD). Health carries over from the last node. */
   startBossFight(bossId: string): void;
-  /** Result of the combat started by this node. A short death/explosion beat is already included. */
+  /** Start a wave and turn combat on with no boss (ship, weapons, bullets). The units spawn on the wave's own schedule. Health carries over. */
+  startWave(wave: WaveDefinition): void;
+  /** Units of the running wave still alive, dying or waiting to spawn. 0 = the wave is cleared. */
+  waveRemaining(): number;
+  /** Result of the combat started by this node. A short death/explosion beat is already included. Waves only ever report `lost` (clearing is `waveRemaining() === 0`). */
   combatResult(): CombatResult;
   /** Turn combat off (the game goes back to the plain starfield). Call from `end`. */
   endCombat(): void;

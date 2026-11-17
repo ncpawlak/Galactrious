@@ -330,6 +330,12 @@ export class ComponentSystem implements SourceGate {
     };
   }
 
+  /** The owner died: every live component goes quiet at once (no blasts), so its hazards and shots end with it. */
+  silenceAll(): void {
+    for (const c of this.items) if (c.state === 'active' || c.state === 'dying') c.state = 'destroyed';
+    this.queue.length = 0;
+  }
+
   /** True when `source` (id or group) names at least one turret: used to validate boss definitions. */
   hasTurret(source: string): boolean {
     return this.items.some((c) => c.spec.type === 'turret' && c.matches(source));
