@@ -1,0 +1,161 @@
+/**
+ * The flow-engine contract (DESIGN.md "Run flow"). A run is data (`RunDefinition`); the `Run` state machine
+ * (run.ts) walks it and drives one `FlowNode` at a time. A node knows nothing about other nodes: it gets a
+ * `NodeContext` in `start`, is updated and drawn every frame, and reports an outcome when it is finished.
+ *
+ * To add a node type: add a definition interface to `NodeDefinition`, write a class implementing `FlowNode`
+ * in `nodes/`, and add one `case` to `createNode` in `nodes/index.ts`. The engine does not change.
+ */
+
+/** Every node type, including the reserved ones (not built, `createNode` throws for them). */
+export type NodeType = 'wave' | 'boss' | 'reward' | 'level' | 'interlude';
+
+/** `done` = the player cleared it (go on); `lost` = the player died (the run is over). `null` while running. */
+export type NodeOutcome = 'done' | 'lost';
+
+// --- definitions (pure data, what a RunDefinition holds) ------------------------------------------------
+
+/** A boss fight against the BossDefinition with this id (src/bosses/index.ts). */
+export interface BossNodeDefinition {
+  type: 'boss';
+  bossId: string;
+}
+
+/**
+ * A wave of enemy units. STUB: for now it only carries an optional id. The "units and waves" work extends
+ * this interface (formation, units, entrance paths...) and fills in `nodes/wave.ts`; nothing else changes.
+ */
+export interface WaveNodeDefinition {
+  type: 'wave';
+  id?: string;
+}
+
+/** A pick-one-of-N reward screen. STUB: placeholder cards (see nodes/reward.ts). */
+export interface RewardNodeDefinition {
+  type: 'reward';
+  /** How many cards are offered (default 3). */
+  choices?: number;
+}
+
+/** Reserved: a hand-built set-piece level. Not built. */
+export interface LevelNodeDefinition {
+  type: 'level';
+  id: string;
+}
+
+/** Reserved: story card, shop... Not built. */
+export interface InterludeNodeDefinition {
+  type: 'interlude';
+  id: string;
+}
+
+export type NodeDefinition =
+  | BossNodeDefinition
+  | WaveNodeDefinition
+  | RewardNodeDefinition
+  | LevelNodeDefinition
+  | InterludeNodeDefinition;
+
+export interface LevelDefinition {
+  /** Played in order. */
+  nodes: NodeDefinition[];
+  /** The reward offered after the level. Omitted = none. The last level's reward is never shown (the run is won). */
+  reward?: Omit<RewardNodeDefinition, 'type'>;
+}
+
+export interface RunDefinition {
+  name: string;
+  levels: LevelDefinition[];
+}
+
+// --- run state -----------------------------------------------------------------------------------------
+
+/** One stat change an upgrade makes. Nothing reads these yet: the upgrade-card work applies them to ShipStats/WEAPONS. */
+export interface Modifier {
+  /** Dotted stat key, e.g. 'gauss.reach', 'ship.maxHealth', 'dodge.cooldown'. */
+  stat: string;
+  op: 'add' | 'mul';
+  value: number;
+}
+
+/** An upgrade the player picked from a reward card. */
+export interface Upgrade {
+  id: string;
+  name: string;
+  modifiers: Modifier[];
+}
+
+/** What a run carries from node to node. Created fresh by `Run.start`; nothing persists across runs. */
+export interface RunState {
+  /** Seeds `rng` (and any later per-run randomness). Pass `?seed=N` to replay a run's random choices. */
+  seed: number;
+  /** Seeded random source, 0..1. Use this, not Math.random, for anything that should depend on the seed. */
+  rng: () => number;
+  levelIndex: number;
+  /** Index into the level's node list (the level's nodes, then its reward if it has one). */
+  nodeIndex: number;
+  /** Base max health. The live hit points belong to the combat sim; the host heals them (`NodeHost.healFull`). */
+  maxHealth: number;
+  /** Weapon ids the player has equipped. Empty = the default loadout. */
+  loadout: string[];
+  /** Upgrades picked so far, in order: the place for upgrade modifiers. */
+  upgrades: Upgrade[];
+  /** Run clock in seconds (only counts while a node is active). */
+  time: number;
+}
+
+// --- node interface ------------------------------------------------------------------------------------
+
+/** Where the player stands, for a node's own text. */
+export interface NodePosition {
+  level: number; // 1-based
+  levels: number;
+  /** 1-based index among nodes of the same type in this level, and how many there are. */
+  index: number;
+  count: number;
+}
+
+export interface NodeContext {
+  host: NodeHost;
+  run: RunState;
+  position: NodePosition;
+}
+
+/** Combat result as the game reports it. `won` = the boss fell; `lost` = the ship was destroyed. */
+export type CombatResult = 'running' | 'won' | 'lost';
+
+/**
+ * What a node may ask of the game (implemented by `Game`). Deliberately small: the units-and-waves work will
+ * add what waves need (spawn units, the player's shots, ship damage) here rather than reach into the game.
+ */
+export interface NodeHost {
+  /** The player's ship position (live; only meaningful while in combat). */
+  readonly ship: { x: number; y: number };
+  /** Start a boss fight and turn combat on (ship, weapons, bullets, HUD). Health carries over from the last node. */
+  startBossFight(bossId: string): void;
+  /** Result of the combat started by this node. A short death/explosion beat is already included. */
+  combatResult(): CombatResult;
+  /** Turn combat off (the game goes back to the plain starfield). Call from `end`. */
+  endCombat(): void;
+  /** Restore the ship to full health. */
+  healFull(): void;
+  /** Next pointer press or key press since the last frame, or null. Each press is returned once. */
+  takeTap(): { x: number; y: number } | null;
+  takeKey(): string | null;
+}
+
+export interface FlowNode {
+  /** Called once when the node becomes current. */
+  start(ctx: NodeContext): void;
+  /** Called every frame while current. */
+  update(dt: number): void;
+  /** null while running, then `done` or `lost`. The engine stops updating the node once this is non-null. */
+  outcome(): NodeOutcome | null;
+  /**
+   * Draw the node's own visuals over the game's starfield. A node that runs combat (boss) draws nothing:
+   * the game draws the combat scene itself. Canvas is 540x960 logical pixels.
+   */
+  draw(g: CanvasRenderingContext2D): void;
+  /** Optional cleanup, called once after the node finishes or the run is abandoned. */
+  end?(): void;
+}

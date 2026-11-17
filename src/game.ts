@@ -8,6 +8,9 @@ import type { CarveShapeName } from './carveShapes';
 import { BLAST, BLAST_DEFAULT_SCALE, H, setBlastScale, TUNING, W, WEAPONS } from './config';
 import { DebugPanel, modifierMult } from './debugControls';
 import { Effects } from './effects';
+import { DEFAULT_RUN } from './flow/defaultRun';
+import type { CombatResult, NodeHost } from './flow/node';
+import { Run } from './flow/run';
 import { Hud } from './hud';
 import { Input } from './input';
 import { MOVEMENT_PRESETS } from './movement';
@@ -65,6 +68,8 @@ interface Star {
 
 const MAX_PARTICLES = 500;
 const SHIP_MIN_Y = 520;
+/** Run mode: seconds the explosion plays after a boss falls before the node ends. */
+const WIN_BEAT = 2.2;
 
 type State = 'playing' | 'won' | 'lost';
 
@@ -109,6 +114,16 @@ export class Game {
   private readonly panel: DebugPanel;
   private fps = 60;
   private last = 0;
+  /**
+   * 'run' = the flow engine drives the game (title -> levels -> win). 'boss' = the old one-boss test mode that
+   * all the debug tooling and `debug.simulate` use: `?mode=boss` in the URL, or [Z] to switch at runtime.
+   */
+  private mode: 'run' | 'boss' = new URLSearchParams(location.search).get('mode') === 'boss' ? 'boss' : 'run';
+  /** Run mode: true while the current node runs the combat sim (ship, weapons, boss). Off = plain starfield + the node's own screen. */
+  private combat = false;
+  private readonly taps: { x: number; y: number }[] = [];
+  private readonly keyPresses: string[] = [];
+  private readonly run: Run = new Run(DEFAULT_RUN, this.makeNodeHost());
 
   constructor(canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -155,8 +170,59 @@ export class Game {
     this.input.onDodge = () => this.tryDodge();
     this.input.onPointerDown = () => {
       this.sfx.resume();
-      if (this.state === 'won' && this.elapsed - this.wonAt > 1) this.reset();
+      if (this.mode === 'run') this.taps.push({ x: this.input.px, y: this.input.py });
+      else if (this.state === 'won' && this.elapsed - this.wonAt > 1) this.reset();
     };
+  }
+
+  /** What flow nodes may ask of the game (see NodeHost in flow/node.ts). */
+  private makeNodeHost(): NodeHost {
+    return {
+      ship: this.ship,
+      startBossFight: (id) => {
+        const i = BOSSES.findIndex((b) => b.id === id);
+        if (i < 0) throw new Error(`boss node: unknown boss id "${id}"`);
+        this.bossDefIndex = i;
+        const old = this.fight;
+        this.fight = this.makeFight(BOSSES[i]);
+        this.carryDebug(old);
+        this.reset(true, true); // health carries over from the previous node
+        this.combat = true;
+      },
+      combatResult: (): CombatResult => {
+        if (this.state === 'won' && this.elapsed - this.wonAt > WIN_BEAT) return 'won';
+        if (this.state === 'lost' && this.elapsed - this.lostAt > TUNING.player.defeatTime) return 'lost';
+        return 'running';
+      },
+      endCombat: () => {
+        this.combat = false;
+        this.attacks.clear();
+        this.bullets = [];
+        this.particles = [];
+      },
+      healFull: () => this.health.reset(),
+      takeTap: () => this.taps.shift() ?? null,
+      takeKey: () => this.keyPresses.shift() ?? null,
+    };
+  }
+
+  /** True when the combat sim runs (always in boss mode; in run mode only during a combat node). */
+  private get inCombat(): boolean {
+    return this.mode === 'boss' || this.combat;
+  }
+
+  /** [Z]: switch between the run and the one-boss test mode. */
+  private toggleMode(): void {
+    if (this.mode === 'run') {
+      this.run.toTitle();
+      this.mode = 'boss';
+      this.combat = false;
+      this.reset();
+    } else {
+      this.mode = 'run';
+      this.combat = false;
+      this.run.toTitle();
+    }
   }
 
   start(): void {
@@ -254,7 +320,7 @@ export class Game {
     this.fight.setMovementOverride(i + 1 < MOVEMENT_PRESETS.length ? MOVEMENT_PRESETS[i + 1] : null);
   }
 
-  private reset(keepFight = false): void {
+  private reset(keepFight = false, keepHealth = false): void {
     if (!keepFight) {
       const old = this.fight;
       this.fight = this.makeFight();
@@ -264,7 +330,7 @@ export class Game {
     this.weapons.reset();
     this.particles = [];
     this.dodge.reset();
-    this.health.reset();
+    if (!keepHealth) this.health.reset();
     this.attacks.reset();
     this.state = 'playing';
     this.elapsed = 0;
@@ -275,6 +341,12 @@ export class Game {
 
   private onKey(code: string): void {
     this.sfx.resume();
+    if (code === 'KeyZ') return this.toggleMode();
+    if (this.mode === 'run') {
+      this.keyPresses.push(code);
+      // Outside combat only the overlay toggle stays live; during a run [B] and [R] would break the flow.
+      if (!this.combat ? code !== 'Backquote' : code === 'KeyB' || code === 'KeyR') return;
+    }
     const s = this.stats;
     switch (code) {
       case 'ShiftLeft':
@@ -408,7 +480,7 @@ export class Game {
   }
 
   private tryDodge(): void {
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' || !this.inCombat) return;
     let { x, y } = this.input.axis();
     if (x === 0 && y === 0) {
       // Pointer steering: dash toward the finger; otherwise default to a sideways dash.
@@ -435,6 +507,15 @@ export class Game {
       if (s.y > H) {
         s.y = 0;
         s.x = Math.random() * W;
+      }
+    }
+    if (this.mode === 'run') {
+      this.run.update(dt);
+      this.taps.length = 0;
+      this.keyPresses.length = 0;
+      if (!this.combat) {
+        this.updateParticles(dt);
+        return;
       }
     }
     this.fight.update(dt);
@@ -466,7 +547,7 @@ export class Game {
     const playing = this.state === 'playing';
     this.attacks.update(dt, this.ship, playing && !b.defeated);
     if (!playing) {
-      if (this.state === 'lost' && this.elapsed - this.lostAt > TUNING.player.defeatTime) this.reset();
+      if (this.mode === 'boss' && this.state === 'lost' && this.elapsed - this.lostAt > TUNING.player.defeatTime) this.reset();
       return;
     }
     this.health.update(dt);
@@ -725,6 +806,12 @@ export class Game {
     const ctx = this.ctx;
     ctx.fillStyle = '#05060d';
     ctx.fillRect(0, 0, W, H);
+    if (!this.inCombat) {
+      ctx.fillStyle = '#8fa0c8';
+      for (const s of this.stars) ctx.fillRect(s.x, s.y, s.size, s.size);
+      this.run.draw(ctx);
+      return;
+    }
     this.fx.beginShake(ctx);
 
     ctx.fillStyle = '#8fa0c8';
@@ -756,6 +843,7 @@ export class Game {
     }
     if (this.state === 'won') this.drawWin();
     if (this.state === 'lost') this.drawLost();
+    if (this.mode === 'run') this.run.draw(ctx);
   }
 
   private drawBullets(): void {
@@ -868,7 +956,7 @@ export class Game {
     ctx.fillText('SHIP DESTROYED', W / 2, H / 2 - 15);
     ctx.fillStyle = '#ffffff';
     ctx.font = '16px monospace';
-    ctx.fillText('the boss repairs itself... restarting', W / 2, H / 2 + 25);
+    if (this.mode === 'boss') ctx.fillText('the boss repairs itself... restarting', W / 2, H / 2 + 25);
     ctx.restore();
   }
 
@@ -884,7 +972,7 @@ export class Game {
     ctx.fillStyle = '#ffffff';
     ctx.font = '18px monospace';
     ctx.fillText(`time ${this.wonAt.toFixed(1)}s`, W / 2, H / 2 + 12);
-    ctx.fillText('tap or press R to restart', W / 2, H / 2 + 48);
+    if (this.mode === 'boss') ctx.fillText('tap or press R to restart', W / 2, H / 2 + 48);
     ctx.restore();
   }
 }
