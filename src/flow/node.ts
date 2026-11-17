@@ -8,6 +8,7 @@
  */
 
 /** Every node type, including the reserved ones (not built, `createNode` throws for them). */
+import type { BossSnapshot } from '../campaign/snapshot';
 import type { WaveDefinition } from '../waves';
 import type { ScrollLevelDef, ScrollRunner } from '../scroll/types';
 
@@ -141,19 +142,67 @@ export type CombatResult = 'running' | 'won' | 'lost';
  * What a node may ask of the game (implemented by `Game`). Deliberately small: the units-and-waves work will
  * add what waves need (spawn units, the player's shots, ship damage) here rather than reach into the game.
  */
+/** Cumulative counters the game keeps while combat runs (the campaign reads deltas of them per attempt; see src/campaign/session.ts). */
+export interface CombatCounters {
+  /** Units that started dying. */
+  kills: number;
+  /** Hits that landed on the ship (after dodge and i-frames). */
+  hits: number;
+  /** Hull points lost. */
+  damage: number;
+  /** Rooms (boss or unit) that went offline. */
+  roomsDestroyed: number;
+  /** Kills by the tag the unit was spawned with. */
+  killsByTag: Record<string, number>;
+}
+
+/** One unit spawned by a campaign objective or beat. */
+export interface SpawnRequest {
+  unit: string;
+  x: number;
+  y: number;
+  tag?: string;
+  /** Seconds from now until it appears. */
+  delay?: number;
+}
+
 export interface NodeHost {
   /** The player's ship position (live; only meaningful while in combat). */
   readonly ship: { x: number; y: number };
   /** Start a boss fight and turn combat on (ship, weapons, bullets, HUD). Health carries over from the last node. */
   startBossFight(bossId: string, scroll?: string | ScrollLevelDef): void;
+  /**
+   * Campaign: (re)start combat from a clean field: units, enemy fire, bullets and the weapon timers reset, the boss fight
+   * starts when `bossId` is given (optionally with a restored `BossSnapshot`), otherwise there is no boss. `keepHealth`
+   * false heals the ship fully (a checkpoint restart), true keeps its hull. Also unlocks weapons (`setWeaponsLocked`).
+   */
+  startCombat(opts?: { bossId?: string; keepHealth?: boolean; restore?: BossSnapshot; scroll?: string | ScrollLevelDef }): void;
+  /** Queue one unit (campaign spawn). Needs combat to be on. */
+  spawnUnit(req: SpawnRequest): void;
+  /** Queue a whole wave by id (`WAVE_LIST`), tagging its units. */
+  spawnWaveById(id: string, tag?: string): void;
+  /** Units (alive, dying or queued) matching a tag and/or unit def id. */
+  unitsLeft(match: { tag?: string; unit?: string }): number;
+  /** Live cumulative counters (never reset; take deltas). */
+  counters(): CombatCounters;
+  /** The script blows the ship up now (not a death for the campaign). `combatResult` then reports `lost` after the usual beat. */
+  forceDestroyPlayer(): void;
+  /** Weapons off (no main fire, no aux triggers) or on. Reset by `startCombat`. */
+  setWeaponsLocked(locked: boolean): void;
+  /** Swap the ship and, optionally, its weapons (heals the ship). */
+  setShip(shipId: string, loadout?: { main: string; aux: string[] }): void;
+  /** False while the ship is exploding or gone (after a death or `forceDestroyPlayer`). */
+  shipAlive(): boolean;
+  /** State of a component or room of the running boss, by id: `destroyed`, `intact` or `missing` (no such id, or no boss). */
+  bossTarget(kind: 'component' | 'room', id: string): 'destroyed' | 'intact' | 'missing';
+  /** Snapshot of the running boss fight, or null when there is none. */
+  captureBoss(): BossSnapshot | null;
   /** Start a wave and turn combat on with no boss (ship, weapons, bullets). The units spawn on the wave's own schedule. Health carries over. */
   startWave(wave: WaveDefinition, scroll?: string | ScrollLevelDef): void;
   /** Start a scrolling level (combat on, no boss unless the timeline spawns one). Health carries over. */
   startScroll(level: string | ScrollLevelDef): void;
   /** The running scroll level (distance, speed, `setSpeed`, `onEvent`), or null. */
   scroll(): ScrollRunner | null;
-  /** Lock or unlock the player's weapons (greys the HUD rings; the dodge still works). Cleared by `endCombat`. */
-  setWeaponsLocked(locked: boolean): void;
   /** Units of the running wave still alive, dying or waiting to spawn. 0 = the wave is cleared. */
   waveRemaining(): number;
   /** Result of the combat started by this node. A short death/explosion beat is already included. Waves only ever report `lost` (clearing is `waveRemaining() === 0`). */

@@ -111,6 +111,8 @@ export class Unit {
   dyingFor = 0;
   /** True once removed from play (the system drops it next frame). */
   gone = false;
+  /** Campaign tag it was spawned with (objectives and bonus rules address units by it). */
+  tag?: string;
   private readonly deathFraction: number;
 
   constructor(
@@ -162,6 +164,7 @@ export interface PendingSpawn {
   at: number;
   def: UnitDefinition;
   placement: UnitPlacement;
+  tag?: string;
 }
 
 /** The units in play at once, plus the spawn queue of the current wave. */
@@ -193,9 +196,10 @@ export class UnitSystem {
   }
 
   /** Spawn now. */
-  spawn(def: UnitDefinition, placement: UnitPlacement): Unit {
+  spawn(def: UnitDefinition, placement: UnitPlacement, tag?: string): Unit {
     const jitter = ((this.counter++ * 0.6180339887) % 1) * 1.4;
     const u = new Unit(def, placement, jitter, this.ship);
+    u.tag = tag;
     u.fight.components.debug = this.debug;
     u.fight.rooms.host = this.roomHost;
     this.units.push(u);
@@ -205,6 +209,12 @@ export class UnitSystem {
   /** Alive units (the ones bullets can hit). */
   live(): Unit[] {
     return this.units.filter((u) => u.state === 'alive');
+  }
+
+  /** Units alive, dying or queued that match a tag and/or def id (no filter = all). */
+  countMatching(match: { tag?: string; unit?: string }): number {
+    const ok = (tag: string | undefined, id: string): boolean => (match.tag === undefined || tag === match.tag) && (match.unit === undefined || id === match.unit);
+    return this.units.filter((u) => ok(u.tag, u.def.id)).length + this.pending.filter((p) => ok(p.tag, p.def.id)).length;
   }
 
   /** Units alive, dying or still waiting to spawn: the wave ends at 0. */
@@ -222,7 +232,7 @@ export class UnitSystem {
       const due = this.pending.filter((p) => p.at <= this.time);
       if (due.length > 0) {
         this.pending = this.pending.filter((p) => p.at > this.time);
-        for (const p of due) this.spawn(p.def, p.placement);
+        for (const p of due) this.spawn(p.def, p.placement, p.tag);
       }
     }
     for (const u of this.units) {

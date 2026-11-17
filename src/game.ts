@@ -7,10 +7,12 @@ import { BOSSES, DEFAULT_BOSS_ID, type BossDefinition } from './bosses';
 import type { CarveShapeName } from './carveShapes';
 import { BLAST, BLAST_DEFAULT_SCALE, H, setBlastScale, TUNING, W, WEAPONS } from './config';
 import { saveStore, type UnlockKind } from './save';
+import { setScrollHooks } from './campaign/hooks';
 import { DebugPanel, modifierMult } from './debugControls';
 import { Effects } from './effects';
 import { DEFAULT_RUN } from './flow/defaultRun';
-import type { CombatResult, NodeHost } from './flow/node';
+import type { CombatCounters, CombatResult, NodeHost } from './flow/node';
+import { captureSnapshot, diffSnapshot, restoreSnapshot } from './campaign/snapshot';
 import { Run } from './flow/run';
 import { Hud } from './hud';
 import { Input } from './input';
@@ -134,8 +136,6 @@ export class Game {
   });
   /** The running scroll level (src/scroll): background, obstacles, allies and the distance timeline. Null = no scrolling. */
   private scroll: ScrollRunnerImpl | null = null;
-  /** The player's weapons are locked (chapter 3: you cannot shoot). The dodge still works. */
-  private weaponsLocked = false;
   /** Debug (boss mode): the boss was set aside while a scroll test runs, so stopping the scroll brings it back. */
   private bossSuspended = false;
   private lastBlockedSfx = 0;
@@ -146,6 +146,10 @@ export class Game {
     spawnBoss: (id) => this.activateBoss(id),
     setWeaponsLocked: (on) => this.setWeaponsLocked(on),
   };
+  /** Campaign: weapons off (chapter 3). Cleared by every `reset`, so a checkpoint restart re-applies it from the objective. */
+  private weaponsLocked = false;
+  /** Cumulative combat counters the campaign reads (kills, hits, rooms); never reset. */
+  private readonly combatCounters: CombatCounters = { kills: 0, hits: 0, damage: 0, roomsDestroyed: 0, killsByTag: {} };
   private lostAt = 0;
   private fireTimer = 0;
   private state: State = 'playing';
@@ -218,6 +222,8 @@ export class Game {
     this.ctx = canvas.getContext('2d')!;
     this.input = new Input(canvas);
     this.fight = this.makeFight();
+    // The campaign framework's scroll hooks drive the running scroll level (speed beats, distance triggers).
+    setScrollHooks({ setSpeed: (v, e) => this.scroll?.setSpeed(v, e ?? 0), distance: () => this.scroll?.distance ?? 0 });
     this.units.onDeath = (u) => this.onUnitDeath(u);
     this.units.roomHost = this.roomHost;
 
@@ -272,17 +278,35 @@ export class Game {
     return {
       ship: this.ship,
       startBossFight: (id, scroll) => {
-        const i = BOSSES.findIndex((b) => b.id === id);
-        if (i < 0) throw new Error(`boss node: unknown boss id "${id}"`);
-        this.bossDefIndex = i;
-        const old = this.fight;
-        this.fight = this.makeFight(BOSSES[i]);
-        this.carryDebug(old);
-        this.reset(true, true); // health carries over from the previous node
-        this.bossActive = true;
-        this.combat = true;
+        this.beginCombat({ bossId: id, keepHealth: true });
         if (scroll) this.beginScroll(scroll);
       },
+      startScroll: (level) => {
+        this.beginCombat({ keepHealth: true });
+        this.beginScroll(level);
+      },
+      scroll: () => this.scroll,
+      startCombat: (opts) => {
+        this.beginCombat({ keepHealth: false, ...opts });
+        if (opts?.scroll) this.beginScroll(opts.scroll);
+      },
+      spawnUnit: (req) => this.spawnCampaignUnit(req),
+      spawnWaveById: (id, tag) => {
+        const def = WAVE_LIST.find((w) => w.id === id);
+        if (!def) throw new Error(`campaign spawn: unknown wave "${id}"`);
+        spawnWave(this.units, def, unitById, tag);
+      },
+      unitsLeft: (m) => this.units.countMatching(m),
+      counters: () => this.combatCounters,
+      forceDestroyPlayer: () => this.forceDestroyPlayer(),
+      setWeaponsLocked: (on) => this.setWeaponsLocked(on),
+      setShip: (id, loadout) => {
+        this.setShip(id);
+        if (loadout) this.setLoadout(loadout);
+      },
+      shipAlive: () => this.state === 'playing',
+      bossTarget: (kind, id) => this.bossTarget(kind, id),
+      captureBoss: () => (this.bossActive ? captureSnapshot(this.fight) : null),
       startWave: (wave, scroll) => {
         this.bossActive = false;
         this.attacks.sources = null;
@@ -292,16 +316,6 @@ export class Game {
         if (scroll) this.beginScroll(scroll);
         spawnWave(this.units, wave, unitById);
       },
-      startScroll: (level) => {
-        this.bossActive = false;
-        this.attacks.sources = null;
-        this.attacks.setScript(null);
-        this.reset(true, true);
-        this.combat = true;
-        this.beginScroll(level);
-      },
-      scroll: () => this.scroll,
-      setWeaponsLocked: (on) => this.setWeaponsLocked(on),
       waveRemaining: () => this.units.remaining(),
       combatResult: (): CombatResult => {
         if (this.state === 'won' && this.elapsed - this.wonAt > WIN_BEAT) return 'won';
@@ -385,6 +399,61 @@ export class Game {
     if (this.bossSuspended) this.reset(); // brings the boss back (a fresh fight)
   }
 
+  /** Shared by the boss node (`startBossFight`) and the campaign (`startCombat`). */
+  private beginCombat(o: { bossId?: string; keepHealth: boolean; restore?: Parameters<typeof restoreSnapshot>[1] }): void {
+    if (o.bossId) {
+      const i = BOSSES.findIndex((b) => b.id === o.bossId);
+      if (i < 0) throw new Error(`boss node: unknown boss id "${o.bossId}"`);
+      this.bossDefIndex = i;
+      const old = this.fight;
+      this.fight = this.makeFight(BOSSES[i]);
+      this.carryDebug(old);
+      if (o.restore) restoreSnapshot(this.fight, o.restore);
+      this.reset(true, o.keepHealth); // health carries over from the previous node
+      this.bossActive = true;
+    } else {
+      this.bossActive = false;
+      this.attacks.sources = null;
+      this.attacks.setScript(null);
+      this.reset(true, o.keepHealth);
+    }
+    this.combat = true;
+  }
+
+  private spawnCampaignUnit(r: { unit: string; x: number; y: number; tag?: string; delay?: number }): void {
+    const def = unitById(r.unit);
+    const slot = { x: r.x, y: r.y };
+    this.units.queue({
+      at: this.units.time + (r.delay ?? 0),
+      def,
+      placement: { slot, entrance: (u) => ({ x: r.x, y: -40 + (r.y + 40) * Math.sin((u * Math.PI) / 2) }), entranceTime: 1 },
+      tag: r.tag,
+    });
+  }
+
+  /** The script blows the ship up: same visuals as dying, but the campaign does not count it. */
+  private forceDestroyPlayer(): void {
+    if (this.state !== 'playing') return;
+    this.state = 'lost';
+    this.lostAt = this.elapsed;
+    this.explode(this.ship.x, this.ship.y, 40);
+    this.fx.onExplosion();
+    this.sfx.explosion();
+  }
+
+  private bossTarget(kind: 'component' | 'room', id: string): 'destroyed' | 'intact' | 'missing' {
+    if (!this.bossActive) return 'missing';
+    const f = this.fight;
+    if (kind === 'component') {
+      const cs = f.components.items.filter((c) => c.matches(id));
+      if (cs.length === 0) return 'missing';
+      return cs.every((c) => c.state === 'destroyed' || c.state === 'detached') ? 'destroyed' : 'intact';
+    }
+    const room = f.rooms.rooms.find((r) => r.spec.id === id);
+    if (!room) return 'missing';
+    return room.offline ? 'destroyed' : 'intact';
+  }
+
   /** True when the combat sim runs (always in boss mode; in run mode only during a combat node). */
   private get inCombat(): boolean {
     return this.mode === 'boss' || this.combat;
@@ -466,6 +535,23 @@ export class Game {
         }),
       resetSave: () => saveStore.reset(),
       run: this.run,
+      /** Campaign debug (run mode only): start(levelId, objectiveIndex?), skipObjective(), setTime(s), unlockAll(on?), session(), counters(), snapshotRoundTrip(). */
+      campaign: {
+        start: (levelId: string, objective = 0) => {
+          if (this.mode !== 'run') throw new Error('campaign needs run mode: open the game without ?mode=boss (or press [Z])');
+          this.run.startCampaignLevel(levelId, objective);
+        },
+        skipObjective: () => this.run.campaign.session?.skipObjective(),
+        setTime: (seconds: number) => {
+          const s = this.run.campaign.session;
+          if (s) s.time = seconds;
+        },
+        unlockAll: (on = true) => (this.run.campaign.unlockAll = on),
+        session: () => this.run.campaign.session,
+        counters: () => this.run.campaign.session?.counters() ?? null,
+        flow: this.run.campaign,
+        snapshotRoundTrip: () => this.snapshotRoundTrip(),
+      },
       units: this.units,
       /** Spawn one unit by id at (x, y) (default: near the top centre) in the current combat, entering from above. */
       spawnUnit: (id: string, x = W / 2, y = 200) => this.spawnDebugUnit(id, x, y),
@@ -512,6 +598,39 @@ export class Game {
       setTestMode: (on: boolean) => this.setTestMode(on),
       reset: () => this.reset(),
       clearTimes: () => this.clearTimes(),
+    };
+  }
+
+  /** Debug: capture the current boss, push it through JSON, restore it onto a fresh fight and compare everything. */
+  private snapshotRoundTrip() {
+    const snap = JSON.parse(JSON.stringify(captureSnapshot(this.fight)));
+    const fresh = new BossFight(this.fight.def);
+    restoreSnapshot(fresh, snap);
+    const diffs = diffSnapshot(fresh, snap);
+    let pixelMismatch = 0;
+    let pixels = 0;
+    this.fight.boss.layers.forEach((l, i) => {
+      const o = fresh.boss.layers[i];
+      // Compare alpha everywhere and colour where something is visible (the colour of a carved-away pixel is never seen).
+      for (let k = 0; k < l.img.data.length; k += 4) {
+        pixels++;
+        const a = l.img.data[k + 3];
+        if (a !== o.img.data[k + 3] || (a > 0 && (l.img.data[k] !== o.img.data[k] || l.img.data[k + 1] !== o.img.data[k + 1] || l.img.data[k + 2] !== o.img.data[k + 2]))) pixelMismatch++;
+      }
+      if (l.remaining !== o.remaining) diffs.push(`layer ${l.name}: remaining ${l.remaining} vs ${o.remaining}`);
+    });
+    const comp = this.fight.components.items.map((c, i) => {
+      const o = fresh.components.items[i];
+      return c.hp === o.hp && (c.state === 'active') === (o.state === 'active');
+    });
+    return {
+      ok: diffs.length === 0 && pixelMismatch === 0 && comp.every(Boolean) && this.fight.boss.core.hp === fresh.boss.core.hp,
+      diffs,
+      pixelMismatch,
+      pixels,
+      componentsMatch: comp.filter(Boolean).length + '/' + comp.length,
+      coreHp: [this.fight.boss.core.hp, fresh.boss.core.hp],
+      jsonBytes: JSON.stringify(snap).length,
     };
   }
 
@@ -658,6 +777,7 @@ export class Game {
     this.weapons.reset();
     this.tags.reset();
     this.particles = [];
+    this.weaponsLocked = false;
     this.dodge.reset();
     if (!keepHealth) this.health.reset();
     this.attacks.reset();
@@ -929,6 +1049,9 @@ export class Game {
   }
 
   private onUnitDeath(u: Unit): void {
+    const cc = this.combatCounters;
+    cc.kills++;
+    if (u.tag) cc.killsByTag[u.tag] = (cc.killsByTag[u.tag] ?? 0) + 1;
     const c = u.center();
     if (u.big) {
       this.explode(c.x, c.y, 60);
@@ -957,7 +1080,7 @@ export class Game {
     const dmg =
       this.attacks.collect(this.ship.x, this.ship.y, this.hitbox) +
       this.attacks.collectHazards(this.ship.x, this.ship.y, this.hitbox);
-    if (dmg > 0 && !this.godMode && this.health.hit(dmg, this.dodge.invulnerable)) this.afterPlayerHit();
+    if (dmg > 0 && !this.godMode && this.health.hit(dmg, this.dodge.invulnerable)) this.afterPlayerHit(dmg);
     // Obstacles (debris, peaks): contact damage with the same i-frames and dodge as a bullet; never an instant kill.
     if (this.scroll && this.state === 'playing') {
       const o = this.scroll.obstacles.touch(this.ship.x, this.ship.y, this.hitbox);
@@ -966,16 +1089,19 @@ export class Game {
         this.fx.onComponentDestroy(26);
         this.sfx.componentDestroy(26);
         this.explode(this.ship.x, this.ship.y, 12);
-        this.afterPlayerHit();
+        this.afterPlayerHit(o.damage);
       }
     }
   }
 
   /** The ship was hit and the damage landed: destroyed when the hull is gone. */
-  private afterPlayerHit(): void {
+  private afterPlayerHit(dmg: number): void {
+    this.combatCounters.hits++;
+    this.combatCounters.damage += dmg;
     if (!this.health.dead) return;
     this.state = 'lost';
     this.lostAt = this.elapsed;
+    this.explode(this.ship.x, this.ship.y, 40);
     this.fx.onExplosion();
     this.sfx.explosion();
   }
@@ -1003,6 +1129,7 @@ export class Game {
           this.sfx.roomExposed();
           break;
         case 'roomOffline':
+          this.combatCounters.roomsDestroyed++;
           this.sfx.roomOffline();
           break;
       }

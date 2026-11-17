@@ -1,14 +1,15 @@
+import { CampaignFlow } from '../campaign/flow';
 import { cleanLoadout, defaultLoadoutFor, initialSelection } from '../loadouts';
 import { saveStore } from '../save';
 import { DEFAULT_SHIP_ID, shipById, SHIPS, type WeaponLoadout } from '../ships';
 import type { FlowNode, NodeContext, NodeDefinition, NodeHost, NodePosition, RunDefinition, RunState } from './node';
 import { createNode } from './nodes';
-import { ENDLESS_BTN, UNLOCKS_BTN, drawRunOver, drawRunWon, drawTitle } from './screens';
+import { CAMPAIGN_BTN, ENDLESS_BTN, UNLOCKS_BTN, drawRunOver, drawRunWon, drawTitle } from './screens';
 import { LoadoutScreen, ShipSelectScreen } from './shipScreens';
 import { UnlocksScreen } from './unlocksScreen';
 
 /** title -> node (the current level's nodes, then its reward) -> ... -> won; death at any node -> over. */
-export type RunPhase = 'title' | 'unlocks' | 'ships' | 'loadout' | 'node' | 'over' | 'won';
+export type RunPhase = 'title' | 'unlocks' | 'ships' | 'loadout' | 'campaign' | 'node' | 'over' | 'won';
 
 /** Seconds a result screen ignores input, so the press that ended the last node cannot skip it. */
 const SCREEN_LOCKOUT = 1;
@@ -35,6 +36,9 @@ export class Run {
   state: RunState = this.freshState(0);
   /** Names of ships unlocked during the current run (shown on the result screens). */
   private unlockedNames: string[] = [];
+  /** The campaign menus and play (phase `campaign`). It borrows the run's ship selection and gives it back (see `bridge` below). */
+  readonly campaign: CampaignFlow;
+  private savedSelection: { shipId: string; loadout: WeaponLoadout } | null = null;
   private node: FlowNode | null = null;
   private unlocksScreen: UnlocksScreen | null = null;
   private shipScreen: ShipSelectScreen | null = null;
@@ -45,7 +49,20 @@ export class Run {
   constructor(
     readonly def: RunDefinition,
     private readonly host: NodeHost,
-  ) {}
+  ) {
+    this.campaign = new CampaignFlow(host, {
+      prepare: () => {
+        this.savedSelection = { shipId: this.selection.shipId, loadout: { main: this.selection.loadout.main, aux: [...this.selection.loadout.aux] } };
+        this.state = this.freshState(0); // no upgrades, the level sets the ship
+      },
+      restore: () => {
+        const s = this.savedSelection;
+        this.savedSelection = null;
+        if (s) this.select(s.shipId, s.loadout);
+        this.state.upgrades = [];
+      },
+    });
+  }
 
   /** Node definitions of the current level in play order: its nodes, then its reward (not after the last level). */
   private levelNodes(levelIndex = this.state.levelIndex): NodeDefinition[] {
@@ -80,6 +97,7 @@ export class Run {
 
   /** Abandon whatever is running and go back to the title. */
   toTitle(): void {
+    this.campaign.shutdown();
     this.endNode();
     this.setPhase('title');
   }
@@ -156,6 +174,10 @@ export class Run {
       }
       return;
     }
+    if (this.phase === 'campaign') {
+      if (this.campaign.update(dt) === 'exit') this.toTitle();
+      return;
+    }
     if (this.phase === 'unlocks') {
       if (this.unlocksScreen!.update(dt, this.host)) this.toTitle();
       return;
@@ -193,18 +215,28 @@ export class Run {
       if (key === 'KeyU' || inBtn(UNLOCKS_BTN)) {
         this.unlocksScreen = new UnlocksScreen();
         this.setPhase('unlocks');
+      } else if (key === 'KeyC' || inBtn(CAMPAIGN_BTN)) {
+        this.campaign.open();
+        this.setPhase('campaign');
       } else if (key === 'Enter' || key === 'Space' || key === 'KeyE' || inBtn(ENDLESS_BTN)) {
         const sel = initialSelection();
         this.shipScreen = new ShipSelectScreen(sel.shipId);
         this.setPhase('ships');
       }
-      // The CAMPAIGN and CONQUEST buttons are "coming soon": taps do nothing.
+      // The CONQUEST button is "coming soon": taps do nothing.
     } else if (this.phaseTime > SCREEN_LOCKOUT) this.toTitle();
   }
 
   private startFromTitle(): void {
     const seed = new URLSearchParams(location.search).get('seed');
     this.start(seed !== null && seed !== '' && !Number.isNaN(+seed) ? +seed : undefined);
+  }
+
+  /** Debug: jump straight into a campaign level (skips the menus). */
+  startCampaignLevel(levelId: string, objective = 0): void {
+    this.endNode();
+    this.campaign.startLevel(levelId, objective);
+    this.setPhase('campaign');
   }
 
   /** True while a node is current (as opposed to the title and result screens). */
@@ -227,6 +259,9 @@ export class Run {
         break;
       case 'loadout':
         this.loadoutScreen!.draw(g);
+        break;
+      case 'campaign':
+        this.campaign.draw(g);
         break;
       case 'over':
         drawRunOver(g, this.phaseTime, summary);

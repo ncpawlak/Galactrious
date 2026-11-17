@@ -23,7 +23,7 @@ function prompt(g: CanvasRenderingContext2D, text: string, y: number, t: number)
   if (Math.floor(t * 2) % 2 === 0) drawCentered(g, text, y, '18px monospace', '#ffffff');
 }
 
-/** Title touch targets: the Endless run, the two modes that are not built yet (disabled), and the Unlocks screen. */
+/** Title touch targets: the Endless run, the Campaign, Conquest (not built yet, disabled), and the Unlocks screen. */
 export const ENDLESS_BTN = { x: W / 2 - 140, y: 430, w: 280, h: 60 };
 export const CAMPAIGN_BTN = { x: W / 2 - 140, y: 506, w: 280, h: 60 };
 export const CONQUEST_BTN = { x: W / 2 - 140, y: 582, w: 280, h: 60 };
@@ -47,7 +47,7 @@ export function drawTitle(g: CanvasRenderingContext2D, t: number, levels: number
   drawCentered(g, 'carve the bosses', 292, '18px monospace', '#6ee7ff');
   drawCentered(g, `${levels} levels  /  waves, then a boss  /  one life`, 340, '14px monospace', '#8fa0c8');
   titleButton(g, ENDLESS_BTN, 'ENDLESS [ENTER]', '#ffd21f', Math.floor(t * 2) % 2 === 0 ? 'tap to choose ship and loadout' : undefined);
-  titleButton(g, CAMPAIGN_BTN, 'CAMPAIGN', '#3a4560', 'coming soon');
+  titleButton(g, CAMPAIGN_BTN, 'CAMPAIGN [C]', '#6ee7ff', 'story levels, medals');
   titleButton(g, CONQUEST_BTN, 'CONQUEST', '#3a4560', 'coming soon');
   titleButton(g, UNLOCKS_BTN, 'UNLOCKS [U]', '#6ee7ff');
   drawCentered(g, 'move: drag / arrows / WASD    dodge: Shift / X / button', 860, '12px monospace', '#8fa0c8');
