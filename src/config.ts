@@ -164,6 +164,12 @@ export const WEAPONS = {
   blades: { cooldown: 7, duration: 4.5, count: 3, radius: 80, spin: 5.5, tick: 0.1, energy: 70, shape: 'ember3' as const },
   /** Swarm (aux): `count` small homing missiles at random solid spots of the targets. */
   swarm: { cooldown: 6.5, count: 6, energy: 340, pierce: 0.3, shape: 'swarm' as const, speed: 560, turn: 4.5, wanderTime: 2.2 },
+  /**
+   * Energy Wave (aux, campaign unlock): a half-moon field fired straight up. For `duration` s the crescent expands from the ship to `reach` px
+   * (an `arcDeg` wide arc); every `tick` s each of `samples` points on the front carves `energy` x power x the distance factor
+   * (1 at the ship, `edge` at `reach`), with the `wave` carve shape. Passes through components like the other aux (soaks only their hp).
+   */
+  wave: { cooldown: 4, duration: 0.42, tick: 0.03, reach: 160, arcDeg: 100, samples: 15, energy: 120, edge: 0.25, shape: 'wave' as const },
 };
 
 /**
@@ -177,4 +183,6 @@ export const MAINS = {
   scatter: { rateMul: 0.3, damageMul: 0.5, projectiles: 8, spreadDeg: 6, jitterDeg: 2, pierce: 0, speedMul: 0.8, fall: { start: 110, end: 440, near: 1.7, far: 0.25 } },
   /** Needler: very fast, narrow, thin deep tunnels. */
   needle: { rateMul: 2.4, damageMul: 0.42, projectiles: 1, spreadDeg: 0, jitterDeg: 0.6, pierce: 0.35, speedMul: 1.25, shape: 'needle' as const },
+  /** Laser (campaign unlock): slow and heavy. 1.7 shots/s (8 x 0.2125) at 5.9x the chain gun's energy = 10 vs 8 units/s; measured +12% energy spent, +13% carved pixels, pierce 0.7 and a narrow deep carve. */
+  laser: { rateMul: 0.2125, damageMul: 5.9, projectiles: 1, spreadDeg: 0, jitterDeg: 0, pierce: 0.7, speedMul: 1.7, shape: 'laser' as const },
 };

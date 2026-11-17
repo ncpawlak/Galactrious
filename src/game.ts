@@ -68,7 +68,7 @@ interface Bullet {
   /** Main-weapon extras (src/weapons.ts `MainDef`); the chain gun sets none of these, so its bullets behave exactly as before. */
   speed?: number;
   shape?: CarveShapeName;
-  look?: { color: string; w: number; h: number };
+  look?: { color: string; w: number; h: number; glow?: string };
   /** Distance fall-off: `base` energy x a factor that eases from `near` to `far` between `start` and `end` px; the bullet dies at `end`. */
   fall?: { start: number; end: number; near: number; far: number; base: number; travelled: number };
 }
@@ -169,6 +169,8 @@ export class Game {
   private hull25At: number | null = null;
   /** Debug: scripted ship control for measuring clear times. 'sweep' = steady side-to-side, 'focus' = aim at the core. */
   private auto: 'off' | 'sweep' | 'focus' = 'off';
+  /** Ship height under the autopilot (default H - 140); `game.debug.setAutoY` moves it for range measurements. */
+  private autoY = H - 140;
   private testMode = false;
   private readonly fx = new Effects();
   private readonly sfx = new Sfx();
@@ -628,6 +630,8 @@ export class Game {
       setBlastScale: (v: number) => setBlastScale(v),
       setSwept: (on: boolean) => (this.sweptBullets = on),
       setAuto: (m: 'off' | 'sweep' | 'focus') => (this.auto = m),
+      /** Ship height while the autopilot flies (default H - 140 = 820), to test close and far range. */
+      setAutoY: (y: number) => (this.autoY = y),
       setTestMode: (on: boolean) => this.setTestMode(on),
       reset: () => this.reset(),
       clearTimes: () => this.clearTimes(),
@@ -1208,7 +1212,7 @@ export class Game {
     const ship = this.ship;
     if (this.auto !== 'off') {
       ship.x = this.autoTarget();
-      ship.y = H - 140;
+      ship.y = this.autoY;
       return;
     }
     const dash = this.dodge.update(dt);
@@ -1247,6 +1251,11 @@ export class Game {
     const { projectiles, damage } = effectiveMain(def, this.stats, (k, b) => lo.get(k, b));
     const tags = lo.tags(def.id);
     const custom = def.id !== 'chain';
+    // Upgrade-driven shape and pierce (cards add `<id>.width` / `<id>.pierce`; no card = the def's own values, unchanged).
+    const tiers = def.shapeTiers;
+    const shape = tiers ? tiers[Math.max(0, Math.min(tiers.length - 1, Math.round(lo.get(`${def.id}.width`, 0))))] : def.shape;
+    const pierce = Math.min(0.95, lo.get(`${def.id}.pierce`, def.pierce));
+    if (def.bullet.glow) this.sfx.weapon(def.id);
     for (let i = 0; i < projectiles; i++) {
       const offset = i - (projectiles - 1) / 2;
       const jitter = def.jitterDeg ? (Math.random() * 2 - 1) * def.jitterDeg : 0;
@@ -1257,13 +1266,13 @@ export class Game {
         dx: Math.sin(angle),
         dy: -Math.cos(angle),
         energy: damage,
-        pierce: def.pierce,
+        pierce,
         alive: true,
         tags,
       };
       if (custom) {
         bullet.speed = TUNING.bulletSpeed * def.speedMul;
-        bullet.shape = def.shape;
+        bullet.shape = shape;
         bullet.look = def.bullet;
         if (def.fall) bullet.fall = { ...def.fall, base: damage, travelled: 0 };
       }
@@ -1371,6 +1380,7 @@ export class Game {
       const res = this.carveAt(t as BossFight, b.x, b.y, budget, b.shape ?? 'default');
       if (!res) continue;
       if (b.tags) this.tags.onHit(b.tags, b.x, b.y, b.energy, t);
+      if (b.look?.glow && res.carved > 0) this.impactFlare(b.x, b.y, b.look.glow);
       if (res.core || res.carved === 0) {
         b.alive = false;
         return;
@@ -1382,6 +1392,20 @@ export class Game {
         b.alive = false;
       }
       return;
+    }
+  }
+
+  /** Laser impact flare: a few hot sparks thrown back along the tunnel plus one large short-lived bloom. Rate-limited by the particle cap. */
+  private impactFlare(x: number, y: number, glow: string): void {
+    const [r, g, b] = glow.split(',').map(Number);
+    const col = `rgb(${Math.min(255, r + 80)},${Math.min(255, g + 120)},${Math.min(255, b + 100)})`;
+    if (this.particles.length < MAX_PARTICLES - 8) {
+      this.particles.push({ x: x - 5, y: y - 5, vx: 0, vy: 0, life: 0.1, max: 0.1, color: col, size: 10 });
+      for (let i = 0; i < 4; i++) {
+        const a = Math.PI / 2 + (Math.random() - 0.5) * 2.2;
+        const sp = 120 + Math.random() * 200;
+        this.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.2, max: 0.2, color: col, size: 2 });
+      }
     }
   }
 
@@ -1526,14 +1550,54 @@ export class Game {
 
   private drawBullets(): void {
     const ctx = this.ctx;
+    this.drawMuzzleCharge();
     ctx.fillStyle = '#fff7a8';
     for (const b of this.bullets) {
-      if (b.look) {
+      if (b.look?.glow) {
+        // Charged beam-bolt: additive halo, bright core, long streak.
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = `rgba(${b.look.glow},0.28)`;
+        ctx.fillRect(Math.round(b.x - b.look.w * 2.5), Math.round(b.y - b.look.h / 2 - 8), b.look.w * 5, b.look.h + 24);
+        ctx.fillStyle = `rgba(${b.look.glow},0.7)`;
+        ctx.fillRect(Math.round(b.x - b.look.w), Math.round(b.y - b.look.h / 2), b.look.w * 2, b.look.h + 14);
+        ctx.restore();
+        ctx.fillStyle = b.look.color;
+        ctx.fillRect(Math.round(b.x - b.look.w / 4), Math.round(b.y - b.look.h / 2), b.look.w / 2, b.look.h);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(Math.round(b.x - 1), Math.round(b.y - b.look.h / 2), 2, 8);
+        ctx.fillStyle = '#fff7a8';
+      } else if (b.look) {
         ctx.fillStyle = b.look.color;
         ctx.fillRect(Math.round(b.x - b.look.w / 2), Math.round(b.y - b.look.h / 2), b.look.w, b.look.h);
         ctx.fillStyle = '#fff7a8';
       } else ctx.fillRect(Math.round(b.x) - 1, Math.round(b.y) - 5, 3, 10);
     }
+  }
+
+  /** Charged mains (a `bullet.glow`): a glow grows at the muzzle over the last of each shot interval and bursts as the bolt leaves. */
+  private drawMuzzleCharge(): void {
+    if (this.state !== 'playing') return;
+    const def = mainById(this.run.state.loadout.main);
+    const glow = def.bullet.glow;
+    if (!glow) return;
+    const interval = 1 / effectiveMain(def, this.stats, (k, b) => this.loadout.get(k, b)).fireRate;
+    const p = Math.min(1, this.fireTimer / interval);
+    const ctx = this.ctx;
+    const x = this.ship.x;
+    const y = this.ship.y - 24;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const charge = Math.max(0, (p - 0.35) / 0.65);
+    const burst = Math.max(0, 1 - p * 8); // brief flash right after the shot
+    const r = 3 + 9 * charge * charge + 8 * burst;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r + 6);
+    grad.addColorStop(0, `rgba(255,255,255,${0.35 + 0.6 * Math.max(charge, burst)})`);
+    grad.addColorStop(0.4, `rgba(${glow},${0.25 + 0.5 * Math.max(charge, burst)})`);
+    grad.addColorStop(1, `rgba(${glow},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(x - r - 6, y - r - 6, (r + 6) * 2, (r + 6) * 2);
+    ctx.restore();
   }
 
   private drawParticles(): void {

@@ -84,6 +84,14 @@ export class Sfx {
       this.tone(c, 120, 60, 0.25, 'sawtooth', v * 0.5);
     } else if (id === 'lance') {
       this.tone(c, 300, 700, 0.5, 'sawtooth', v * 0.5);
+    } else if (id === 'laser') {
+      // Charged snap: a bright high zap over a short low thump.
+      this.tone(c, 1400, 260, 0.14, 'sawtooth', v * 0.35);
+      this.tone(c, 110, 70, 0.12, 'sine', v * 0.5);
+    } else if (id === 'wave') {
+      // Rising swell with a soft low pulse.
+      this.tone(c, 220, 520, 0.4, 'sine', v * 0.8);
+      this.tone(c, 330, 780, 0.34, 'triangle', v * 0.4);
     } else if (id === 'blades') {
       this.tone(c, 700, 300, 0.3, 'triangle', v * 0.6);
     } else if (id === 'swarm') {

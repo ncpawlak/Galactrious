@@ -25,6 +25,9 @@ const secs = (v: number): string => `${num(v)}s`;
 /** Gauss shaft width tiers: the lateral penalty of each carve shape (lower = wider). */
 export const GAUSS_SHAPES: CarveShapeName[] = ['narrow', 'narrow1', 'narrow2', 'narrow3'];
 
+/** Laser width tiers (`laser.width`), see `shapeTiers` of the Laser in weapons.ts. */
+export const LASER_SHAPES: CarveShapeName[] = ['laser', 'laser1', 'laser2', 'laser3'];
+
 export const STATS: Record<string, StatInfo> = {
   'chain.fireRate': { label: 'Chain gun rate', base: () => TUNING.ship.fireRate, good: 'up', show: (v) => `${num(v)}/s` },
   'chain.damage': { label: 'Chain gun damage', base: () => TUNING.ship.damage, good: 'up', show: num },
@@ -48,6 +51,19 @@ export const STATS: Record<string, StatInfo> = {
   'scatter.barrels': { label: 'Scatter pellets', base: () => MAINS.scatter.projectiles, good: 'up', show: (v) => num(v + MAINS.scatter.projectiles - 1) },
   'needle.fireRate': { label: 'Needler rate', base: () => TUNING.ship.fireRate * MAINS.needle.rateMul, good: 'up', show: (v) => `${num(v)}/s` },
   'needle.damage': { label: 'Needler damage', base: () => TUNING.ship.damage * MAINS.needle.damageMul, good: 'up', show: num },
+  'laser.fireRate': { label: 'Laser rate', base: () => TUNING.ship.fireRate * MAINS.laser.rateMul, good: 'up', show: (v) => `${num(v)}/s` },
+  'laser.damage': { label: 'Laser damage', base: () => TUNING.ship.damage * MAINS.laser.damageMul, good: 'up', show: num },
+  'laser.pierce': { label: 'Laser pierce', base: () => MAINS.laser.pierce, good: 'up', show: (v) => `${Math.round(Math.min(0.95, v) * 100)}%` },
+  'laser.width': {
+    label: 'Laser width',
+    base: () => 0,
+    good: 'up',
+    show: (v) => `${(CARVE_SHAPES.laser.lateralPenalty / CARVE_SHAPES[LASER_SHAPES[Math.max(0, Math.min(LASER_SHAPES.length - 1, Math.round(v)))]].lateralPenalty).toFixed(1)}x`,
+  },
+  'wave.arc': { label: 'Wave arc', base: () => WEAPONS.wave.arcDeg, good: 'up', show: (v) => `${num(v)}°` },
+  'wave.reach': { label: 'Wave reach', base: () => WEAPONS.wave.reach, good: 'up', show: (v) => `${num(v)}px` },
+  'wave.cooldown': { label: 'Wave cooldown', base: () => WEAPONS.wave.cooldown, good: 'down', show: secs },
+  'wave.edge': { label: 'Wave edge power', base: () => WEAPONS.wave.edge, good: 'up', show: (v) => `${Math.round(Math.min(1, v) * 100)}%` },
   'lance.energy': { label: 'Lance energy', base: () => WEAPONS.lance.energy, good: 'up', show: num },
   'lance.cooldown': { label: 'Lance cooldown', base: () => WEAPONS.lance.cooldown, good: 'down', show: secs },
   'blades.count': { label: 'Blades', base: () => WEAPONS.blades.count, good: 'up', show: num },
