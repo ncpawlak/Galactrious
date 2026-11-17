@@ -2,6 +2,7 @@ import { DEBRIS } from './config';
 import { carveTable, type CarveShapeName } from './carveShapes';
 import { driftSpin, driftVelocity, stepDrift } from './debris';
 import type { Regrowth } from './regrowth';
+import { CORE_DEATH_TIME, DEFAULT_CORE_COLOR, drawReactor, type RGB } from './coreFx';
 
 /**
  * Layered, carvable boss.
@@ -226,6 +227,14 @@ export class Boss {
   private offsetX = 0;
   private offsetY = 0;
   private coreFlash = 0;
+  /** Reactor look (visual only). `coreVuln` is fed by the BossFight; `coreSimple` by small units. */
+  coreColor: RGB = DEFAULT_CORE_COLOR;
+  coreSimple = false;
+  coreVuln = 1;
+  private readonly coreMaxHp: number;
+  private corePhase = Math.random();
+  private coreTime = 0;
+  private coreDeadFor = 0;
   private fragments: Fragment[] = [];
   private checkTimer = 0;
   /** Per layer: original connected region id of each pixel (0 = empty). Regions anchor independently. */
@@ -242,6 +251,7 @@ export class Boss {
     this.height = spec.height;
     this.layers = spec.layers.map((l) => new Layer(l.name, l.density, l.canvas));
     this.core = { ...spec.core };
+    this.coreMaxHp = spec.core.hp;
     this.anchors = { ...(spec.anchors ?? {}) };
     this.regions = this.layers.map((l) => labelMask(l.mask, spec.width, spec.height).label);
     this.baseX = centerX - spec.width / 2;
@@ -264,6 +274,12 @@ export class Boss {
 
   update(dt: number): void {
     this.coreFlash = Math.max(0, this.coreFlash - dt);
+    this.coreTime += dt;
+    if (this.defeated) this.coreDeadFor += dt;
+    else {
+      const dmg = this.coreMaxHp > 0 ? 1 - this.core.hp / this.coreMaxHp : 0;
+      this.corePhase += dt * (0.9 + 1.6 * this.coreVuln + 2.4 * dmg);
+    }
     this.sinceHit += dt;
     this.prevX = this.x;
     this.prevY = this.y;
@@ -627,7 +643,7 @@ export class Boss {
     ctx.drawImage(this.layers[last].canvas, ox, oy);
     this.regrowth?.drawGlow(ctx, last, ox, oy);
     this.layerHook?.(ctx, last, ox, oy);
-    if (!this.defeated) this.drawCore(ctx, ox, oy);
+    if (!this.defeated || this.coreDeadFor < CORE_DEATH_TIME) this.drawCore(ctx, ox, oy);
     for (let i = last - 1; i >= 0; i--) {
       ctx.drawImage(this.layers[i].shadow, ox, oy);
       ctx.drawImage(this.layers[i].canvas, ox, oy);
@@ -647,26 +663,15 @@ export class Boss {
   }
 
   private drawCore(ctx: CanvasRenderingContext2D, ox: number, oy: number): void {
-    const cx = ox + this.core.x;
-    const cy = oy + this.core.y;
-    const flashing = this.coreFlash > 0;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.fillStyle = flashing ? '#ffffff' : '#ffd21f';
-    ctx.strokeStyle = flashing ? '#ffe9a0' : '#a8741a';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const a = -Math.PI / 2 + (i * Math.PI) / 5;
-      const rad = i % 2 === 0 ? this.core.radius : this.core.radius * 0.45;
-      const px = Math.cos(a) * rad;
-      const py = Math.sin(a) * rad;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
+    drawReactor(ctx, ox + this.core.x, oy + this.core.y, this.core.radius, {
+      phase: this.corePhase,
+      time: this.coreTime,
+      color: this.coreColor,
+      simple: this.coreSimple,
+      damage: this.coreMaxHp > 0 ? 1 - Math.max(0, this.core.hp) / this.coreMaxHp : 0,
+      vuln: this.coreVuln,
+      flash: this.coreFlash > 0 ? 1 : 0,
+      dead: this.defeated ? this.coreDeadFor : -1,
+    });
   }
 }

@@ -120,6 +120,7 @@ export class Unit {
     this.fight.components.target = ship;
     this.sched = this.fight.makeScheduler();
     this.big = def.size === 'big';
+    this.fight.boss.coreSimple = !this.big;
     this.deathFraction = def.deathFraction ?? (this.big ? 0.75 : 0.6);
     this.fight.update(0); // place it at its entrance start
   }

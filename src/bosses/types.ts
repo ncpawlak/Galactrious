@@ -66,6 +66,8 @@ export interface BossDefinition {
   rooms?: RoomSpec[];
   /** Core armor rules. Default: the old formula (TUNING.coreArmor.min, ramping with how much is dug). */
   coreArmor?: CoreArmorSpec;
+  /** Reactor glow colour of the core, [r,g,b] (default hot cyan-white). Visual only. */
+  coreColor?: [number, number, number];
   /** Opt in to hull regrowth (an anti-spam lever, see src/regrowth.ts). Omitted = the boss never regrows. */
   regrowth?: RegrowthSpec;
   /** At least one phase. */

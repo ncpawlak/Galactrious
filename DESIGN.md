@@ -306,3 +306,11 @@ Files:
 **Stubbed / not built:** other tags (only Burn), weapon-gating cards (all three weapons are always equipped), pickups, rarity weighting beyond the per-card weight, a shop, any balance pass (bosses were not retuned for the pool; stacks of Burn make fights much shorter), card art. Components are not hurt by burn itself.
 
 **Not verified:** no human playtest of the pool or of touch input on a real device (tap and hover were checked with the in-app browser's mouse); mobile layout was checked at 375 x 812 only; the compact HUD strip was seen in a screenshot only partly (the debug overlay covers it, toggle with the backquote key).
+
+## Core look
+
+The core is drawn as a reactor ("nuclear heart") by `src/coreFx.ts`, still only where it is exposed (it is drawn between the innermost layer and the layers above it, as before). Visual only: hitboxes, hp, armor and damage are untouched.
+
+- Look: white-hot centre in a coloured glow halo (one cached gradient sprite per colour/radius), a dark backing disc so it reads on any room colour, two counter-rotating arc rings (big cores only; small units get glow plus pulse), heartbeat pulse. Colour defaults to hot cyan-white; a definition can set `coreColor: [r,g,b]`.
+- State: pulse speed and brightness rise with core hp lost and with `coreVulnerability` (fed to `Boss.coreVuln` each frame by `BossFight`; small units skip it). Below ~0.75 vulnerability the core is dimmer and wears a dashed shield ring. A hit flickers it. On death it swells into a white overload flash and shrinks away over `CORE_DEATH_TIME` (0.3 s) while the existing explosion plays.
+- Cost: about 0.1 ms per frame for 20 units on screen (16 small + big mix, measured in the dev build).
