@@ -55,6 +55,21 @@ function text(g: CanvasRenderingContext2D, s: string, x: number, y: number, font
 /** Cut `s` to at most `n` characters with an ellipsis. */
 const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
+/** Word-wrap `s` into at most `max` lines of at most `n` characters (the last line is clipped with an ellipsis). */
+function wrapLines(s: string, n: number, max: number): string[] {
+  const out: string[] = [];
+  let rest = s.trim();
+  while (rest && out.length < max) {
+    if (rest.length <= n) { out.push(rest); rest = ''; break; }
+    const cut = rest.lastIndexOf(' ', n);
+    const at = cut > 0 ? cut : n;
+    out.push(rest.slice(0, at));
+    rest = rest.slice(at).trim();
+  }
+  if (rest) out[out.length - 1] = clip(`${out[out.length - 1]} ${rest}`, n);
+  return out;
+}
+
 /** Split `s` into two lines of at most `n` characters at a space. */
 function wrap2(s: string, n: number): [string, string] {
   if (s.length <= n) return [s, ''];
@@ -134,7 +149,7 @@ const START: Btn = { x: 360, y: 856, w: 150, h: 56 };
 const SHEET_H = 640;
 const SHEET_TOP = H - SHEET_H;
 const SHEET_LIST_Y = 60; // list starts this far below the sheet top
-const ROW_H = 72;
+const ROW_H = 112; // name + up to three lines of 14px description
 
 const slotBox = (i: number): Btn => (i === 0 ? MAIN_BOX : auxBox(i - 1));
 const SLOT_NAMES = ['MAIN', 'AUX 1', 'AUX 2', 'AUX 3'];
@@ -458,8 +473,8 @@ export class ShipBuilderScreen {
     if (i === 0) {
       text(g, 'MAIN', b.x + 14, b.y + 22, `bold 12px ${MONO}`, label);
       weaponIcon(g, def, b.x + 52, b.y + 56, 24);
-      text(g, def?.name ?? 'empty', b.x + 94, b.y + 52, `bold 22px ${MONO}`, def ? '#ffffff' : '#6b7488');
-      if (def) text(g, clip(def.desc, 40), b.x + 94, b.y + 74, `12px ${MONO}`, '#b6c2e0');
+      text(g, def?.name ?? 'empty', b.x + 94, b.y + 46, `bold 22px ${MONO}`, def ? '#ffffff' : '#6b7488');
+      if (def) wrapLines(def.desc, 38, 2).forEach((ln, k) => text(g, ln, b.x + 94, b.y + 66 + k * 17, `13px ${MONO}`, '#d4dcf2'));
     } else {
       text(g, SLOT_NAMES[i], b.x + b.w / 2, b.y + 22, `bold 12px ${MONO}`, label, 'center');
       weaponIcon(g, def, b.x + b.w / 2, b.y + 60, 24);
@@ -504,9 +519,9 @@ export class ShipBuilderScreen {
       g.strokeStyle = here ? '#4ade80' : i === sh.cursor ? '#6ee7ff' : '#26324d';
       g.strokeRect(24.5, y + 0.5, W - 49, ROW_H - 7);
       weaponIcon(g, row.def, 62, y + (ROW_H - 6) / 2, 22, !row.open);
-      text(g, row.def.name, 96, y + 28, `bold 18px ${MONO}`, row.open ? '#ffffff' : '#8a93a8');
-      if (row.open) text(g, clip(row.def.desc, 44), 96, y + 50, `12px ${MONO}`, '#b6c2e0');
-      else text(g, clip(row.def.requirement ?? row.def.unlockHint ?? 'locked', 44), 96, y + 50, `bold 12px ${MONO}`, '#ff8a5a');
+      text(g, row.def.name, 96, y + 26, `bold 20px ${MONO}`, row.open ? '#ffffff' : '#8a93a8');
+      const info = row.open ? row.def.desc : (row.def.requirement ?? row.def.unlockHint ?? 'locked');
+      wrapLines(info, 44, 3).forEach((ln, k) => text(g, ln, 96, y + 50 + k * 19, `${row.open ? '' : 'bold '}14px ${MONO}`, row.open ? '#d4dcf2' : '#ff8a5a'));
       const tag = !row.open ? 'LOCKED' : here ? 'EQUIPPED' : elsewhere >= 0 ? `SWAP AUX ${elsewhere}` : '';
       if (tag) text(g, tag, W - 40, y + 28, `bold 12px ${MONO}`, !row.open ? '#ff8a5a' : here ? '#4ade80' : '#8fa0c8', 'right');
       if (row.isNew) newDot(g, 38, y + 14, 6);
