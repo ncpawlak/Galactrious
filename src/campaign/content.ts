@@ -4,6 +4,7 @@
  * "Fallen Peace" lives in `fallenPeace.ts` (chapters 1 to 3 built; 4 to 7 come later). "Framework Test" is the two-objective
  * level that proves the framework end to end.
  */
+import { DEBUG_CAMPAIGNS } from '../stealth/testLevel';
 import { FALLEN_PEACE } from './fallenPeace';
 import type { CampaignDefinition, CampaignLevel } from './types';
 
@@ -49,7 +50,8 @@ export const FRAMEWORK_TEST: CampaignDefinition = {
 export const CAMPAIGNS: CampaignDefinition[] = [FALLEN_PEACE, FRAMEWORK_TEST];
 
 export function findLevel(levelId: string): { campaign: CampaignDefinition; level: CampaignLevel; index: number } | null {
-  for (const campaign of CAMPAIGNS) {
+  // Debug campaigns (stealth test) are found by id but not listed in the menu.
+  for (const campaign of [...CAMPAIGNS, ...DEBUG_CAMPAIGNS]) {
     const index = campaign.levels.findIndex((l) => l.id === levelId);
     if (index >= 0) return { campaign, level: campaign.levels[index], index };
   }
