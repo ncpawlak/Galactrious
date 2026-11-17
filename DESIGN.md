@@ -160,7 +160,7 @@ Pacing (hull density 8, default ship, test mode off, god mode so deaths do not r
 Not verified: no human playtest (dodge fairness, feel of the speeds); no mirrored variant; hit positions of the pads and consoles were checked on a screenshot of the fresh boss only, not each after digging.
 
 ## Run flow, enemy units and waves (v1)
-Status: design agreed with the owner; the flow engine, units, waves and level script are built (see the "as built" notes at the end of this section). Upgrade cards and elemental effects are not. Goal for v1: a Galaga-like fixed run that stresses how levels work. Bigger ambitions (branching maps, persistence, level set pieces) come later and must not need engine rewrites.
+Status: design agreed with the owner; the flow engine, units, waves and level script are built (see the "as built" notes at the end of this section). Upgrade cards and the burn tag are built too (step 5 notes at the end). Goal for v1: a Galaga-like fixed run that stresses how levels work. Bigger ambitions (branching maps, persistence, level set pieces) come later and must not need engine rewrites.
 
 ### The run
 A **run** is a fixed list of 3 **levels**; each level is a fixed list of **nodes**: `wave, wave, wave, boss`, then a **reward**. Beat the last boss and the run is won. One run is plain data (a `RunDefinition`).
@@ -211,8 +211,8 @@ A **wave** is data: which units appear, in what formation, on what entrance path
 2. Flow engine: run state machine, node interface, `wave`/`boss`/`reward` nodes, stub reward screen, existing bosses as boss nodes. Playable end to end with placeholders.
 3. Units and waves: `UnitDefinition`, formations and entrance paths, first set of 3 small and 2 big units. **Built.**
 4. Level script: the 3 levels, wave pacing. **Built** (first pass, unplaytested).
-5. Upgrade cards: stat cards and the tag hooks.
-6. Elemental effects: burn first.
+5. Upgrade cards: stat cards and the tag hooks. **Built**, with Burn as the first tag (so step 6 has started).
+6. Elemental effects: the rest, after burn.
 
 ### Flow engine: as built (step 2)
 Status: **built**. Playable end to end with placeholders: title -> 3 x (3 stub waves, boss, reward) -> run complete; death anywhere -> run over -> title.
@@ -275,3 +275,34 @@ Files:
 **Stubbed / not built:** reward cards (the stub node, now between every wave); upgrade effects; elemental effects; contact damage; unit death debris (a dead unit's loose chunks vanish with it); score. The sweep autopilot with god mode clears all 3 levels and the run is won; its wave lengths are 17-120 s (Level 1: 20, 24, 32 s), a human who focuses should be quicker.
 
 **Not verified:** no human playtest (wave pacing, difficulty and the feel of dives are unjudged; the wave data is the tuning surface); touch controls and the on-screen dodge button were not exercised in waves; the ENEMIES counter (bottom centre) was only checked in one screenshot.
+
+### Upgrade cards and tag hooks: as built (step 5)
+Status: **built** (first pass, unplaytested). After every wave and every boss except the last, the `reward` node offers 3 distinct cards; the pick is applied for the rest of the run. Permadeath: a new run starts with no upgrades.
+
+Files:
+- `src/upgrades/cards.ts`: the card pool, **data only** (16 cards). `src/upgrades/model.ts`: `CardDef`. `src/upgrades/stats.ts`: `STATS` (the stat keys), `Loadout` (effective stats), `drawCards`, `previewCard`. `src/upgrades/draw.ts`: the "your upgrades" strip (reward screen and compact HUD strip, right edge under the hull bar).
+- `src/tags.ts`: the tag hooks and the Burn handler. `src/flow/nodes/reward.ts`: the real reward screen.
+- Changed: `weapons.ts` (weapons read `StatFn`/tags through the `WeaponHost`; `CHAIN_GUN`, `effectiveChain`), `game.ts` (loadout, tag system, chain gun, ship stats, debug), `player.ts` (`Health.maxHp`/`setMax`, `Dodge.cooldownTime`), `input.ts` (`hover`), `carveShapes.ts` (gauss width tiers, ember shapes), `config.ts` (`TUNING.ship.speed`, `WEAPONS.burn`), `flow/node.ts` (`NodeHost.pointer()`), `hud.ts`.
+
+**Card format.** `CardDef { id, name, group, desc, maxStacks?, weight?, rarity?, modifiers: { stat, op: 'add' | 'mul', value }[] }`. A held upgrade is the card itself, once per stack, in `RunState.upgrades` (so `maxStacks` is "can be picked N times"; cards at their limit are not offered). Stacks apply the modifiers N times. **Effective stats** are derived, never stored: `Loadout.get(key, base?)` = (base + sum of adds) x product of muls. `TUNING`/`WEAPONS` are never mutated, so a new run (a fresh `RunState`) is clean. Chain gun: `effectiveChain(game stats, loadout)` over the live `ShipStats`, so the debug damage/rate keys still work and the cards multiply on top; with no upgrades it equals the base numbers. Weapons use `c.stat('rocket.radius', base)` in `fire` and `cooldown(stat)`. Ship: max hull and dodge cooldown are synced into `Health`/`Dodge` each frame (`+1 max hull` also heals 1), hitbox and speed are read where used. The draw is weighted (`weight`, default 1) without replacement and uses the run's seeded `rng` (`?seed=N` replays the offers given the same picks).
+
+**Card list** (stacks max; all numbers are first guesses in `cards.ts`):
+- Chain gun: Rapid Fire (rate x1.2, 4), Heavy Rounds (damage x1.25, 4), Extra Barrel (+1 bullet per shot, 2), Burn (+1 burn, 3, rare).
+- Gauss: Deep Bore (energy x1.3, 3), Wide Shaft (shaft width tiers 1.0x/1.2x/1.5x/1.8x, 3), Gauss Capacitor (cooldown x0.85, 4).
+- Rocket: Wide Warhead (radius +18 px, 3), Shaped Charge (energy x1.3, 3), Rocket Autoloader (cooldown x0.85, 4).
+- Arc: Arc Swarm (+1 missile, 3), Arc Relay (cooldown x0.85, 4).
+- Ship: Hull Plating (+1 max hull, 3), Quick Thrusters (dodge cooldown x0.8, 3), Engines (speed x1.12, 3), Compact Hull (hitbox x0.8, 2, rare).
+
+**Add a card:** add an entry to `CARDS`. If it modifies a stat that does not exist, add the key to `STATS` (label, base, direction, formatter) and read it with `loadout.get(key, base)` where the thing is built. The reward screen shows what it does by itself ("Rocket radius 106 -> 124", from `previewCard`).
+
+**Reward screen.** 3 cards, tap/click or keys 1-3, hover highlights, rarity, owned n/max, the "now -> becomes" rows, and the held-upgrades strip underneath (cards 480 x 176 at 540 x 960; large touch targets). Locked for 0.4 s so the last press cannot pick. If every card is at its limit the screen skips itself.
+
+**Tag hook** (`src/tags.ts`). A card modifies the stat key `<weapon>.tag.<tag>` (Burn: `chain.tag.burn` +1 per stack); `Loadout.tags(weapon)` turns those stacks into the `TagSet` the weapon's projectiles carry (`{ burn: 2 }`). When a tagged shot lands (chain gun bullet: component hit or carve; weapon projectile: component pierce, carve, blast detonation, arc arrival) the hit path calls one hook, `TagSystem.onHit(tags, x, y, energy, target)`, which calls each tag's `TagHandler.onHit({ x, y, energy, target, stacks })`. Handlers can also `update`, `draw` and `reset` for ongoing effects, and touch only targets through `TagHost` (`carveQuiet`, `power`), so an effect can never hurt the player. **New tag** (chain lightning, freeze...): id in `TAG_IDS`, a `TagHandler`, registered in `TagSystem.handlers`, a stat key in `STATS`, a card. Carve, blast and damage code stay untouched.
+
+**Burn** (`WEAPONS.burn`, `BurnHandler`): a landed hit leaves a burning patch on the target (target-local, so it moves with the boss or unit); every 0.3 s a patch bites the nearest solid pixel around it (the hit point itself was just carved) with energy 12 x stacks x power in a small round shape that grows with stacks (radius 8/11/14 px); it lasts 1.2 s (+0.35 s per extra stack) and nearby hits refresh it instead of adding patches (merge radius 14 px, at most 36 patches), so the cost is bounded at the chain gun's rate. Visual: flickering ember squares and a faint glow over the patch. Measured with the sweep autopilot (chain gun only, 8 s on Bulwark's hull): +35% / +95% / +170% carved at 1 / 2 / 3 stacks. Burn carves pixels only (it does not damage components), skips hit stop, shake, numbers, sound and debris, and works on units and bosses. Never hurts the player.
+
+**Debug.** `[/]` opens a reward screen over the current scene (sim paused until a card is picked; works in `?mode=boss` too). In `window.game.debug`: `reward()`, `grant(id, n?)`, `clearUpgrades()`, `upgrades()` ({ id: stacks }), `stat(key)`, `loadout()`, `cardIds`, `tags` (`tags.burn.count` = live patches), `run`. In `?mode=boss` held upgrades apply (grant them with `grant`). The debug overlay shows hull as `hp/max` and the hitbox radius.
+
+**Stubbed / not built:** other tags (only Burn), weapon-gating cards (all three weapons are always equipped), pickups, rarity weighting beyond the per-card weight, a shop, any balance pass (bosses were not retuned for the pool; stacks of Burn make fights much shorter), card art. Components are not hurt by burn itself.
+
+**Not verified:** no human playtest of the pool or of touch input on a real device (tap and hover were checked with the in-app browser's mouse); mobile layout was checked at 375 x 812 only; the compact HUD strip was seen in a screenshot only partly (the debug overlay covers it, toggle with the backquote key).
