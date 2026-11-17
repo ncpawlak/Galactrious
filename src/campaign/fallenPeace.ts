@@ -17,6 +17,7 @@ import { FP2_EXIT_DISTANCE } from '../scroll/fallenPeace';
 import { CAPITAL_SHIP_ID } from '../bosses/capitalShip';
 import { STREAM_SECONDS } from '../enemies/empireWaves';
 import { FP1_APPROACH, FP1_BREAK_OFF, FP1_EXIT, FP2_SHOT_DOWN, FP3_CRASH } from './fallenPeaceCinematics';
+import { FALLEN_PEACE_45_LEVELS } from './fallenPeace45';
 import type { Beat, CampaignDefinition, CampaignLevel } from './types';
 
 /** The preset Delta rookie ship and loadout: no builder, no cards. */
@@ -161,7 +162,7 @@ export const FALLEN_PEACE: CampaignDefinition = {
     'The mission: fight through the dogfight, reach the enemy command ship and blow up its engine room. Then bring everyone home.',
     'It will not go to plan.',
   ],
-  levels: [CHAPTER_1, CHAPTER_2, CHAPTER_3],
+  levels: [CHAPTER_1, CHAPTER_2, CHAPTER_3, ...FALLEN_PEACE_45_LEVELS],
   // TEST UNLOCK: a placeholder flag so the unlock flow can be seen working after chapters 1-3. Slice 3 replaces it with the real
   // reward (the enemy ship, the Laser and the Energy Wave) when chapter 7 is the last level.
   completionUnlock: { kind: 'cards', id: 'campaign-test-fallen-peace', label: 'TEST UNLOCK: Fallen Peace slice 1' },

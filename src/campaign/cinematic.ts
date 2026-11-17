@@ -57,16 +57,22 @@ export type WorldEvent = { t: number } & (
   | { do: 'weather'; intensity: number; ease?: number }
   /** Units (all, or by tag) stop shooting, break off and fly away; they do not count as kills. */
   | { do: 'dismissUnits'; tag?: string }
+  /** Swap the player's ship (the pod becomes the commandeered fighter). A listed state change: it applies on skip too. */
+  | { do: 'setShip'; ship: string }
 );
 
 /** Scenery drawn by the runner (not part of the combat sim). */
-export type Prop = { t: number } & {
-  do: 'slope';
-  /** The slope's surface line in its final place, screen px; the mountain mass is the part ABOVE the line (toward the top of the screen). */
-  line: [number, number, number, number];
-  /** Seconds the slope takes to sweep in from the top of the screen (the world rushing past). */
-  enter: number;
-};
+export type Prop = { t: number } & (
+  | {
+      do: 'slope';
+      /** The slope's surface line in its final place, screen px; the mountain mass is the part ABOVE the line (toward the top of the screen). */
+      line: [number, number, number, number];
+      /** Seconds the slope takes to sweep in from the top of the screen (the world rushing past). */
+      enter: number;
+    }
+  /** Custom scenery: `draw(g, time)` is called every frame from `t` on (time = seconds since the cinematic began). Chapters 4 and 5 paint the wreck and the hangar this way. */
+  | { do: 'draw'; draw: (g: CanvasRenderingContext2D, time: number) => void }
+);
 
 export interface Overlay {
   t: number;
@@ -116,6 +122,8 @@ export interface Cinematic {
   radio?: RadioLine[];
   /** Seconds before a tap or Esc may skip it (default 1.2). `false` = not skippable. */
   skippableAfter?: number | false;
+  /** Release the ship pose when the cinematic ends (an intro that hands the ship back to the player). Default: keep it (an outro that sends the ship away). */
+  releasePose?: boolean;
   /** What happens at the end: 'continue' (default: the next objective, or the result after the last one) or 'result' (end the level now). */
   then?: 'continue' | 'result';
 }
@@ -151,6 +159,8 @@ export interface CinematicHost {
   setWeather(intensity: number, ease: number): void;
   /** Scenery drawn between the background and the ship (a slope the ship skids along). null clears it. */
   setScenery(draw: ((g: CanvasRenderingContext2D) => void) | null): void;
+  /** Swap the player's ship by id (campaign ship ids included). */
+  setShip(id: string): void;
 }
 
 // --- runner ----------------------------------------------------------------------------------------------------
@@ -362,6 +372,9 @@ export class CinematicRunner {
       case 'dismissUnits':
         this.host.dismissUnits(e.tag);
         break;
+      case 'setShip':
+        this.host.setShip(e.ship);
+        break;
     }
   }
 
@@ -409,6 +422,7 @@ export class CinematicRunner {
     if (this.done) return;
     this.done = true;
     this.host.setScenery(null);
+    if (this.def.releasePose) this.host.setPose(null);
     // The pose is released when the session ends the cinematic (it may keep it until the objective swap); the boss lead-in stays at its last offset.
     this.host.end();
   }
@@ -501,11 +515,15 @@ export class CinematicRunner {
 
   /** Scenery (drawn by the game between the background and the ship). */
   private drawProps(g: CanvasRenderingContext2D): void {
-    for (const p of this.def.props ?? []) if (this.time >= p.t) this.drawSlope(g, p, this.time);
+    for (const p of this.def.props ?? []) {
+      if (this.time < p.t) continue;
+      if (p.do === 'draw') p.draw(g, this.time);
+      else this.drawSlope(g, p, this.time);
+    }
   }
 
   /** A snow slope that sweeps in from the top and settles with its surface on `line`; the mountain mass is above the line. */
-  private drawSlope(g: CanvasRenderingContext2D, p: Prop, t: number): void {
+  private drawSlope(g: CanvasRenderingContext2D, p: Extract<Prop, { do: 'slope' }>, t: number): void {
     const u = clamp01((t - p.t) / Math.max(0.01, p.enter));
     const dy = -(1 - easeFn.out(u)) * (H + 260);
     const [x0, y0, x1, y1] = p.line;

@@ -486,6 +486,7 @@ export class Game {
       setPlanetZoom: (k) => this.scroll?.setPlanetZoom(k),
       setWeather: (v, e) => this.scroll?.setWeather(v, e),
       setScenery: (draw) => (this.cineScenery = draw),
+      setShip: (id) => this.setShip(id),
     };
   }
 
