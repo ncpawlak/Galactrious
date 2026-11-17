@@ -168,4 +168,39 @@ export const mortar: UnitDefinition = {
   attackDelay: 1.6,
 };
 
-export const BIG_UNITS: UnitDefinition[] = [frigate, mortar];
+// --- Tender (a Frigate with a repair room) ------------------------------------------------------------
+
+/** The Frigate hull with green repair marks, and two console anchors in the core chamber (you must dig through the hull to them). */
+function layoutTender(): BossSpec {
+  const base = layoutFrigate();
+  const h = (base.layers[0].canvas as HTMLCanvasElement).getContext('2d')!;
+  h.fillStyle = '#5fb86a';
+  h.fillRect(52, 40, 12, 4); // a cross on the hull
+  h.fillRect(56, 36, 4, 12);
+  return { ...base, anchors: { ...base.anchors, repA: { x: 40, y: 42 }, repB: { x: 76, y: 50 } } };
+}
+
+/**
+ * Tender: a Frigate whose core chamber holds a REPAIR room (src/roomFunctions.ts). While its consoles live it regrows the
+ * hull you carve and mends its guns, so chip damage on the hull is wasted: dig to the two consoles and kill them first.
+ */
+export const tender: UnitDefinition = {
+  ...frigate,
+  id: 'tender',
+  name: 'Tender',
+  layout: layoutTender,
+  rooms: [
+    {
+      id: 'repair',
+      name: 'Repair bay',
+      function: 'Hull repair',
+      functions: [{ kind: 'repair', layer: 0, rate: 0.02, heal: { targets: ['side-guns', 'keel-gun'], perSecond: 25 } }],
+      consoles: [
+        { anchor: 'repA', radius: 7, hp: 80 },
+        { anchor: 'repB', radius: 7, hp: 80 },
+      ],
+    },
+  ],
+};
+
+export const BIG_UNITS: UnitDefinition[] = [frigate, mortar, tender];

@@ -207,7 +207,7 @@ export const MANTIS_ROOMS: RoomSpec[] = [
     id: 'targeting',
     name: 'Targeting',
     function: 'Chin gun',
-    powers: ['maw'],
+    functions: [{ kind: 'power', targets: ['maw'] }],
     consoles: [{ anchor: 'tgtA' }, { anchor: 'tgtB' }],
     onExposed: [{ kind: 'attack', pattern: aimedShot, count: 3, gap: 0.35 }],
   },
@@ -215,7 +215,7 @@ export const MANTIS_ROOMS: RoomSpec[] = [
     id: 'capacitor',
     name: 'Capacitor',
     function: 'Horn guns',
-    powers: ['horns'],
+    functions: [{ kind: 'power', targets: ['horns'] }],
     consoles: [{ anchor: 'capA' }, { anchor: 'capB' }],
     onExposed: [{ kind: 'pulse', radius: 150, damage: 1 }],
   },
@@ -225,7 +225,7 @@ export const MANTIS_ROOMS: RoomSpec[] = [
     function: 'Stinger fuel',
     consoles: [{ anchor: 'engA' }, { anchor: 'engB' }, { anchor: 'engC' }],
     onExposed: [{ kind: 'attack', pattern: directVolley, count: 2, gap: 0.5 }],
-    explodeOnDisable: { radius: 95 },
+    functions: [{ kind: 'reactor', blast: { radius: 95 } }],
   },
 ];
 

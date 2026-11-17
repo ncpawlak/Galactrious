@@ -206,16 +206,21 @@ export class Hud {
     ctx.font = '11px ui-monospace, Consolas, monospace';
     ctx.textBaseline = 'top';
     ctx.fillStyle = 'rgba(5, 6, 13, 0.7)';
-    ctx.fillRect(PANEL_X - 6, top, BAR_W + 150, h);
+    ctx.fillRect(PANEL_X - 6, top, BAR_W + 180, h);
     rooms.rooms.forEach((r, i) => {
       const y = top + 5 + i * lineH;
       const color = r.offline ? '#7a8196' : r.exposed ? '#ffb347' : '#6fd3df';
       ctx.fillStyle = color;
       ctx.fillRect(PANEL_X, y + 2, 8, 8);
       ctx.fillStyle = r.offline ? '#7a8196' : '#e8ecf8';
-      ctx.fillText(`${r.spec.function}`.slice(0, 20), PANEL_X + 14, y);
+      // Function tag in the function's cue colour, then what it does.
+      const tag = r.tag;
+      ctx.fillStyle = r.offline ? '#7a8196' : `rgb(${r.fns[0]?.handler.color ?? '232, 236, 248'})`;
+      ctx.fillText(tag, PANEL_X + 14, y);
+      ctx.fillStyle = r.offline ? '#7a8196' : '#e8ecf8';
+      ctx.fillText(r.spec.function.slice(0, 14), PANEL_X + 14 + tag.length * 6.7 + 6, y);
       ctx.fillStyle = color;
-      ctx.fillText(r.offline ? 'OFFLINE' : r.exposed ? 'EXPOSED' : 'online', PANEL_X + 14 + BAR_W + 40, y);
+      ctx.fillText(r.offline ? 'OFFLINE' : r.exposed ? 'EXPOSED' : 'online', PANEL_X + 14 + BAR_W + 74, y);
     });
     ctx.restore();
   }

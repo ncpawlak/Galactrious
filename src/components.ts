@@ -116,6 +116,8 @@ export interface FireSource {
   target: Point;
   /** False once the source is destroyed, detached, disabled or unpowered: hazards it started end. */
   alive: () => boolean;
+  /** True while a `sensor` room is offline: lobbed patterns do not aim at the player either. */
+  dumb?: boolean;
 }
 
 /** Lets a scheduler ask whether a step's source can fire and show the telegraph glow. */
@@ -156,6 +158,10 @@ export class BossComponent {
   enabled: boolean;
   /** False while a room that powers this component is offline: no fire, drawn dark. Phases cannot turn it back on. */
   powered = true;
+  /** Damage multiplier (a `shield` room's zone sets it below 1 while online). */
+  guard = 1;
+  /** Turret aim override from a `sensor` room: 'track' = follows the player, 'dumb' = rest angle and no aimed lobs. null = the spec's own aim. */
+  sensor: 'track' | 'dumb' | null = null;
   /** Room alert (s): a console glows while its room's reaction is telegraphed. */
   alert = 0;
   /** Layout position (boss-local px, already mirrored). */
@@ -327,6 +333,7 @@ export class ComponentSystem implements SourceGate {
       origin: muzzle,
       target: { x: o.x + Math.cos(c.angle) * 400, y: o.y + Math.sin(c.angle) * 400 },
       alive: () => c.state === 'active' && c.enabled && c.powered,
+      dumb: c.sensor === 'dumb',
     };
   }
 
@@ -417,9 +424,17 @@ export class ComponentSystem implements SourceGate {
     this.flush();
   }
 
+  /** Heal a live component by `amount` hp (a `repair` room); its damage level (cracks, smoke) recovers with it. */
+  heal(c: BossComponent, amount: number): void {
+    if (c.state !== 'active' || c.hp >= c.maxHp) return;
+    c.hp = Math.min(c.maxHp, c.hp + amount);
+    const f = c.hp / c.maxHp;
+    c.level = f > 0.75 ? 0 : f > 0.5 ? 1 : f > 0.25 ? 2 : 3;
+  }
+
   private damage(c: BossComponent, amount: number): void {
     if (c.state !== 'active') return;
-    c.hp -= amount;
+    c.hp -= amount * c.guard;
     if (c.hp <= 0) {
       c.hp = 0;
       c.state = 'dying';
@@ -638,9 +653,18 @@ export class ComponentSystem implements SourceGate {
     const t = c.spec.turret;
     if (!t || !c.enabled || !c.powered) return;
     const m = this.mirrored ? -1 : 1;
-    if (t.aim === 'rotating') {
+    // A sensor room overrides the spec: online it makes the turret track, offline it goes dumb (back to its rest angle).
+    const aim = c.sensor === 'track' ? 'tracking' : c.sensor === 'dumb' ? 'dumb' : t.aim;
+    if (aim === 'dumb') {
+      const rest = (t.angle ?? 90) * RAD;
+      const want = this.mirrored ? Math.PI - rest : rest;
+      let diff = want - c.angle;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      const step = (t.trackRate ?? 160) * RAD * dt;
+      c.angle += Math.max(-step, Math.min(step, diff));
+    } else if (aim === 'rotating') {
       c.angle += (t.spin ?? 70) * RAD * dt * m;
-    } else if (t.aim === 'tracking') {
+    } else if (aim === 'tracking') {
       const p = this.pos(c);
       const want = Math.atan2(this.target.y - p.y, this.target.x - p.x);
       let diff = want - c.angle;

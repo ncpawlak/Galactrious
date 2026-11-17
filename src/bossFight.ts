@@ -3,7 +3,7 @@ import { ScriptedScheduler, type AttackStep } from './attackSchedulers';
 import { ComponentSystem } from './components';
 import { consoleSpecs, RoomSystem } from './rooms';
 import { TUNING } from './config';
-import { Regrowth } from './regrowth';
+import { Regrowth, type RegrowthSpec } from './regrowth';
 import type { BossDefinition, PhaseDefinition, PhaseTrigger } from './bosses/types';
 import type { Movement, Offset2 } from './movement';
 
@@ -28,6 +28,8 @@ export class BossFight {
   /** Seconds since the fight started / since the current phase started. */
   fightTime = 0;
   phaseTime = 0;
+  /** Clock the movement runs on: fightTime scaled by the engine rooms' speed (equal to it with no engine room). */
+  moveTime = 0;
   /** Debug: when false the boss is held at its anchor (movement frozen). */
   movementEnabled = true;
   /** Debug: when set, replaces the phase's movement (live, with the usual ease). */
@@ -50,7 +52,7 @@ export class BossFight {
     const rooms = def.rooms ?? [];
     const specs = [...(def.components ?? []), ...consoleSpecs(rooms, this.boss.layers.length - 1)];
     this.components = new ComponentSystem(this.boss, specs, !!def.mirror);
-    this.rooms = new RoomSystem(this.components, rooms);
+    this.rooms = new RoomSystem(this.components, rooms, (spec) => this.makeRegrowth(spec));
     this.components.vulnerability = () => this.coreVulnerability();
     this.components.applyPhase(this.phase.components);
     this.validateSources();
@@ -58,6 +60,13 @@ export class BossFight {
       this.regrowth = new Regrowth(this.boss, def.regrowth, (li, x, y) => this.regrowthBlocked(li, x, y));
       this.boss.regrowth = this.regrowth;
     }
+  }
+
+  /** A regrowth owned by a `repair` room: same rules as the boss's own, driven and drawn by the boss. */
+  makeRegrowth(spec: RegrowthSpec): Regrowth {
+    const r = new Regrowth(this.boss, spec, (li, x, y) => this.regrowthBlocked(li, x, y));
+    this.boss.extraRegrowth.push(r);
+    return r;
   }
 
   /**
@@ -101,12 +110,15 @@ export class BossFight {
     dug = Math.max(0, Math.min(1, dug / ls.length));
     const min = ca?.min ?? TUNING.coreArmor.min;
     let v = min + (1 - min) * dug * (ca?.digWeight ?? 1);
-    if (ca?.requires?.length) {
+    // Rooms with a core `shield` function are armor sources too, whether or not the definition lists them.
+    const requires = [...(ca?.requires ?? [])];
+    for (const k of this.rooms.shieldKeys()) if (!requires.includes(k)) requires.push(k);
+    if (requires.length) {
       // `room:<id>` keys count rooms taken offline; every other key counts destroyed components.
-      const roomKeys = ca.requires.filter((k) => k.startsWith('room:'));
-      const compKeys = ca.requires.filter((k) => !k.startsWith('room:'));
+      const roomKeys = requires.filter((k) => k.startsWith('room:'));
+      const compKeys = requires.filter((k) => !k.startsWith('room:'));
       const total = this.components.totalCount(compKeys) + this.rooms.totalCount(roomKeys);
-      const per = ca.perComponent ?? (1 - min) / Math.max(1, total);
+      const per = ca?.perComponent ?? (1 - min) / Math.max(1, total);
       v += per * (this.components.destroyedCount(compKeys) + this.rooms.offlineCount(roomKeys));
     }
     return Math.max(0, Math.min(1, v));
@@ -218,7 +230,8 @@ export class BossFight {
     const next = this.def.phases[this.phaseIndex + 1];
     if (next?.trigger && this.triggered(next.trigger)) this.enterPhase(this.phaseIndex + 1);
 
-    let off = this.movementEnabled ? this.movement.at(this.fightTime) : { x: 0, y: 0 };
+    this.moveTime += dt * this.rooms.engineSpeed();
+    let off = this.movementEnabled ? this.movement.at(this.moveTime) : { x: 0, y: 0 };
     if (this.blendLeft > 0) {
       this.blendLeft = Math.max(0, this.blendLeft - dt);
       const k = this.blendLeft / BLEND_TIME;

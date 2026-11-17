@@ -1,6 +1,8 @@
 import type { AttackPattern } from './attacks';
 import type { BlastSpec, BossComponent, ComponentSpec, ComponentSystem } from './components';
 import type { Hazard, Point } from './hazards';
+import type { Regrowth, RegrowthSpec } from './regrowth';
+import { drawBadge, instantiate, resolveFunctions, type RoomFn, type RoomFnEnv, type RoomFunctionSpec } from './roomFunctions';
 
 /**
  * Rooms and consoles (DESIGN.md "Rooms and consoles"). A ROOM is a named group of CONSOLES with a
@@ -35,16 +37,18 @@ export interface ConsoleSpec {
 export interface RoomSpec {
   id: string;
   name: string;
-  /** What the room powers, for the HUD ("Weapons control"). */
+  /** What the room does, for the HUD ("Weapons control"). */
   function: string;
-  /** Components (ids or groups) that go offline when the room is disabled. */
+  /** Catalog functions (src/roomFunctions.ts): power, shield, repair, spawner, sensor, reactor, engine. A room can have several. */
+  functions?: RoomFunctionSpec[];
+  /** Shorthand for `{ kind: 'power', targets }`: components (ids or groups) that go offline when the room is disabled. */
   powers?: string[];
   /** Layer the consoles sit in (default: the last layer, the rooms layer). */
   layer?: number;
   consoles: ConsoleSpec[];
   /** Reactions when the room is first exposed, in order (each after its `delay`, default 0.6 s: the telegraph). */
   onExposed?: RoomEffect[];
-  /** Blow the room up when its last console goes. `true` uses `BLAST.defaults.room`; an object overrides fields of it. */
+  /** Shorthand for `{ kind: 'reactor', blast }`: blow the room up when its last console goes. `true` uses `BLAST.defaults.room`; an object overrides fields of it. */
   explodeOnDisable?: boolean | Partial<BlastSpec>;
 }
 
@@ -78,6 +82,8 @@ export interface RoomHost {
   /** `alive` ends the pattern's hazards when the room's consoles are gone. */
   fire(pattern: AttackPattern, origin: () => Point, alive: () => boolean): void;
   hazard(h: Omit<Hazard, 'age'>): void;
+  /** Launch a unit (`spawner` function) from `from`; returns a handle to count it, or null when it could not. */
+  spawnUnit?(unitId: string, from: Point): { alive(): boolean } | null;
 }
 
 export class Room {
@@ -90,6 +96,10 @@ export class Room {
   readonly lx: number;
   readonly ly: number;
   readonly radius: number;
+  /** The room's functions (catalog handlers plus their state). */
+  fns: RoomFn[] = [];
+  /** Debug: hold the room online or offline whatever its consoles do. */
+  override: 'online' | 'offline' | null = null;
 
   constructor(
     readonly spec: RoomSpec,
@@ -110,6 +120,11 @@ export class Room {
     return this.consoles.filter((c) => c.state === 'active' || c.state === 'dying').length;
   }
 
+  /** HUD tag of its functions, e.g. "REPAIR" or "POWER+REACTOR". */
+  get tag(): string {
+    return this.fns.map((f) => f.handler.label).join('+') || 'ROOM';
+  }
+
   get state(): 'online' | 'exposed' | 'offline' {
     return this.offline ? 'offline' : this.exposed ? 'exposed' : 'online';
   }
@@ -127,18 +142,57 @@ export class RoomSystem {
   readonly rooms: Room[] = [];
   /** Set by the game: where room reactions put bullets and hazards. */
   host: RoomHost | null = null;
+  /** Stops every function and cue (a dead unit). */
+  halted = false;
   private pending: Pending[] = [];
+  private readonly env: RoomFnEnv;
+  private clock = 0;
 
   constructor(
     private readonly components: ComponentSystem,
     specs: RoomSpec[],
+    makeRegrowth: (spec: RegrowthSpec) => Regrowth = () => {
+      throw new Error('this RoomSystem cannot make regrowth');
+    },
     private readonly onRoomOffline?: (room: Room) => void,
   ) {
+    this.env = { boss: components.boss, components, host: () => this.host, makeRegrowth, origin: (r) => this.origin(r) };
     for (const spec of specs) {
       const cs = components.items.filter((c) => c.spec.group === roomGroup(spec.id));
-      this.rooms.push(new Room(spec, cs));
+      const room = new Room(spec, cs);
+      room.fns = resolveFunctions(spec).map((f) => instantiate(f, room, this.env));
+      for (const fn of room.fns) fn.handler.onOnline?.(fn, room, this.env);
+      this.rooms.push(room);
     }
     if (this.rooms.length > 0) components.extraDebug = (ctx) => this.drawDebug(ctx);
+  }
+
+  /** Product of the engine rooms' speed multipliers (1 with none): the boss's movement clock runs at this rate. */
+  engineSpeed(): number {
+    let k = 1;
+    for (const r of this.rooms) for (const f of r.fns) if (f.spec.kind === 'engine') k *= (f.state as { k: number }).k;
+    return k;
+  }
+
+  /** `room:<id>` keys of the rooms that armor the core (a `shield` function with no zone): offline ones lower the core's armor. */
+  shieldKeys(): string[] {
+    return this.rooms.filter((r) => r.fns.some((f) => f.spec.kind === 'shield' && !f.spec.zone)).map((r) => roomGroup(r.spec.id));
+  }
+
+  /** Debug: hold a room online or offline regardless of its consoles ('auto' lets them decide again). Returns false for an unknown room. */
+  setState(id: string, state: 'online' | 'offline' | 'auto'): boolean {
+    const room = this.find(id);
+    if (!room) return false;
+    room.override = state === 'auto' ? null : state;
+    return true;
+  }
+
+  forceOffline(id: string): boolean {
+    return this.setState(id, 'offline');
+  }
+
+  forceOnline(id: string): boolean {
+    return this.setState(id, 'online');
   }
 
   get active(): boolean {
@@ -183,13 +237,18 @@ export class RoomSystem {
   }
 
   update(dt: number): void {
-    if (this.rooms.length === 0) return;
+    if (this.rooms.length === 0 || this.halted) return;
+    this.clock += dt;
     for (const room of this.rooms) {
       room.alert = Math.max(0, room.alert - dt);
       if (!room.exposed && room.consoles.some((c) => c.state === 'destroyed' || c.state === 'detached' || (c.state !== 'dying' && this.components.isExposed(c)))) {
         this.expose(room);
       }
-      if (!room.offline && room.consoles.every((c) => c.state === 'destroyed' || c.state === 'detached')) this.disable(room);
+      const natural = room.override === null && room.consoles.every((c) => c.state === 'destroyed' || c.state === 'detached');
+      const wantOffline = room.override === 'offline' || natural;
+      if (wantOffline && !room.offline) this.disable(room, natural);
+      else if (!wantOffline && room.offline) this.restore(room);
+      for (const fn of room.fns) fn.handler.update?.(dt, fn, room, this.env);
     }
     for (const p of this.pending) p.t -= dt;
     for (let i = 0; i < this.pending.length; i++) {
@@ -216,14 +275,18 @@ export class RoomSystem {
     }
   }
 
-  private disable(room: Room): void {
+  private disable(room: Room, natural: boolean): void {
     room.offline = true;
-    for (const key of room.spec.powers ?? []) for (const c of this.components.items) if (c.matches(key)) c.powered = false;
     const o = this.origin(room);
-    const boom = room.spec.explodeOnDisable;
-    this.components.events.push({ kind: 'roomOffline', x: o.x, y: o.y, name: room.name, blast: !!boom });
+    this.components.events.push({ kind: 'roomOffline', x: o.x, y: o.y, name: room.name, blast: natural && room.fns.some((f) => f.spec.kind === 'reactor') });
     this.onRoomOffline?.(room);
-    if (boom) this.components.roomBlast(room.lx, room.ly, boom === true ? undefined : boom);
+    for (const fn of room.fns) fn.handler.onOffline?.(fn, room, this.env, natural);
+  }
+
+  /** Debug only: a forced-offline room is released, or forced back online. */
+  private restore(room: Room): void {
+    room.offline = false;
+    for (const fn of room.fns) fn.handler.onOnline?.(fn, room, this.env);
   }
 
   private run(p: Pending): void {
@@ -251,6 +314,18 @@ export class RoomSystem {
           return phase === 'telegraph' ? { kind: 'ring', x: o.x, y: o.y, r: e.radius, width: 6 } : { kind: 'ring', x: o.x, y: o.y, r: Math.max(6, e.radius * k), width };
         },
       });
+    }
+  }
+
+  // --- cues ---------------------------------------------------------------------------------
+
+  /** In-world cues of every function (rings, power lines, spawn flashes) and the function badge of rooms already exposed. Screen space, after the boss. */
+  drawCues(ctx: CanvasRenderingContext2D): void {
+    if (this.rooms.length === 0 || this.halted) return;
+    for (const room of this.rooms) {
+      const seen = room.exposed || room.offline;
+      for (const fn of room.fns) fn.handler.cue?.(ctx, fn, room, this.env, seen, this.clock);
+      if (seen) drawBadge(ctx, room, this.origin(room), this.clock);
     }
   }
 
@@ -286,7 +361,8 @@ export class RoomSystem {
           ctx.strokeStyle = col;
         }
       }
-      ctx.fillText(`${room.spec.id}: ${room.state} ${room.liveConsoles}/${room.consoles.length}  ->${(room.spec.powers ?? []).join(',') || room.spec.function}${room.spec.explodeOnDisable ? ' *boom*' : ''}`, o.x, o.y + room.radius + 12);
+      ctx.fillText(`${room.spec.id}: ${room.state}${room.override ? ' (forced ' + room.override + ')' : ''} ${room.liveConsoles}/${room.consoles.length}  ${room.tag}`, o.x, o.y + room.radius + 12);
+      room.fns.forEach((fn, i) => ctx.fillText(fn.handler.describe(fn, room), o.x, o.y + room.radius + 24 + i * 11));
     }
     ctx.restore();
   }

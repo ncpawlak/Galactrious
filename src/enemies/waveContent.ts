@@ -88,6 +88,7 @@ export const WAVES: WaveDefinition[] = [
     groups: [
       group('frigate+', slots([130, 112], [410, 112]), { entrance: { kind: 'drop', time: 2.4 }, stagger: 0.5 }),
       group('mortar+', slots([270, 120]), { entrance: { kind: 'drop', time: 2.6 }, start: 1.2 }),
+      group('tender+', slots([270, 205]), { entrance: { kind: 'drop', time: 2.6 }, start: 2.4 }),
       group('gunner+', row(7, 255, 66), { entrance: { kind: 'swoop' }, start: 3, stagger: 0.25 }),
       group('drone', row(8, 335, 58), { entrance: { kind: 'loop' }, start: 6, stagger: 0.25, dive: { first: 4, every: 6 } }),
     ],
