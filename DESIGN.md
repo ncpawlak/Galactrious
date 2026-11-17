@@ -337,6 +337,54 @@ The core is drawn as a reactor ("nuclear heart") by `src/coreFx.ts`, still only 
 - State: pulse speed and brightness rise with core hp lost and with `coreVulnerability` (fed to `Boss.coreVuln` each frame by `BossFight`; small units skip it). Below ~0.75 vulnerability the core is dimmer and wears a dashed shield ring. A hit flickers it. On death it swells into a white overload flash and shrinks away over `CORE_DEATH_TIME` (0.3 s) while the existing explosion plays.
 - Cost: about 0.1 ms per frame for 20 units on screen (16 small + big mix, measured in the dev build).
 
+## Campaign 1 plan: chapters 4 to 7 (design, not built)
+Status: **design only**, agreed with the owner after the chapter 1 to 3 playtest. It applies the lessons of chapters 1 to 3 (see "Cinematic and mission design standard", written with the chapter 1 to 3 revision) to the rest of "Fallen Peace". Slice 2 = chapters 4 and 5, slice 3 = chapters 6 and 7 plus the unlock reveal. The Laser and Energy Wave weapons are built separately and independently.
+
+### Lessons applied to every chapter
+- Every chapter has three beats: an **approach** beat (commentary, a build-up), the **engagement**, and an **exit cinematic**. No abrupt endings.
+- **Constant engagement** (overlapping spawns, no empty screens). Progress is **gated by time**; bonus objectives are "do X before the time runs out".
+- **Scripted story failures are not deaths** and count for nothing.
+- **Chapters hand off**: each exit cinematic ends where the next chapter's opening begins. Each chapter keeps its **result screen** between chapters, and the next chapter opens with a short cinematic that continues the story.
+- Difficulty rails: about 2 to 3 minutes per chapter, gentler enemy fire than a first guess, medal times measured with a scripted bot. Orientation is stated per level, and danger is always visible (no hidden hazards).
+- Each chapter introduces **one new mechanic**. Cinematics are cosmetic and never change boss state, health or counters unless stated. Radio commentary is text-only (no audio yet). The player's callsign is **Rookie**.
+
+### Lore (continuity requirements)
+- **Chapter 2** must establish that **Rookie reaches the jump gate first**; the rest of Delta is still behind, fighting. When Rookie is shot down at the gate, the squad does **not** go through: it **breaks off and scatters through the Orini system, evading pursuit and hoping to find Rookie** (the gate itself is not used again).
+- **The capital ship's armour** is the empire's adaptive plating: it resists every weapon except one that fires on the empire's own weapon frequency. In chapter 1 the only way in was a maintenance bay on its flank that the plating does not cover, so the engine room could be destroyed but the ship could not. This is why nobody in Delta could simply destroy it, and why it can be hurt in chapter 7: Rookie is flying one of **their** ships.
+- **Chapter 6 reunion:** Delta, scattered and searching, picks up the stolen ship's signal and finds Rookie in orbit. They almost fire on it (it is an empire fighter on their scopes); Rookie's callsign beacon stops them ("Rookie? ... hold fire!"), and they are in disbelief. A short exchange establishes the armour: it is their frequency, the only thing that will hurt it.
+- **Chapter 7 opening:** the capital ship is stranded with dead engines, but empire engineers are rebuilding power; once the drive is back it jumps away with its fleet. The window is short, which is the in-fiction reason for the **uncontrollable assist timer**. The squad's weapons cannot scratch the armour, so they cover (turrets, aces, distractions) while Rookie carves.
+
+### Chapter 4: Crash and commandeer (new mechanic: stealth)
+- **Opening:** a cinematic continuing the chapter 3 crash: the wreck in the snow, Rookie ejects in a tiny **escape pod**, the lights of the enemy base ahead.
+- **Play:** a scrolling stealth level. The pod has a tiny hitbox, minimal health and **no weapon**. **Searchlights** sweep the base; if a light catches the pod, **fighters come after it and shoot**; the answer is to run, hide in shadow/cover and break line of sight (cover zones, shadows). A **patrol wave sweeps the area as a countdown**, so the player cannot linger. If the pod is killed it is a **normal death** (checkpoint restart, full heal, death counted).
+- **Goal:** reach the **hangar circle** and hold 10 seconds.
+- **Exit:** a cinematic of Rookie boarding the enemy fighter (canopy closes, cockpit lights come up, a line like "their tech, it's all I have"), ending on the ship lifting out of the hangar. The ship swap makes the empire fighter the player's ship for chapters 5 to 7.
+- **Bonus:** Silent: cross no searchlight.
+- **New systems:** a detection/searchlight system, cover and shadow zones, a patrol-wave countdown objective, a pod ship and the ship-swap cinematic.
+
+### Chapter 5: Surface run (new mechanic: carvable terrain)
+- **Opening:** the takeoff, with the base defences opening fire.
+- **Play:** a long scroll across the planet's surface in the enemy fighter (preset weapons; the empire-ship preset is designed in slice 2). **Wall defences and ground turrets**: walls are **both carvable barriers you can cut lanes through and defence lines with turrets built into them**; plus empire air squadrons flying past from behind (the flyby behaviours). Constant engagement, about 3 minutes, time-gated.
+- **Exit:** a final defence line, then a cinematic of the ship pulling up toward the atmosphere.
+- **Bonus:** destroy all turrets.
+- **New systems:** carvable terrain obstacles (the `carvable` flag on the obstacle entity), ground turrets and wall defence lines, a ground-attack scroll theme.
+
+### Chapter 6: Escape and reunion (new mechanic: squad contact)
+- **Play:** a short **interceptor gauntlet before the reunion**: the climb up through the atmosphere (the reverse of chapter 3: normal orientation, the storm calming as the ship rises and the planet falls away) with empire interceptors chasing. Constant engagement, about 2 minutes.
+- **Exit:** the reunion cinematic (see Lore): Delta wingmen appear and form up beside Rookie.
+- **Bonus:** fly clean (no dodge used, or full health).
+- **New systems:** a rising atmosphere-to-space background transition (the weather ramps down), the reunion cinematic.
+
+### Chapter 7: Finale (new mechanic: squad assists)
+- **Opening:** the capital ship, **restored exactly as the player left it** (the saved snapshot), drifting with dead engines; a cinematic reveals that the shots now go through the armour (the `armourCarvable` switch on the restored ship), with commentary about the armour frequency and the engineers' rebuild window.
+- **Play:** phase 1: enemy **aces** (named, tougher empire fighters) dogfight Rookie while the squad covers; phase 2: carve the armour to the rooms and turrets, with **timed squad assists on a timer the player cannot control** (a strafing run, a distraction); phase 3: the core overloads. About 3 to 4 minutes.
+- **Exit:** the core overload explosion, a victory cinematic with the squad forming up and flying off, the **unlock reveal** (the enemy ship, the Laser and the Energy Wave), then the result screen.
+- **Bonus:** Full dismantle (every room and turret on the capital ship before the core goes).
+- **New systems:** snapshot restore plus the armour switch, scripted squad assists, named aces, the unlock reveal screen.
+
+### Open
+Names for the squad leader, the wingmates, the empire and the command ship (only the callsign **Rookie** is decided; propose a set before slice 3); the empire fighter's name, stats and preset loadout (slice 2); the number of searchlights and cover zones; the wall and turret layout of chapter 5.
+
 ## Roadmap: game modes, ships, persistence and room functions (design, not built)
 Status: **design only**, agreed with the owner. The v1 run (fixed 3 levels of waves, rewards between waves, bosses, permadeath) is the prototype for **Endless**. Everything below builds on the flow engine (`src/flow/`): a mode is a run definition plus rules, not a new engine.
 
