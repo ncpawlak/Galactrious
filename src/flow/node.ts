@@ -29,7 +29,7 @@ export interface WaveNodeDefinition {
   wave: WaveDefinition;
 }
 
-/** A pick-one-of-N reward screen. STUB: placeholder cards (see nodes/reward.ts). */
+/** A pick-one-of-N upgrade card screen (see nodes/reward.ts, src/upgrades/). */
 export interface RewardNodeDefinition {
   type: 'reward';
   /** How many cards are offered (default 3). */
@@ -69,7 +69,7 @@ export interface RunDefinition {
 
 // --- run state -----------------------------------------------------------------------------------------
 
-/** One stat change an upgrade makes. Nothing reads these yet: the upgrade-card work applies them to ShipStats/WEAPONS. */
+/** One stat change an upgrade makes. Read through `Loadout` (src/upgrades/stats.ts), never applied to the global TUNING/WEAPONS. */
 export interface Modifier {
   /** Dotted stat key, e.g. 'gauss.reach', 'ship.maxHealth', 'dodge.cooldown'. */
   stat: string;
@@ -77,7 +77,7 @@ export interface Modifier {
   value: number;
 }
 
-/** An upgrade the player picked from a reward card. */
+/** An upgrade the player picked from a reward card (in practice a `CardDef`, src/upgrades/model.ts). Held once per stack. */
 export interface Upgrade {
   id: string;
   name: string;
@@ -145,6 +145,8 @@ export interface NodeHost {
   /** Next pointer press or key press since the last frame, or null. Each press is returned once. */
   takeTap(): { x: number; y: number } | null;
   takeKey(): string | null;
+  /** Where the pointer currently is (hover highlight), or null if it has not been seen. */
+  pointer(): { x: number; y: number } | null;
 }
 
 export interface FlowNode {

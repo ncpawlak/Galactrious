@@ -1,0 +1,154 @@
+import { TUNING, WEAPONS } from '../config';
+import { CARVE_SHAPES, type CarveShapeName } from '../carveShapes';
+import type { Upgrade } from '../flow/node';
+import { TAG_IDS, type TagSet } from '../tags';
+import { CARD_BY_ID, CARDS } from './cards';
+import type { CardDef } from './model';
+
+/**
+ * Stat keys upgrades can modify. `base` reads the unmodified definition (TUNING / WEAPONS are never mutated);
+ * `good` says which direction is an improvement (for colouring); `show` formats a value for the card.
+ * Keys named `<weapon>.tag.<tag>` are tag stacks (see src/tags.ts): the stack count is the stat value.
+ */
+export interface StatInfo {
+  label: string;
+  base: () => number;
+  good: 'up' | 'down';
+  show?: (v: number) => string;
+}
+
+const num = (v: number): string => (Math.abs(v - Math.round(v)) < 0.005 ? String(Math.round(v)) : v.toFixed(2).replace(/0+$/, '').replace(/\.$/, ''));
+const secs = (v: number): string => `${num(v)}s`;
+
+/** Gauss shaft width tiers: the lateral penalty of each carve shape (lower = wider). */
+export const GAUSS_SHAPES: CarveShapeName[] = ['narrow', 'narrow1', 'narrow2', 'narrow3'];
+
+export const STATS: Record<string, StatInfo> = {
+  'chain.fireRate': { label: 'Chain gun rate', base: () => TUNING.ship.fireRate, good: 'up', show: (v) => `${num(v)}/s` },
+  'chain.damage': { label: 'Chain gun damage', base: () => TUNING.ship.damage, good: 'up', show: num },
+  'chain.barrels': { label: 'Chain gun barrels', base: () => 1, good: 'up', show: num },
+  'chain.tag.burn': { label: 'Burn', base: () => 0, good: 'up', show: (v) => `+${num(v)}` },
+  'gauss.energy': { label: 'Gauss reach', base: () => WEAPONS.gauss.energy, good: 'up', show: num },
+  'gauss.width': {
+    label: 'Gauss width',
+    base: () => 0,
+    good: 'up',
+    show: (v) => `${(CARVE_SHAPES.narrow.lateralPenalty / CARVE_SHAPES[gaussShape(v)].lateralPenalty).toFixed(1)}x`,
+  },
+  'gauss.cooldown': { label: 'Gauss cooldown', base: () => WEAPONS.gauss.cooldown, good: 'down', show: secs },
+  'rocket.radius': { label: 'Rocket radius', base: () => WEAPONS.rocket.blast.radius, good: 'up', show: num },
+  'rocket.energy': { label: 'Rocket energy', base: () => WEAPONS.rocket.blast.energy, good: 'up', show: num },
+  'rocket.cooldown': { label: 'Rocket cooldown', base: () => WEAPONS.rocket.cooldown, good: 'down', show: secs },
+  'arc.count': { label: 'Arc missiles', base: () => 2, good: 'up', show: num },
+  'arc.cooldown': { label: 'Arc cooldown', base: () => WEAPONS.arc.cooldown, good: 'down', show: secs },
+  'ship.maxHealth': { label: 'Max hull', base: () => TUNING.player.maxHealth, good: 'up', show: num },
+  'dodge.cooldown': { label: 'Dodge cooldown', base: () => TUNING.dodge.cooldown, good: 'down', show: secs },
+  'ship.speed': { label: 'Ship speed', base: () => TUNING.ship.speed, good: 'up', show: num },
+  'ship.hitbox': { label: 'Hitbox radius', base: () => TUNING.player.hitbox, good: 'down', show: (v) => `${num(v)}px` },
+};
+
+export function gaussShape(width: number): CarveShapeName {
+  return GAUSS_SHAPES[Math.max(0, Math.min(GAUSS_SHAPES.length - 1, Math.round(width)))];
+}
+
+/**
+ * The effective stats of a run: base definitions + the held upgrades, derived on demand (nothing global is
+ * mutated, so a new run with no upgrades is automatically back to base). Per stat: (base + sum of adds) x product of muls.
+ */
+export class Loadout {
+  private readonly add = new Map<string, number>();
+  private readonly mul = new Map<string, number>();
+  private readonly stacks = new Map<string, number>();
+  readonly count: number;
+
+  constructor(readonly upgrades: readonly Upgrade[]) {
+    this.count = upgrades.length;
+    for (const u of upgrades) {
+      this.stacks.set(u.id, (this.stacks.get(u.id) ?? 0) + 1);
+      for (const m of u.modifiers) {
+        if (m.op === 'add') this.add.set(m.stat, (this.add.get(m.stat) ?? 0) + m.value);
+        else this.mul.set(m.stat, (this.mul.get(m.stat) ?? 1) * m.value);
+      }
+    }
+  }
+
+  /** Effective value of a stat. `base` defaults to the stat's own base; pass one for a live-adjusted base (debug damage). */
+  get(stat: string, base: number = STATS[stat]?.base() ?? 0): number {
+    return (base + (this.add.get(stat) ?? 0)) * (this.mul.get(stat) ?? 1);
+  }
+
+  /** The tags a weapon's shots carry (`<weapon>.tag.<id>` stacks), or undefined when none. */
+  tags(weapon: string): TagSet | undefined {
+    let out: TagSet | undefined;
+    for (const id of TAG_IDS) {
+      const n = this.get(`${weapon}.tag.${id}`, 0);
+      if (n > 0) (out ??= {})[id] = n;
+    }
+    return out;
+  }
+
+  /** Times the card with this id is held. */
+  stackOf(id: string): number {
+    return this.stacks.get(id) ?? 0;
+  }
+
+  /** Held upgrades grouped by id, in pick order: for the HUD strip and debug listing. */
+  held(): { card: Upgrade; n: number }[] {
+    const out: { card: Upgrade; n: number }[] = [];
+    for (const u of this.upgrades) {
+      const e = out.find((o) => o.card.id === u.id);
+      if (e) e.n++;
+      else out.push({ card: u, n: 1 });
+    }
+    return out;
+  }
+}
+
+/** A loadout with one more copy of `card` (for the "now -> becomes" preview). */
+export function withCard(held: readonly Upgrade[], card: CardDef): Loadout {
+  return new Loadout([...held, card]);
+}
+
+export function canOffer(card: CardDef, lo: Loadout): boolean {
+  return lo.stackOf(card.id) < (card.maxStacks ?? 1);
+}
+
+/** Pick up to `n` distinct cards, weighted, without replacement, using the run's seeded `rng`. Cards at max stacks are skipped. */
+export function drawCards(rng: () => number, held: readonly Upgrade[], n: number): CardDef[] {
+  const lo = new Loadout(held);
+  const pool = CARDS.filter((c) => canOffer(c, lo));
+  const out: CardDef[] = [];
+  while (out.length < n && pool.length > 0) {
+    const total = pool.reduce((s, c) => s + (c.weight ?? 1), 0);
+    let r = rng() * total;
+    let i = 0;
+    for (; i < pool.length - 1; i++) {
+      r -= pool[i].weight ?? 1;
+      if (r < 0) break;
+    }
+    out.push(pool.splice(i, 1)[0]);
+  }
+  return out;
+}
+
+export interface StatPreview {
+  label: string;
+  now: string;
+  next: string;
+  good: boolean;
+}
+
+/** What taking `card` would change, one row per stat it touches: "Rocket radius 88 -> 106". */
+export function previewCard(card: CardDef, held: readonly Upgrade[]): StatPreview[] {
+  const now = new Loadout(held);
+  const next = withCard(held, card);
+  const keys = [...new Set(card.modifiers.map((m) => m.stat))];
+  return keys.map((k) => {
+    const info = STATS[k];
+    const a = now.get(k);
+    const b = next.get(k);
+    return { label: info?.label ?? k, now: info?.show?.(a) ?? num(a), next: info?.show?.(b) ?? num(b), good: info ? (info.good === 'up') === b > a : true };
+  });
+}
+
+export { CARDS, CARD_BY_ID };

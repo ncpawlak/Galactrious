@@ -23,6 +23,14 @@ export const CARVE_SHAPES = {
   default: TUNING.carve as CarveShape,
   /** Gauss cannon: a long shaft, a bit thicker than a gun hit. */
   narrow: { lateralPenalty: 3.4, backPenalty: 2.5, reach: 100 } as CarveShape,
+  /** Gauss width upgrade tiers (src/upgrades/stats.ts `GAUSS_SHAPES`): the same shaft, progressively wider. */
+  narrow1: { lateralPenalty: 2.8, backPenalty: 2.5, reach: 100 } as CarveShape,
+  narrow2: { lateralPenalty: 2.3, backPenalty: 2.5, reach: 100 } as CarveShape,
+  narrow3: { lateralPenalty: 1.9, backPenalty: 2.5, reach: 100 } as CarveShape,
+  /** Burn embers (src/tags.ts): a small round bite, bigger with more burn stacks. */
+  ember1: { lateralPenalty: 1, backPenalty: 1, reach: 8 } as CarveShape,
+  ember2: { lateralPenalty: 1, backPenalty: 1, reach: 11 } as CarveShape,
+  ember3: { lateralPenalty: 1, backPenalty: 1, reach: 14 } as CarveShape,
   /** Arc missile: a round, medium crater whatever direction it arrives from. */
   round: { lateralPenalty: 1, backPenalty: 1, reach: 24 } as CarveShape,
 };

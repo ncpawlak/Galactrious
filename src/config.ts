@@ -6,7 +6,7 @@ export const H = 960;
 export const TUNING = {
   densities: { hull: 3.1, frame: 0.8, rooms: 1.5 },
   /** Starting ship stats (live-adjustable with the debug keys). */
-  ship: { damage: 90, fireRate: 8 },
+  ship: { damage: 90, fireRate: 8, /** Keyboard move speed, px/s. */ speed: 460 },
   /** Debug test-mode preset (toggle with [Y]): the fast values from PR #21, for quick iteration. */
   testMode: { damage: 450, fireRate: 30 },
   coreHp: 8000,
@@ -113,6 +113,8 @@ export function setBlastScale(v: number): number {
 export const WEAPONS = {
   /** Global multiplier on every cooldown (debug keys `,` and `.`). */
   cooldownScale: 1,
+  /** Burn tag (src/tags.ts): per patch, every `tick` s it carves `energy` x stacks x power; it lasts `life` + `lifePerStack` x (stacks - 1) s and is refreshed by each new burning hit within `merge` px. At most `maxPatches` patches. */
+  burn: { tick: 0.3, energy: 12, life: 1.2, lifePerStack: 0.35, merge: 14, maxPatches: 36 },
   /** Gauss cannon: one fast shot straight up. Keeps most of its energy through layers and components, drills a long shaft. */
   gauss: { cooldown: 5, energy: 1400, pierce: 0.85, shape: 'narrow' as const, speed: 2600 },
   /** Rocket: one shot straight up. Detonates on the first solid pixel or component; the crater is a boss blast (`blast`, scaled by BLAST.scale). */

@@ -15,7 +15,12 @@ import { Hud } from './hud';
 import { Input } from './input';
 import { MOVEMENT_PRESETS } from './movement';
 import { Dodge, Health } from './player';
-import { Sweep, WeaponSystem, nearBox, type Combatant } from './weapons';
+import { TagSystem, type TagSet } from './tags';
+import { CARD_BY_ID } from './upgrades/cards';
+import { RewardNode } from './flow/nodes/reward';
+import type { FlowNode, NodeContext } from './flow/node';
+import { Loadout } from './upgrades/stats';
+import { Sweep, WeaponSystem, effectiveChain, nearBox, type Combatant } from './weapons';
 import { UnitSystem, type Unit } from './units';
 import { spawnWave, type WaveDefinition } from './waves';
 import { UNIT_LIST, WAVE_LIST, unitById } from './enemies';
@@ -49,6 +54,8 @@ interface Bullet {
   energy: number;
   pierce: number;
   alive: boolean;
+  /** Elemental tags the shot carries (from upgrades). */
+  tags?: TagSet;
 }
 
 interface Particle {
@@ -100,6 +107,14 @@ export class Game {
     power: () => this.stats.damage / TUNING.ship.damage,
     carve: (t, x, y, energy, shape) => this.carveAt(t as BossFight, x, y, energy, shape),
     onFire: (id) => this.sfx.weapon(id),
+    stat: (key, base) => this.loadout.get(key, base),
+    tags: (w) => this.loadout.tags(w),
+    onHit: (tags, x, y, energy, target) => this.tags.onHit(tags, x, y, energy, target),
+  });
+  /** Tag hooks (src/tags.ts): elemental effects of upgrades. Handlers only ever touch targets, never the ship. */
+  private readonly tags = new TagSystem({
+    power: () => this.stats.damage / TUNING.ship.damage,
+    carveQuiet: (t, x, y, energy, shape) => this.carveAt(t as BossFight, x, y, energy, shape, true) !== null,
   });
   private lostAt = 0;
   private fireTimer = 0;
@@ -130,7 +145,28 @@ export class Game {
   private combat = false;
   private readonly taps: { x: number; y: number }[] = [];
   private readonly keyPresses: string[] = [];
-  private readonly run: Run = new Run(DEFAULT_RUN, this.makeNodeHost());
+  private readonly nodeHost: NodeHost = this.makeNodeHost();
+  private readonly run: Run = new Run(DEFAULT_RUN, this.nodeHost);
+  /** Debug: a flow node (the reward screen) shown over everything with the sim paused. */
+  private overlay: FlowNode | null = null;
+  private loadoutCache: { ref: unknown; len: number; lo: Loadout } | null = null;
+
+  /** Effective stats: base definitions + the held upgrades (`run.state.upgrades`). Cached until the list changes. */
+  get loadout(): Loadout {
+    const u = this.run.state.upgrades;
+    const c = this.loadoutCache;
+    if (c && c.ref === u && c.len === u.length) return c.lo;
+    const lo = new Loadout(u);
+    this.loadoutCache = { ref: u, len: u.length, lo };
+    return lo;
+  }
+
+  /** Push upgrade-derived ship stats (max hull, dodge cooldown) into the player objects. */
+  private syncShip(): void {
+    const lo = this.loadout;
+    this.health.setMax(Math.max(1, Math.round(lo.get('ship.maxHealth'))));
+    this.dodge.cooldownTime = lo.get('dodge.cooldown');
+  }
 
   constructor(canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -178,7 +214,7 @@ export class Game {
     this.input.onDodge = () => this.tryDodge();
     this.input.onPointerDown = () => {
       this.sfx.resume();
-      if (this.mode === 'run') this.taps.push({ x: this.input.px, y: this.input.py });
+      if (this.mode === 'run' || this.overlay) this.taps.push({ x: this.input.px, y: this.input.py });
       else if (this.state === 'won' && this.elapsed - this.wonAt > 1) this.reset();
     };
   }
@@ -218,12 +254,17 @@ export class Game {
         this.units.clear();
         this.targetList = [];
         this.weapons.reset();
+        this.tags.reset();
         this.bullets = [];
         this.particles = [];
       },
-      healFull: () => this.health.reset(),
+      healFull: () => {
+        this.syncShip();
+        this.health.reset();
+      },
       takeTap: () => this.taps.shift() ?? null,
       takeKey: () => this.keyPresses.shift() ?? null,
+      pointer: () => this.input.hover,
     };
   }
 
@@ -275,6 +316,21 @@ export class Game {
         return this.clearTimes();
       },
       weapons: this.weapons,
+      tags: this.tags,
+      /** Effective stats (base + held upgrades). */
+      loadout: () => this.loadout,
+      /** Held upgrades as { id: stacks }. */
+      upgrades: () => Object.fromEntries(this.loadout.held().map((h) => [h.card.id, h.n])),
+      /** Grant a card by id (stacks, ignoring the max-stack limit). Applies in run mode and in the one-boss test mode. */
+      grant: (id: string, n = 1) => this.grant(id, n),
+      /** Drop every held upgrade. */
+      clearUpgrades: () => (this.run.state.upgrades.length = 0),
+      /** Open the reward screen on demand over the current scene (sim paused until a card is picked). */
+      reward: () => this.openReward(),
+      /** Effective stat value by key, e.g. debug.stat('rocket.radius'). */
+      stat: (key: string) => this.loadout.get(key),
+      cardIds: [...CARD_BY_ID.keys()],
+      run: this.run,
       units: this.units,
       /** Spawn one unit by id at (x, y) (default: near the top centre) in the current combat, entering from above. */
       spawnUnit: (id: string, x = W / 2, y = 200) => this.spawnDebugUnit(id, x, y),
@@ -290,6 +346,21 @@ export class Game {
       reset: () => this.reset(),
       clearTimes: () => this.clearTimes(),
     };
+  }
+
+  private grant(id: string, n = 1): void {
+    const card = CARD_BY_ID.get(id);
+    if (!card) throw new Error(`unknown card "${id}"`);
+    for (let i = 0; i < n; i++) this.run.state.upgrades.push(card);
+  }
+
+  private openReward(): void {
+    const node = new RewardNode({ type: 'reward', choices: 3 });
+    const ctx: NodeContext = { host: this.nodeHost, run: this.run.state, position: { level: this.run.state.levelIndex + 1, levels: DEFAULT_RUN.levels.length, index: 1, count: 1 } };
+    node.start(ctx);
+    this.taps.length = 0;
+    this.keyPresses.length = 0;
+    this.overlay = node;
   }
 
   private clearTimes() {
@@ -378,6 +449,7 @@ export class Game {
     }
     this.bullets = [];
     this.weapons.reset();
+    this.tags.reset();
     this.particles = [];
     this.dodge.reset();
     if (!keepHealth) this.health.reset();
@@ -391,7 +463,12 @@ export class Game {
 
   private onKey(code: string): void {
     this.sfx.resume();
+    if (this.overlay) {
+      this.keyPresses.push(code);
+      return;
+    }
     if (code === 'KeyZ') return this.toggleMode();
+    if (code === 'Slash') return this.openReward();
     if (this.mode === 'run') {
       this.keyPresses.push(code);
       // Outside combat only the overlay toggle stays live; during a run [B] and [R] would break the flow.
@@ -569,6 +646,14 @@ export class Game {
         s.x = Math.random() * W;
       }
     }
+    this.syncShip();
+    if (this.overlay) {
+      this.overlay.update(dt);
+      this.taps.length = 0;
+      this.keyPresses.length = 0;
+      if (this.overlay.outcome()) this.overlay = null;
+      return;
+    }
     if (this.mode === 'run') {
       this.run.update(dt);
       this.taps.length = 0;
@@ -590,6 +675,7 @@ export class Game {
     this.weapons.update(dt, this.state === 'playing');
     this.updateThreat(dt);
     this.updateBullets(dt);
+    this.tags.update(dt);
     for (const f of this.allFights()) this.drainComponentEvents(f);
     this.units.checkDeaths();
     this.updateParticles(dt);
@@ -630,6 +716,11 @@ export class Game {
     }
   }
 
+  /** Player hitbox radius (base + upgrades). */
+  private get hitbox(): number {
+    return this.loadout.get('ship.hitbox');
+  }
+
   /** Boss fire, player damage and the defeat/reset flow. */
   private updateThreat(dt: number): void {
     const playing = this.state === 'playing';
@@ -640,8 +731,8 @@ export class Game {
     }
     this.health.update(dt);
     const dmg =
-      this.attacks.collect(this.ship.x, this.ship.y, TUNING.player.hitbox) +
-      this.attacks.collectHazards(this.ship.x, this.ship.y, TUNING.player.hitbox);
+      this.attacks.collect(this.ship.x, this.ship.y, this.hitbox) +
+      this.attacks.collectHazards(this.ship.x, this.ship.y, this.hitbox);
     if (dmg > 0 && !this.godMode && this.health.hit(dmg, this.dodge.invulnerable)) {
       if (this.health.dead) {
         this.state = 'lost';
@@ -726,12 +817,12 @@ export class Game {
       // Offset above the finger so the ship stays visible.
       const tx = this.input.px;
       const ty = this.input.py - 90;
-      const k = Math.min(1, dt * 20);
+      const k = Math.min(1, dt * 20 * (this.loadout.get('ship.speed') / TUNING.ship.speed));
       ship.x += (tx - ship.x) * k;
       ship.y += (ty - ship.y) * k;
     } else {
       const a = this.input.axis();
-      const speed = 460;
+      const speed = this.loadout.get('ship.speed');
       ship.x += a.x * speed * dt;
       ship.y += a.y * speed * dt;
     }
@@ -740,7 +831,7 @@ export class Game {
   }
 
   private fire(dt: number): void {
-    const interval = 1 / this.stats.fireRate;
+    const interval = 1 / effectiveChain(this.stats, (k, b) => this.loadout.get(k, b)).fireRate;
     this.fireTimer += dt;
     while (this.fireTimer >= interval) {
       this.fireTimer -= interval;
@@ -749,7 +840,9 @@ export class Game {
   }
 
   private shoot(): void {
-    const { projectiles, spreadDeg, damage, pierce } = this.stats;
+    const lo = this.loadout;
+    const { projectiles, spreadDeg, damage, pierce } = effectiveChain(this.stats, (k, b) => lo.get(k, b));
+    const tags = lo.tags('chain');
     for (let i = 0; i < projectiles; i++) {
       const offset = i - (projectiles - 1) / 2;
       const angle = (offset * spreadDeg * Math.PI) / 180;
@@ -761,6 +854,7 @@ export class Game {
         energy: damage,
         pierce,
         alive: true,
+        tags,
       });
     }
   }
@@ -796,7 +890,7 @@ export class Game {
   }
 
   /** Carve a target (the boss or a unit) at a screen point (core armor, juice, sound, debris). Shared by the base gun and the weapons. */
-  private carveAt(t: BossFight, x: number, y: number, budget: number, shape: CarveShapeName): HitResult | null {
+  private carveAt(t: BossFight, x: number, y: number, budget: number, shape: CarveShapeName, quiet = false): HitResult | null {
     const boss = t.boss;
     const hpBefore = boss.core.hp;
     const res = boss.hit(x, y, budget, shape);
@@ -808,6 +902,7 @@ export class Game {
       // Armor scales the damage, not the last hit point: without this a nearly dead core decays towards 0 and never dies.
       if (boss.core.hp < 1) boss.core.hp = 0;
     }
+    if (quiet) return res; // elemental ticks (burn): the carve only, no juice, sound or debris
     // Small units are hit constantly: sound and debris only, no shake, hit stop or numbers.
     const small = t !== this.fight && this.units.units.some((u) => u.fight === t && !u.big);
     if (!small) this.fx.onHit(x, y, res.carved, res.spent, res.core);
@@ -823,11 +918,13 @@ export class Game {
       if (t.boss.defeated || !nearBox(t.boss, b.x, b.y, 12)) continue;
       // A component under the bullet takes the hit (hidden hp, no numbers) and consumes the bullet.
       if (t.components.hit(b.x, b.y, b.energy)) {
+        if (b.tags) this.tags.onHit(b.tags, b.x, b.y, b.energy, t);
         b.alive = false;
         return;
       }
       const res = this.carveAt(t as BossFight, b.x, b.y, budget, 'default');
       if (!res) continue;
+      if (b.tags) this.tags.onHit(b.tags, b.x, b.y, b.energy, t);
       if (res.core || res.carved === 0) {
         b.alive = false;
         return;
@@ -907,6 +1004,7 @@ export class Game {
       ctx.fillStyle = '#8fa0c8';
       for (const s of this.stars) ctx.fillRect(s.x, s.y, s.size, s.size);
       this.run.draw(ctx);
+      this.overlay?.draw(ctx);
       return;
     }
     this.fx.beginShake(ctx);
@@ -921,6 +1019,7 @@ export class Game {
     if (this.bossActive && this.fight.components.debug) this.fight.components.drawDebug(ctx);
     this.drawBullets();
     this.weapons.draw(ctx);
+    this.tags.draw(ctx);
     this.attacks.draw(ctx);
     this.drawParticles();
     if (this.bossActive) this.hud.draw(ctx, this.boss, this.fight.rooms);
@@ -934,6 +1033,7 @@ export class Game {
     if (this.bossActive && this.fight.enraged && this.state === 'playing') this.hud.drawEnraged(ctx, this.fight.fightTime);
     if (this.state === 'playing') this.dodge.drawButton(ctx);
     if (this.state === 'playing') this.hud.drawWeapons(ctx, this.weapons);
+    this.hud.drawUpgrades(ctx, this.loadout);
     if (this.showDebug) {
       this.drawDebug();
       this.panel.draw(this.ctx);
@@ -942,6 +1042,7 @@ export class Game {
     if (this.state === 'won' && this.bossActive) this.drawWin();
     if (this.state === 'lost') this.drawLost();
     if (this.mode === 'run') this.run.draw(ctx);
+    this.overlay?.draw(ctx);
   }
 
   /** Every unit's hull and parts (dying ones fade), plus the debug boxes. */
@@ -1021,7 +1122,7 @@ export class Game {
       `${this.fps.toFixed(0)} fps  t=${this.elapsed.toFixed(1)}s  WAVE MODE (no boss)`,
       ...this.unitLines(),
       `DMG ${s.damage.toLocaleString('en-US')}  [1/2]  rate ${s.fireRate} [3/4]  god mode ${this.godMode ? 'ON' : 'off'} [G]  TEST MODE ${this.testMode ? 'ON' : 'off'} [Y]  autopilot ${this.auto} [P]`,
-      `hp ${this.health.hp}/${TUNING.player.maxHealth}  enemy attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  dodge ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}  juice ${this.fx.enabled ? 'on' : 'off'} [J]`,
+      `hp ${this.health.hp}/${this.health.maxHp}  enemy attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  dodge ${this.dodge.ready ? 'ready' : this.dodge.cooldown.toFixed(1) + 's'}  juice ${this.fx.enabled ? 'on' : 'off'} [J]`,
       `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${d.key}]`).join('  ')}  fire all [Q]`,
     ] : [
       `${this.fps.toFixed(0)} fps  t=${this.elapsed.toFixed(1)}s`,
@@ -1042,7 +1143,7 @@ export class Game {
       `movement ${this.fight.movementEnabled ? 'on' : 'off'} [T]  cycle [M]  restart [R]  debug [\`]  boss ${this.fight.def.name} [B]`,
       `phase ${this.fight.phaseIndex + 1}/${this.fight.def.phases.length} ${this.fight.phase.name} (${this.fight.movementOverride ? 'OVERRIDE ' : ''}${this.fight.movement.name}) ${this.fight.phaseTime.toFixed(1)}s`,
       `next: ${this.fight.describeNext()}  [pixel ${this.fight.pixelDamagePercent.toFixed(1)}% core ${this.fight.coreDamagePercent.toFixed(1)}%]`,
-      `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${TUNING.player.maxHealth}  hitbox r=${TUNING.player.hitbox}`,
+      `boss attacks ${this.attacks.enabled ? 'ON' : 'off'} [K]  hp ${this.health.hp}/${this.health.maxHp}  hitbox r=${this.hitbox.toFixed(1)}`,
       `attack mode ${this.attacks.mode} [N]  pattern ${PATTERNS[this.attacks.selected].name} [V]  fire it [F]`,
       `juice ${this.fx.enabled ? 'on' : 'off'} [J]  component/room hit areas ${this.fight.components.debug ? 'ON' : 'off'} [H]  expose room [E]`,
       `weapons ${this.weapons.defs.map((d) => `${d.name} ${this.weapons.enabled[d.id] ? this.weapons.secondsLeft(d.id).toFixed(1) + 's' : 'off'} [${d.key}]`).join('  ')}  fire all [Q]  cooldown x${WEAPONS.cooldownScale} [, .]`,
@@ -1079,7 +1180,7 @@ export class Game {
     ctx.strokeStyle = this.health.invuln > 0 || this.dodge.invulnerable ? '#9ff6ff' : '#ffff00';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(this.ship.x, this.ship.y, TUNING.player.hitbox, 0, Math.PI * 2);
+    ctx.arc(this.ship.x, this.ship.y, this.hitbox, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }

@@ -2,6 +2,8 @@ import { H, W } from './config';
 import type { Boss } from './boss';
 import type { RoomSystem } from './rooms';
 import type { WeaponSystem } from './weapons';
+import { drawUpgradeStrip } from './upgrades/draw';
+import type { Loadout } from './upgrades/stats';
 
 /** Per-layer progress bars plus room status. Reads boss state only; owns no game logic. */
 
@@ -115,6 +117,12 @@ export class Hud {
       }
     });
     ctx.restore();
+  }
+
+  /** Compact "your upgrades" strip along the right edge under the hull bar (coloured initial + stack count per card). */
+  drawUpgrades(ctx: CanvasRenderingContext2D, lo: Loadout): void {
+    if (lo.count === 0) return;
+    drawUpgradeStrip(ctx, lo, W - 132, 62, 120, true);
   }
 
   /** "ENRAGED" badge, top centre (clear of the top-right health bar). Pulses with `time`. */

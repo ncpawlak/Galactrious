@@ -2,13 +2,15 @@ import type { Boss, HitResult } from './boss';
 import type { CarveShapeName } from './carveShapes';
 import { resolveBlast, type BlastSpec, type ComponentSystem } from './components';
 import { H, W, WEAPONS } from './config';
+import type { TagSet } from './tags';
+import { gaussShape } from './upgrades/stats';
 
 /**
  * Auto-firing player weapons (issue #12). Each weapon is DATA (`WeaponDef`): id, name, cooldown and a `fire`
  * function that spawns projectiles described by plain fields (energy, pierce, carve shape, blast, steering).
  * Upgrades later are modifiers on these definitions (copy a def and change cooldown / counts / angles) and on the
  * base gun; nothing here is special-cased by weapon id except drawing. All weapons are boss-only, like blasts.
- * The base machine gun stays in `Game` (it is the pre-existing bullet path and is not expressed in this format).
+ * The base chain gun still fires from `Game` but is described here too (`CHAIN_GUN`, `effectiveChain`), so upgrades modify it the same way.
  */
 
 export type WeaponId = 'gauss' | 'rocket' | 'arc';
@@ -19,17 +21,23 @@ export interface WeaponDef {
   /** Debug key label, for the HUD and overlay. */
   key: string;
   color: string;
-  /** Base cooldown in seconds (before `WEAPONS.cooldownScale`). */
-  cooldown: () => number;
+  /** Cooldown in seconds with upgrades applied (before `WEAPONS.cooldownScale`). */
+  cooldown: (stat: StatFn) => number;
   /** Spawn this weapon's projectiles. */
   fire(c: FireContext): void;
 }
+
+/** Effective value of a stat key (`base` + held upgrades): the weapons never read upgrades directly. */
+export type StatFn = (key: string, base: number) => number;
 
 /** What a weapon's `fire` gets: the ship, the damage scale, and a spawner. */
 export interface FireContext {
   ship: { x: number; y: number };
   /** Live ship damage / default damage: the debug damage keys scale weapon energy through this. */
   power: number;
+  stat: StatFn;
+  /** Tags this weapon's shots carry (from upgrades), undefined = none. */
+  tags: TagSet | undefined;
   spawn(p: ProjectileInit): void;
   /** A random solid pixel of a random live target (the boss or a unit) in its local coordinates, or null when nothing is left. */
   pickTarget(): { target: Combatant; lx: number; ly: number } | null;
@@ -58,6 +66,8 @@ export interface ProjectileInit {
   steer?: { target: Combatant; lx: number; ly: number; turn: number; amp: number; freq: number; phase: number; wanderTime: number };
   /** Seconds the trail stays visible. */
   trailLife: number;
+  /** Elemental tags: `onHit` runs for each landed hit (src/tags.ts). */
+  tags?: TagSet;
 }
 
 interface Projectile extends ProjectileInit {
@@ -75,7 +85,7 @@ export const WEAPON_DEFS: WeaponDef[] = [
     name: 'Gauss',
     key: 'I',
     color: '#bff6ff',
-    cooldown: () => WEAPONS.gauss.cooldown,
+    cooldown: (s) => s('gauss.cooldown', WEAPONS.gauss.cooldown),
     fire: (c) => {
       const g = WEAPONS.gauss;
       c.spawn({
@@ -84,9 +94,10 @@ export const WEAPON_DEFS: WeaponDef[] = [
         y: c.ship.y - 26,
         angle: -Math.PI / 2,
         speed: g.speed,
-        energy: g.energy * c.power,
+        energy: c.stat('gauss.energy', g.energy) * c.power,
         pierce: g.pierce,
-        shape: g.shape,
+        shape: gaussShape(c.stat('gauss.width', 0)),
+        tags: c.tags,
         componentPierce: true,
         trailLife: 0.35,
       });
@@ -97,7 +108,7 @@ export const WEAPON_DEFS: WeaponDef[] = [
     name: 'Rocket',
     key: 'O',
     color: '#ffa94d',
-    cooldown: () => WEAPONS.rocket.cooldown,
+    cooldown: (s) => s('rocket.cooldown', WEAPONS.rocket.cooldown),
     fire: (c) => {
       const r = WEAPONS.rocket;
       c.spawn({
@@ -108,7 +119,8 @@ export const WEAPON_DEFS: WeaponDef[] = [
         speed: r.speed,
         accel: r.accel,
         maxSpeed: r.maxSpeed,
-        blast: { ...r.blast, energy: r.blast.energy * c.power, damage: r.blast.damage * c.power, coreDamage: r.blast.coreDamage * c.power },
+        blast: { ...r.blast, radius: c.stat('rocket.radius', r.blast.radius), energy: c.stat('rocket.energy', r.blast.energy) * c.power, damage: r.blast.damage * c.power, coreDamage: r.blast.coreDamage * c.power },
+        tags: c.tags,
         trailLife: 0.28,
       });
     },
@@ -118,17 +130,20 @@ export const WEAPON_DEFS: WeaponDef[] = [
     name: 'Arc',
     key: 'L',
     color: '#7dff9a',
-    cooldown: () => WEAPONS.arc.cooldown,
+    cooldown: (s) => s('arc.cooldown', WEAPONS.arc.cooldown),
     fire: (c) => {
       const a = WEAPONS.arc;
-      // One out each side at the same time, slightly up; each picks its own random spot on the boss.
-      for (const side of [-1, 1]) {
+      // One out each side at the same time, slightly up (more with upgrades, alternating sides); each picks its own random spot on the boss.
+      const count = Math.max(1, Math.round(c.stat('arc.count', 2)));
+      for (let n = 0; n < count; n++) {
+        const side = n % 2 === 0 ? -1 : 1;
         const t = c.pickTarget();
         if (!t) continue;
         c.spawn({
           weapon: 'arc',
           x: c.ship.x + side * 14,
           y: c.ship.y - 4,
+          tags: c.tags,
           angle: (side < 0 ? Math.PI + 0.35 : -0.35) + (Math.random() - 0.5) * 0.4,
           speed: a.speed,
           energy: a.energy * c.power,
@@ -152,6 +167,31 @@ export const WEAPON_DEFS: WeaponDef[] = [
   },
 ];
 
+/**
+ * The base chain gun in weapon format (enough for upgrades): its stats are the live `ShipStats` (debug keys adjust them),
+ * and `effectiveChain` layers the held upgrades on top (`chain.fireRate`, `chain.damage`, `chain.barrels`). Its shots carry
+ * the tags of the `chain.tag.*` stats. With no upgrades the result equals the base stats.
+ */
+export const CHAIN_GUN = { id: 'chain', name: 'Chain gun' } as const;
+
+export interface ChainStats {
+  damage: number;
+  fireRate: number;
+  projectiles: number;
+  spreadDeg: number;
+  pierce: number;
+}
+
+export function effectiveChain(base: ChainStats, stat: StatFn): ChainStats {
+  return {
+    damage: stat('chain.damage', base.damage),
+    fireRate: stat('chain.fireRate', base.fireRate),
+    projectiles: Math.max(1, Math.round(base.projectiles + stat('chain.barrels', 1) - 1)),
+    spreadDeg: base.spreadDeg,
+    pierce: base.pierce,
+  };
+}
+
 /** Anything the player's shots can hit: the boss's fight or a unit's fight (a `BossFight` satisfies this). */
 export interface Combatant {
   readonly boss: Boss;
@@ -169,6 +209,12 @@ export interface WeaponHost {
   carve(target: Combatant, x: number, y: number, energy: number, shape: CarveShapeName): HitResult | null;
   /** A weapon fired (sound). */
   onFire(id: WeaponId): void;
+  /** Effective stat value (base + upgrades). */
+  stat: StatFn;
+  /** Tags a weapon's shots carry. */
+  tags(weapon: string): TagSet | undefined;
+  /** The tag hook: a tagged projectile landed (see src/tags.ts). */
+  onHit(tags: TagSet, x: number, y: number, energy: number, target: Combatant): void;
 }
 
 function solidAt(boss: Boss, x: number, y: number): boolean {
@@ -255,15 +301,20 @@ export class WeaponSystem {
     WEAPONS.cooldownScale = 1;
   }
 
+  /** Effective cooldown of a weapon in seconds (upgrades and the debug scale applied). */
+  cd(d: WeaponDef): number {
+    return d.cooldown(this.host.stat) * WEAPONS.cooldownScale;
+  }
+
   /** 0..1 progress of a weapon's cooldown (1 = fires now). */
   progress(id: WeaponId): number {
     const d = this.defs.find((w) => w.id === id)!;
-    return Math.min(1, this.timers[id] / (d.cooldown() * WEAPONS.cooldownScale));
+    return Math.min(1, this.timers[id] / (this.cd(d)));
   }
 
   secondsLeft(id: WeaponId): number {
     const d = this.defs.find((w) => w.id === id)!;
-    return Math.max(0, d.cooldown() * WEAPONS.cooldownScale - this.timers[id]);
+    return Math.max(0, this.cd(d) - this.timers[id]);
   }
 
   /** Debug: fire every enabled weapon now (cooldowns restart). */
@@ -279,6 +330,8 @@ export class WeaponSystem {
     d.fire({
       ship,
       power: this.host.power(),
+      stat: this.host.stat,
+      tags: this.host.tags(d.id),
       spawn: (p) => this.spawn(p),
       pickTarget: () => this.pickTarget(),
     });
@@ -328,7 +381,7 @@ export class WeaponSystem {
           continue;
         }
         this.timers[d.id] += dt;
-        if (this.timers[d.id] >= d.cooldown() * WEAPONS.cooldownScale) this.fire(d);
+        if (this.timers[d.id] >= this.cd(d)) this.fire(d);
       }
     }
     this.updateProjectiles(dt);
@@ -401,6 +454,7 @@ export class WeaponSystem {
     if (dist < 5) {
       const energy = p.energy ?? 0;
       this.host.carve(s.target, p.x, p.y, energy, p.shape ?? 'default');
+      if (p.tags) this.host.onHit(p.tags, p.x, p.y, energy, s.target);
       p.alive = false;
     }
   }
@@ -414,6 +468,7 @@ export class WeaponSystem {
         if (t.components.componentAt(p.x, p.y) || solidAt(t.boss, p.x, p.y)) {
           const radius = resolveBlast('turret', p.blast).radius;
           for (const o of targets) if (!o.boss.defeated && nearBox(o.boss, p.x, p.y, radius)) o.components.playerBlast(p.x, p.y, p.blast);
+          if (p.tags) this.host.onHit(p.tags, p.x, p.y, p.blast.energy ?? 0, t);
           p.alive = false;
           return;
         }
@@ -424,7 +479,9 @@ export class WeaponSystem {
     if (p.componentPierce) {
       for (const t of targets) {
         if (t.boss.defeated || !nearBox(t.boss, p.x, p.y, 12)) continue;
-        energy -= t.components.hitThrough(p.x, p.y, energy, p.seen);
+        const soaked = t.components.hitThrough(p.x, p.y, energy, p.seen);
+        if (soaked > 0 && p.tags) this.host.onHit(p.tags, p.x, p.y, energy, t);
+        energy -= soaked;
       }
       if (energy < 1) {
         p.alive = false;
@@ -437,6 +494,7 @@ export class WeaponSystem {
       if (t.boss.defeated || !nearBox(t.boss, p.x, p.y, 12)) continue;
       const res = this.host.carve(t, p.x, p.y, budget, p.shape ?? 'default');
       if (!res) continue;
+      if (p.tags) this.host.onHit(p.tags, p.x, p.y, budget, t);
       if (res.core || res.carved === 0) {
         p.alive = false;
         return;

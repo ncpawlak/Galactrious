@@ -7,6 +7,8 @@ export class Input {
   pointerDown = false;
   px = W / 2;
   py = H / 2;
+  /** Last pointer position seen, down or not (hover); null until the pointer has moved over the canvas. */
+  hover: { x: number; y: number } | null = null;
   onPress: ((code: string) => void) | null = null;
   onPointerDown: (() => void) | null = null;
   onDodge: (() => void) | null = null;
@@ -43,6 +45,8 @@ export class Input {
       this.onPointerDown?.();
     });
     canvas.addEventListener('pointermove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      this.hover = { x: ((e.clientX - rect.left) * W) / rect.width, y: ((e.clientY - rect.top) * H) / rect.height };
       if (this.pointerDown && e.pointerId === this.steerPointer) this.track(e);
     });
     const release = (e: PointerEvent): void => {
