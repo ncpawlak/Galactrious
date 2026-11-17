@@ -1,7 +1,7 @@
 import type { BossSpec } from '../boss';
 import { TUNING } from '../config';
 import { aimedShot, bomb, directVolley, lineSweep } from '../attacks';
-import { bob, combine, figureEight, named, sequence, still, sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
+import { lowered, bob, combine, figureEight, named, sequence, still, sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
 import type { AttackPattern } from '../attacks';
 import type { AttackStep } from '../attackSchedulers';
 import type { ComponentSpec } from '../components';
@@ -117,7 +117,7 @@ export const demoBossPhased: BossDefinition = {
     {
       name: 'Phase 2: faster',
       trigger: { kind: 'damage', percent: 15 },
-      movement: sway(TUNING.sway.amplitude * 1.6, TUNING.sway.period * 0.5),
+      movement: lowered(40, sway(TUNING.sway.amplitude * 1.6, TUNING.sway.period * 0.5)),
       attacks: [directVolley, aimedShot, bomb].map((p) => fromGun(p, 0.7)),
       attackDelay: 1.5,
     },

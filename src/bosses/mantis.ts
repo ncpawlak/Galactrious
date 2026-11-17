@@ -4,7 +4,7 @@ import { aimedShot, bomb, directVolley, lineSweep } from '../attacks';
 import type { AttackPattern } from '../attacks';
 import type { AttackStep } from '../attackSchedulers';
 import type { ComponentSpec } from '../components';
-import { figureEight, sequence, zip, ZIP_FAST, ZIP_NORMAL, bob, combine, sway } from '../movement';
+import { lowered, figureEight, sequence, zip, ZIP_FAST, ZIP_NORMAL, bob, combine, sway } from '../movement';
 import type { RoomSpec } from '../rooms';
 import type { BossDefinition } from './types';
 import { crisp, makeCanvas, shade } from './paint';
@@ -261,13 +261,13 @@ export const mantis: BossDefinition = {
     {
       name: 'Frenzy',
       trigger: { kind: 'damage', percent: 20 },
-      movement: sequence(
+      movement: lowered(40, sequence(
         [
           { movement: zip(DASH), duration: 6 },
           { movement: combine(sway(70, 5), bob(20, 3)), duration: 5 },
         ],
         0.6,
-      ),
+      )),
       attacks: [
         every(aimedShot, 0.8, MAW),
         every(lineSweep, 0.8, HORNS),
@@ -280,13 +280,13 @@ export const mantis: BossDefinition = {
     {
       name: 'Overdrive',
       trigger: { kind: 'damage', percent: 45 },
-      movement: sequence(
+      movement: lowered(70, sequence(
         [
           { movement: zip(DASH_FAST), duration: 5 },
           { movement: figureEight(80, 30, 4.5), duration: 5 },
         ],
         0.5,
-      ),
+      )),
       attacks: [
         every(aimedShot, 0.55, MAW),
         every(lineSweep, 0.55, HORNS),

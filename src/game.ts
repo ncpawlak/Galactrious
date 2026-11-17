@@ -22,7 +22,7 @@ import { RewardNode } from './flow/nodes/reward';
 import type { FlowNode, NodeContext } from './flow/node';
 import { Loadout } from './upgrades/stats';
 import { AUX_DEFS, AUX_KEYS, MAIN_DEFS, WEAPON_DEFS, Sweep, WeaponSystem, auxById, effectiveMain, mainById, nearBox, type AuxDef, type Combatant } from './weapons';
-import { drawShipLook, shipById, SHIPS } from './ships';
+import { drawShipLook, shipById, shipMinY, SHIPS } from './ships';
 import { cleanLoadout } from './loadouts';
 import { UnitSystem, type Unit } from './units';
 import { divePath, spawnWave, type WaveDefinition } from './waves';
@@ -87,7 +87,6 @@ interface Star {
 }
 
 const MAX_PARTICLES = 500;
-const SHIP_MIN_Y = 520;
 /** Run mode: seconds the explosion plays after a boss falls before the node ends. */
 const WIN_BEAT = 2.2;
 
@@ -911,7 +910,7 @@ export class Game {
       ship.y += a.y * speed * dt;
     }
     ship.x = Math.min(W - 18, Math.max(18, ship.x));
-    ship.y = Math.min(H - 36, Math.max(SHIP_MIN_Y, ship.y));
+    ship.y = Math.min(H - 36, Math.max(shipMinY(this.run.state.shipId), ship.y));
   }
 
   private fire(dt: number): void {

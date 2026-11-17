@@ -17,6 +17,8 @@ export const TUNING = {
   bulletSpeed: 1500,
   sway: { amplitude: 55, period: 8 },
   boss: { x: W / 2, y: 40 },
+  /** Combat range (DESIGN.md "Combat range"): the highest the ship may fly (default for ships without their own `minY`), px from the top. */
+  shipMinY: 320,
   /** Dodge: dash `distance` px over `invulnTime` s (invulnerable meanwhile), then `cooldown` s. */
   dodge: { distance: 170, invulnTime: 0.25, cooldown: 2.5 },
   /** Boss attacks. Speeds px/s, intervals s. */

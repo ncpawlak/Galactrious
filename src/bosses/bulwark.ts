@@ -1,7 +1,7 @@
 import type { BossSpec } from '../boss';
 import { TUNING } from '../config';
 import { aimedShot, bomb, directVolley, lineSweep } from '../attacks';
-import { sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
+import { lowered, sway, zip, ZIP_FAST, ZIP_NORMAL } from '../movement';
 import type { AttackStep } from '../attackSchedulers';
 import type { AttackPattern } from '../attacks';
 import type { ComponentSpec } from '../components';
@@ -180,13 +180,13 @@ export const bulwark: BossDefinition = {
     {
       name: 'Pressure',
       trigger: { kind: 'damage', percent: 30 },
-      movement: zip(ZIP_NORMAL_WIDE),
+      movement: lowered(40, zip(ZIP_NORMAL_WIDE)),
       attacks: [directVolley, aimedShot, lineSweep, aimedShot, bomb].map((p) => every(p, 0.75)),
     },
     {
       name: 'Enrage',
       trigger: { kind: 'damage', percent: 65 },
-      movement: zip(ZIP_FAST_WIDE),
+      movement: lowered(70, zip(ZIP_FAST_WIDE)),
       attacks: [aimedShot, directVolley, lineSweep, bomb, aimedShot, directVolley].map((p) => every(p, 0.5)),
       enrage: {},
     },
