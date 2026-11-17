@@ -3,10 +3,11 @@ import { bulwark } from './bulwark';
 import { bulwarkComponents } from './bulwarkComponents';
 import { bulwarkRooms, bulwarkRoomsMirror } from './bulwarkRooms';
 import { bulwarkRegrowth } from './bulwarkRegrowth';
+import { mantis } from './mantis';
 import type { BossDefinition } from './types';
 
 /** All known bosses. [B] in debug cycles through them in this order. */
-export const BOSSES: BossDefinition[] = [demoBoss, demoBossPhased, demoBossMotion, bulwark, bulwarkComponents, bulwarkRooms, bulwarkRoomsMirror, bulwarkRegrowth];
+export const BOSSES: BossDefinition[] = [demoBoss, demoBossPhased, demoBossMotion, bulwark, bulwarkComponents, bulwarkRooms, bulwarkRoomsMirror, bulwarkRegrowth, mantis];
 
 /** The boss the game starts on (and restarts on after a page load). */
 export const DEFAULT_BOSS_ID = 'bulwark-rooms';

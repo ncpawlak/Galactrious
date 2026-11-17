@@ -145,3 +145,16 @@ Status: **built** (issue #15). Code: `src/regrowth.ts`, hooks in `src/boss.ts` (
 - **Hook for regrowth nodes (not built).** `Regrowth.scale` multiplies the rate (0 stops it). A node component would set it (or a per-region variant) while alive; the rest of the rules stay as is.
 - **Demo numbers.** Bulwark (regrowth): hull only, `both`, 0.08 %/s always (about 50 px/s), 0.8 %/s once idle for 2.5 s, capped at 60 % of the hull. First guesses, need a playtest.
 - **Not verified / known limits.** No humans playtest; mirror was not run with regrowth (the original mask is taken after `mirrorSpec`, so it should follow). A few pixels next to a live embedded part's margin may stay open (66 in one test). Only one layer per boss.
+
+## Mantis (third boss)
+Code: `src/bosses/mantis.ts` (`[B]`, "Mantis"; not the default boss). A tall 336 x 420 insectoid (horns up and out, tapering to a stinger) against Bulwark's wide manta. Built only from the existing framework: three layers (hull olive, frame teal-grey, rooms rust), turrets, explosive generators, three rooms, `coreArmor`, three phases with an enrage cue.
+
+Two distinctive mechanics:
+1. **Shield generators (core gating).** Three generators (`gen`, explosive, embedded in the FRAME layer on round pads) hold the shield. `coreArmor: { min: 0.1, digWeight: 0.3, requires: ['gen'], perComponent: 0.2 }`: digging alone gets the core to about a third vulnerability; each destroyed generator adds 0.2. Dig the cheap hull, find the pads, blow them up, then the core opens. Generators are about 130 px apart so they do not chain into each other.
+2. **Rooms that power weapons.** Targeting (left lane) powers the chin gun `maw` (the tracking aimed shots); Capacitor (right lane) powers both `horns` (rotating guns, line sweeps). Taking a room offline silences that weapon for the rest of the fight. Exposing a room fires its reaction (aimed burst / shield ring), so digging in is a risk that pays off. The Engine bay has `explodeOnDisable` and reaches the lower generator.
+
+Phases and motion: **Prowl** (figure-eight, maw aimed + tail volley and bomb) -> **Frenzy** at 20% pixel damage (`sequence` of 6 s zip dashes and 5 s sway+bob, horn guns come online, adds line sweeps) -> **Overdrive** at 45% (enrage cue, orange tint; fast zips alternating with a tight figure-eight; intervals x0.55, maw and horns x0.7). Every step has a `source`: `maw`, `horns`, `tail`.
+
+Pacing (hull density 8, default ship, test mode off, god mode so deaths do not restart, `game.debug.simulate(100, 'sweep')`, 6 runs): `hull25` 57.7-60.8 s, mean 59.9. In a full 240 s sweep run the phases began near 50-60 s and 106-110 s and the core fell at 187-199 s. Like Bulwark rooms, `hull25` is partly set by explosive chains (a 4-8% hull drop at once around 55 s), so hull density moves it less than expected.
+
+Not verified: no human playtest (dodge fairness, feel of the speeds); no mirrored variant; hit positions of the pads and consoles were checked on a screenshot of the fresh boss only, not each after digging.
