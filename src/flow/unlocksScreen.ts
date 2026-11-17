@@ -44,7 +44,7 @@ interface Row {
 function rows(): Row[] {
   const out: Row[] = CARDS.map((c) => ({ name: c.name, desc: c.desc, hint: c.unlockHint, color: groupColor(c.id), open: cardUnlocked(c), gated: !!c.unlock }));
   for (const w of WEAPON_DEFS) {
-    if (!w.unlock) continue;
+    if (!w.unlock || w.stashed) continue;
     out.push({ name: `${w.name} (${w.slot})`, desc: w.desc, hint: w.unlockHint, color: w.color, open: weaponAvailable(w), gated: true });
   }
   return out;

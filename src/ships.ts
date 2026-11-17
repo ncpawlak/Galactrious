@@ -38,6 +38,11 @@ export interface ShipStats {
   accel?: number;
   /** Scale on the dodge dash distance (default 1). */
   dodgeScale?: number;
+  /** Campaign: the main gun fires this many parallel streams from muzzles `muzzleGap` px apart (default 1). The shot's damage is split between them by the ship's `statMul`. */
+  twinMuzzles?: number;
+  muzzleGap?: number;
+  /** Damage multiplier of each stream when twinned (default 1 / twinMuzzles, so the total is unchanged; above that the twin guns hit harder in total). */
+  muzzleDamage?: number;
   /** Campaign tuning: multipliers on weapon stats (`chain.fireRate`, `chain.damage`, ...), applied under upgrades. Endless ships leave it out. */
   statMul?: Record<string, number>;
 }
@@ -55,6 +60,8 @@ export interface ShipDefinition {
   look: ShipLook;
   baseStats: ShipStats;
   startingWeapons: WeaponLoadout;
+  /** How many aux slots the loadout builder offers (default 3). */
+  auxSlots?: number;
   /** Unlock flag (`save.unlocks.ships`). Omitted = always unlocked. */
   unlock?: string;
   /** Shown on the select screen while locked: how to get it. */
@@ -126,7 +133,7 @@ export const SHIPS: ShipDefinition[] = [
     // wings, slate plating with a bronze nose, the red chevron insignia. A little tougher and faster than the Vanguard, reaches higher.
     id: 'empire-fighter',
     name: 'Empire Fighter',
-    desc: 'Captured empire tech: tougher and faster. Its weapons hurt empire armour. Laser with Energy Wave, Gauss and Rocket.',
+    desc: 'Captured empire tech: tougher and faster. Its weapons hurt empire armour. Pulse Orbs with a Flak Burst.',
     look: {
       hull: { color: EMPIRE.armour, points: [[0, -22], [4, -10], [8, -8], [24, -16], [22, -2], [15, 15], [7, 13], [4, 19], [0, 21], [-4, 19], [-7, 13], [-15, 15], [-22, -2], [-24, -16], [-8, -8], [-4, -10]] },
       details: [
@@ -142,7 +149,8 @@ export const SHIPS: ShipDefinition[] = [
       flame: { color: EMPIRE.glow, x: -3, y: 19, w: 6, len: 4, flicker: 6 },
     },
     baseStats: { maxHealth: 6, speed: 500, dodgeCooldown: 2.2, hitbox: TUNING.player.hitbox, minY: 260 },
-    startingWeapons: { main: 'laser', aux: ['wave', 'gauss', 'rocket'] },
+    startingWeapons: { main: 'pulse', aux: ['flak'] },
+    auxSlots: 1,
     unlock: 'empire-fighter',
     unlockHint: 'Finish the Fallen Peace campaign.',
     empireTech: true,
@@ -159,7 +167,7 @@ export const CAMPAIGN_SHIPS: ShipDefinition[] = [
   {
     id: DELTA_ROOKIE_ID,
     name: 'Delta Rookie',
-    desc: 'Delta squad standard issue. Chain gun with Gauss, Rocket and Arc.',
+    desc: 'Delta squad standard issue. Twin chain guns with Gauss, Rocket and Arc.',
     look: {
       hull: { color: DELTA.hull, points: [[0, -22], [15, 16], [0, 9], [-15, 16]] },
       details: [
@@ -173,7 +181,7 @@ export const CAMPAIGN_SHIPS: ShipDefinition[] = [
       flame: { color: DELTA.flame, x: -3, y: 12, w: 6, len: 4, flicker: 5 },
     },
     // Campaign tuning (chapters 1 and 2): the rookie's chain gun fires 25% faster and hits 22% harder than the Endless Vanguard's.
-    baseStats: { maxHealth: TUNING.player.maxHealth, speed: TUNING.ship.speed, dodgeCooldown: TUNING.dodge.cooldown, hitbox: TUNING.player.hitbox, statMul: { 'chain.fireRate': 1.25, 'chain.damage': 1.22 } },
+    baseStats: { maxHealth: TUNING.player.maxHealth, speed: TUNING.ship.speed, dodgeCooldown: TUNING.dodge.cooldown, hitbox: TUNING.player.hitbox, statMul: { 'chain.fireRate': 1.25, 'chain.damage': 1.22 }, twinMuzzles: 2, muzzleGap: 22, muzzleDamage: 0.6 },
     startingWeapons: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] },
   },
 ];

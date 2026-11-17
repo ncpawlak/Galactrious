@@ -240,9 +240,9 @@ export class Run {
   }
 
   /** Debug: open the campaign unlock reveal for a campaign id (src/finale/unlocks.ts). */
-  showCampaignUnlocks(campaignId: string) {
+  showCampaignUnlocks(campaignId: string, gold = false) {
     this.endNode();
-    const items = this.campaign.showUnlocks(campaignId);
+    const items = this.campaign.showUnlocks(campaignId, gold);
     this.setPhase('campaign');
     return items;
   }

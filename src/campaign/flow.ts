@@ -3,7 +3,7 @@
  * campaign select -> (story intro on first open) -> level select -> briefing -> play -> result -> level select.
  */
 import type { NodeHost } from '../flow/node';
-import { applyUnlocks, FALLEN_PEACE_UNLOCKS, UnlockRevealScreen, type UnlockItem } from '../finale/unlocks';
+import { applyUnlocks, campaignUnlockSpecs, FALLEN_PEACE_UNLOCKS, UnlockRevealScreen, type UnlockItem } from '../finale/unlocks';
 import { saveStore } from '../save';
 import { CAMPAIGNS, findLevel } from './content';
 import { BriefingScreen, CampaignSelectScreen, LevelSelectScreen, ResultScreen, StoryScreen } from './screens';
@@ -98,10 +98,10 @@ export class CampaignFlow {
    * unlocks into the save; items that were already unlocked are listed without the NEW tag. "fallen-peace" falls back to `FALLEN_PEACE_UNLOCKS`
    * until chapter 7 sets `CampaignDefinition.unlocks`.
    */
-  showUnlocks(campaignId: string): UnlockItem[] {
+  showUnlocks(campaignId: string, gold = false): UnlockItem[] {
     const c = CAMPAIGNS.find((x) => x.id === campaignId);
     if (!c) throw new Error(`unknown campaign "${campaignId}" (${CAMPAIGNS.map((x) => x.id).join(', ')})`);
-    const specs = c.unlocks ?? (campaignId === 'fallen-peace' ? FALLEN_PEACE_UNLOCKS : []);
+    const specs = c.unlocks ? campaignUnlockSpecs(c, gold) : campaignId === 'fallen-peace' ? FALLEN_PEACE_UNLOCKS : [];
     if (specs.length === 0) throw new Error(`campaign "${campaignId}" has no unlocks`);
     this.shutdown();
     this.campaign = c;
@@ -178,7 +178,7 @@ export class CampaignFlow {
           this.levels = new LevelSelectScreen(this.campaign!, () => this.unlockAll);
           if (fresh && fresh.length > 0) {
             // Already written to the save when the level finished; the reveal only shows them.
-            this.reveal = new UnlockRevealScreen(fresh.map((spec) => ({ spec, isNew: true })));
+            this.reveal = new UnlockRevealScreen(fresh);
             this.sub = 'unlocks';
           } else this.sub = 'levels';
         }

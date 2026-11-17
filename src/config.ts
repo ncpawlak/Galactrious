@@ -164,8 +164,16 @@ export const WEAPONS = {
   blades: { cooldown: 7, duration: 4.5, count: 3, radius: 80, spin: 5.5, tick: 0.1, energy: 70, shape: 'ember3' as const },
   /** Swarm (aux): `count` small homing missiles at random solid spots of the targets. */
   swarm: { cooldown: 6.5, count: 6, energy: 340, pierce: 0.3, shape: 'swarm' as const, speed: 560, turn: 4.5, wanderTime: 2.2 },
+  /** Flak burst (aux, empire ship): one slow shell fired straight up; it detonates on the first solid pixel or component as a boss blast (the flak battery's 3 bursts became 1 shot). */
+  flak: {
+    cooldown: 3.2,
+    speed: 330,
+    maxSpeed: 330,
+    accel: 0,
+    blast: { radius: 56, energy: 800, damage: 24, coreDamage: 20, falloff: 1 },
+  },
   /**
-   * Energy Wave (aux, campaign unlock): a half-moon field fired straight up. For `duration` s the crescent expands from the ship to `reach` px
+   * Energy Wave (aux, stashed, not used by any ship): a half-moon field fired straight up. For `duration` s the crescent expands from the ship to `reach` px
    * (an `arcDeg` wide arc); every `tick` s each of `samples` points on the front carves `energy` x power x the distance factor
    * (1 at the ship, `edge` at `reach`), with the `wave` carve shape. Passes through components like the other aux (soaks only their hp).
    */
@@ -183,6 +191,8 @@ export const MAINS = {
   scatter: { rateMul: 0.3, damageMul: 0.5, projectiles: 8, spreadDeg: 6, jitterDeg: 2, pierce: 0, speedMul: 0.8, fall: { start: 110, end: 440, near: 1.7, far: 0.25 } },
   /** Needler: very fast, narrow, thin deep tunnels. */
   needle: { rateMul: 2.4, damageMul: 0.42, projectiles: 1, spreadDeg: 0, jitterDeg: 0.6, pierce: 0.35, speedMul: 1.25, shape: 'needle' as const },
-  /** Laser (campaign unlock): slow and heavy. 1.7 shots/s (8 x 0.2125) at 5.9x the chain gun's energy = 10 vs 8 units/s; measured +12% energy spent, +13% carved pixels, pierce 0.7 and a narrow deep carve. */
+  /** Pulse Orbs (empire ship main): the enemies' round pulse orb as a player weapon. Slow round shots at 1.1 units/s of energy (chain gun 1.0): 0.55 shots/s of chain rate x 2 damage, a shade slower than a bullet, round carve. */
+  pulse: { rateMul: 0.55, damageMul: 2, projectiles: 1, spreadDeg: 0, jitterDeg: 0, pierce: 0.15, speedMul: 0.55 },
+  /** Laser (stashed, campaign unlock): slow and heavy. 1.7 shots/s (8 x 0.2125) at 5.9x the chain gun's energy = 10 vs 8 units/s; measured +12% energy spent, +13% carved pixels, pierce 0.7 and a narrow deep carve. */
   laser: { rateMul: 0.2125, damageMul: 5.9, projectiles: 1, spreadDeg: 0, jitterDeg: 0, pierce: 0.7, speedMul: 1.7, shape: 'laser' as const },
 };

@@ -22,12 +22,27 @@ export interface UnlockSpec {
   desc?: string;
 }
 
-/** The "Fallen Peace" reward (chapter 7): the enemy ship, the Laser and the Energy Wave. Set `CampaignDefinition.unlocks` to this when chapter 7 exists. */
+/** The "Fallen Peace" reward for finishing the campaign with any medals: the enemy ship (with its own Pulse Orbs and Flak Burst on it). */
 export const FALLEN_PEACE_UNLOCKS: UnlockSpec[] = [
   { kind: 'ships', id: 'empire-fighter', name: 'Empire Fighter', desc: 'The captured empire ship: tougher, faster, and its guns hurt empire armour.' },
-  { kind: 'weapons', id: 'laser', name: 'Laser', desc: 'A new main weapon: a beam that cuts as long as you hold it on target.' },
-  { kind: 'weapons', id: 'energy-wave', name: 'Energy Wave', desc: 'A new aux weapon: a pulse that sweeps the screen and carves everything it crosses.' },
 ];
+
+/** The extra reward when EVERY chapter holds a gold medal: the two weapons of the empire ship, usable on any ship. (The Laser and Energy Wave are stashed for later.) */
+export const FALLEN_PEACE_GOLD_UNLOCKS: UnlockSpec[] = [
+  { kind: 'weapons', id: 'pulse-orb', name: 'Pulse Orbs', desc: 'A new main weapon: the enemy pulse orbs, turned around.' },
+  { kind: 'weapons', id: 'flak', name: 'Flak Burst', desc: 'A new aux weapon: one slow shell that bursts in a wide blast.' },
+];
+
+/** True when every level of the campaign has a gold medal in the save. */
+export function allGold(levelIds: readonly string[]): boolean {
+  return levelIds.length > 0 && levelIds.every((id) => saveStore.current.medals[id]?.best === 'gold');
+}
+
+/** What finishing a campaign unlocks: its `unlocks`, plus its `goldUnlocks` when every level is gold (read from the save: call after the last medal is stored). */
+export function campaignUnlockSpecs(c: { levels: readonly { id: string }[]; unlocks?: UnlockSpec[]; goldUnlocks?: UnlockSpec[] }, forceGold = false): UnlockSpec[] {
+  const gold = forceGold || allGold(c.levels.map((l) => l.id));
+  return [...(c.unlocks ?? []), ...(gold ? (c.goldUnlocks ?? []) : [])];
+}
 
 export interface UnlockItem {
   spec: UnlockSpec;
