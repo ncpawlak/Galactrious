@@ -18,7 +18,9 @@ import { COMMAND, COMMAND_SHIP_NAME, EMPIRE_CONTROL, SQUAD_LEADER, WINGMAN_1, WI
 import type { AssistSpec, Beat, CampaignLevel } from './types';
 
 /** The commandeered empire fighter with the campaign's preset loadout (no builder, no cards). */
-export const EMPIRE_SHIP = { id: 'empire-fighter', loadout: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] } };
+export const EMPIRE_SHIP = { id: 'empire-fighter', loadout: { main: 'laser', aux: ['wave', 'gauss', 'rocket'] }, power: { damage: 1.25, fireRate: 1.25 } };
+/** Chapter 7 only: the capital ship is the toughest thing in the campaign, so the guns hit much harder (measured, DESIGN.md). */
+export const FINALE_SHIP = { ...EMPIRE_SHIP, power: { damage: 2.2, fireRate: 1.25 } };
 
 const CHAPTER_6: CampaignLevel = {
   id: 'fp-6',
@@ -88,7 +90,7 @@ const CHAPTER_7: CampaignLevel = {
     'Your guns fire on the empire\'s own frequency, so for the first time its armour will give. Dig through it to the shield projector and the weapons control, destroy them, and take out the core. Delta cannot touch the armour: the squad covers you on a fixed schedule, so watch for the ASSIST INCOMING ring and use it.',
     'Named empire aces will hunt you the whole way. Stay alive.',
   ],
-  ship: EMPIRE_SHIP,
+  ship: FINALE_SHIP,
   // Three checkpointed phases (a death restarts only the current phase, with a full hull, from the capital ship as it was at the
   // phase start: each phase writes its end state to a snapshot slot and the next restores it). Chapter 1's snapshot starts phase 1.
   objectives: [

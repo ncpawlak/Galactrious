@@ -31,7 +31,7 @@ const LEVEL: CampaignLevel = {
     'You are flying the commandeered empire fighter. Its guns fire on the empire frequency: 8 seconds in, the armour becomes hittable. Dig to the core.',
     'The squad covers on a fixed timer you cannot change. Watch for the ASSIST INCOMING ring.',
   ],
-  ship: { id: 'empire-fighter', loadout: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] } },
+  ship: { id: 'empire-fighter', loadout: { main: 'laser', aux: ['wave', 'gauss', 'rocket'] } },
   objectives: [
     {
       id: 'finale',

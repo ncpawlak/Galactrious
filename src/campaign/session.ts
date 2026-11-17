@@ -26,7 +26,7 @@ import { addCounters, bonusAlive, bonusProgress, computeMedal, diffCounters, emp
 import { createObjective, type ObjectiveEnv, type ObjectiveHandler } from './objectives';
 import { loadSnapshot } from './snapshot';
 import { MEDAL_COLOR, MONO } from './ui';
-import type { Beat, BeatAction, CampaignDefinition, CampaignLevel, LevelCounters, LevelResult, Medal, SpawnSpec } from './types';
+import type { Beat, BeatAction, CampaignDefinition, CampaignLevel, LevelCounters, LevelResult, Medal, ShipPower, SpawnSpec } from './types';
 
 const SUBTITLE_SECONDS = 4;
 const BANNER_SECONDS = 2.6;
@@ -78,7 +78,7 @@ export class CampaignSession {
   private completed: LevelCounters = emptyCounters();
   private attemptBase: CombatCounters = { kills: 0, hits: 0, damage: 0, roomsDestroyed: 0, killsByTag: {} };
   private attemptExtra: LevelCounters = emptyCounters();
-  private ship: { id: string; loadout?: { main: string; aux: string[] } };
+  private ship: { id: string; loadout?: { main: string; aux: string[] }; power?: ShipPower };
   private forced = false;
   private pendingJump: string | null = null;
   private pendingComplete = false;
@@ -138,7 +138,7 @@ export class CampaignSession {
   }
 
   private applyShip(): void {
-    this.host.setShip(this.ship.id, this.ship.loadout);
+    this.host.setShip(this.ship.id, this.ship.loadout, this.ship.power);
   }
 
   private startObjective(i: number, how: 'first' | 'advance' | 'restart'): void {
@@ -226,7 +226,7 @@ export class CampaignSession {
     }
   }
 
-  private checkpointShip!: { id: string; loadout?: { main: string; aux: string[] } };
+  private checkpointShip!: { id: string; loadout?: { main: string; aux: string[] }; power?: ShipPower };
 
   private spawn(s: SpawnSpec): void {
     if ('wave' in s) {
@@ -254,8 +254,8 @@ export class CampaignSession {
         this.host.setWeaponsLocked(a.locked ?? true);
         break;
       case 'setShip':
-        this.ship = { id: a.ship, loadout: a.loadout };
-        this.host.setShip(a.ship, a.loadout);
+        this.ship = { id: a.ship, loadout: a.loadout, power: a.power };
+        this.host.setShip(a.ship, a.loadout, a.power);
         break;
       case 'spawn':
         this.spawn(a.spawn);
