@@ -21,8 +21,8 @@ export interface CarveShape {
 /** Named shapes. `default` is the base gun (TUNING.carve); the others belong to the weapons (src/weapons.ts). */
 export const CARVE_SHAPES = {
   default: TUNING.carve as CarveShape,
-  /** Gauss cannon: a long, thin shaft. */
-  narrow: { lateralPenalty: 5, backPenalty: 2.5, reach: 120 } as CarveShape,
+  /** Gauss cannon: a long shaft, a bit thicker than a gun hit. */
+  narrow: { lateralPenalty: 3.4, backPenalty: 2.5, reach: 100 } as CarveShape,
   /** Arc missile: a round, medium crater whatever direction it arrives from. */
   round: { lateralPenalty: 1, backPenalty: 1, reach: 24 } as CarveShape,
 };

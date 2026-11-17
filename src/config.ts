@@ -6,7 +6,7 @@ export const H = 960;
 export const TUNING = {
   densities: { hull: 3.1, frame: 0.8, rooms: 1.5 },
   /** Starting ship stats (live-adjustable with the debug keys). */
-  ship: { damage: 90, fireRate: 12 },
+  ship: { damage: 90, fireRate: 8 },
   /** Debug test-mode preset (toggle with [Y]): the fast values from PR #21, for quick iteration. */
   testMode: { damage: 450, fireRate: 30 },
   coreHp: 8000,
@@ -113,15 +113,15 @@ export function setBlastScale(v: number): number {
 export const WEAPONS = {
   /** Global multiplier on every cooldown (debug keys `,` and `.`). */
   cooldownScale: 1,
-  /** Gauss cannon: one fast shot straight up. Keeps most of its energy through layers and components, drills a long, thin shaft. */
-  gauss: { cooldown: 5, energy: 1400, pierce: 0.9, shape: 'narrow' as const, speed: 2600 },
+  /** Gauss cannon: one fast shot straight up. Keeps most of its energy through layers and components, drills a long shaft. */
+  gauss: { cooldown: 5, energy: 1400, pierce: 0.85, shape: 'narrow' as const, speed: 2600 },
   /** Rocket: one shot straight up. Detonates on the first solid pixel or component; the crater is a boss blast (`blast`, scaled by BLAST.scale). */
   rocket: {
     cooldown: 6,
     speed: 260,
     maxSpeed: 900,
     accel: 1500,
-    blast: { radius: 70, energy: 1500, damage: 40, coreDamage: 40, falloff: 1 },
+    blast: { radius: 88, energy: 1500, damage: 40, coreDamage: 40, falloff: 1 },
   },
   /** Arc missiles: a pair sideways, then random curved paths to a random solid spot of the boss (boss-local, follows its motion). */
   arc: {
