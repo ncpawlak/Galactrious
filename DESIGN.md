@@ -452,3 +452,10 @@ Delivery in three slices: **slice 1 = chapters 1 to 3**, slice 2 = chapters 4 an
 
 ### Open
 Final boss design (chapter 7); the enemy ship's name, stats and preset loadout; story text; per-chapter medal thresholds (authored once the levels exist); how many dogfight waves chapters 1 and 2 have; names for the pilot and the squad.
+
+### The enemy empire (cohesive faction design)
+The campaign fights one enemy empire, so **every enemy unit, turret, wall, the capital ship and the final boss must read as one faction**, and the commandeered enemy ship (chapter 4) and the unlocked enemy ship must clearly belong to it. This is a faction kit, not a per-enemy decision:
+- **Faction data.** Units and bosses get a `faction` (e.g. `'empire'`) with a shared kit: a palette (hull, frame, glow), silhouette rules (a shared shape language, e.g. angular and forward-swept with a repeating insignia or stripe motif), a core colour, a weapon/projectile colour family and component styles (turret housings, console lights). Paint helpers (`src/bosses/paint.ts`) take the kit, so new enemies inherit the look.
+- **Roster.** The campaign defines an empire roster of small, big and capital units (fighters, gunships, walls, ground turrets, the capital ship, the final boss), designed together as one family: same materials, same colour language, consistent scale steps from fighter to capital ship. The player's squad (Delta) uses a clearly different palette so friend and foe read instantly.
+- **The commandeered ship** is a member of the roster (a hero version of the fighter), so the player visibly flies a ship that matches the enemy fighters (which is why the squad is in disbelief).
+- **Endless** may keep the generic units, or later use factions as themes; faction kits are data, so a second faction is a new kit and roster.
