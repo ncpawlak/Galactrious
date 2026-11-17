@@ -6,7 +6,7 @@
  */
 import { H, W } from '../config';
 import type { NodeHost } from '../flow/node';
-import type { BossFightObjective, DestroyObjective, EscapeObjective, ObjectiveDefinition, ObjectiveType, ReachObjective, SurviveObjective, Zone } from './types';
+import type { BossFightObjective, DestroyObjective, EscapeObjective, ObjectiveDefinition, ObjectiveType, ReachObjective, ScrollObjective, SurviveObjective, Zone } from './types';
 
 export interface ObjectiveEnv {
   host: NodeHost;
@@ -174,10 +174,16 @@ class EscapeHandler implements ObjectiveHandler {
     return c.fromY + (c.toY - c.fromY) * Math.min(1, t / c.seconds);
   }
 
+  /** True once the exit is open (always, unless a scroll distance gates it). */
+  private open(env: ObjectiveEnv): boolean {
+    const d = this.def.exitAtDistance;
+    return d === undefined || (env.host.scroll()?.distance ?? 0) >= d;
+  }
+
   update(_dt: number, env: ObjectiveEnv): void {
     if (this.done || !env.host.shipAlive()) return;
     const s = env.host.ship;
-    if (inZone(this.def.exit, s.x, s.y)) {
+    if (this.open(env) && inZone(this.def.exit, s.x, s.y)) {
       this.done = true;
       return;
     }
@@ -192,11 +198,21 @@ class EscapeHandler implements ObjectiveHandler {
 
   hint(env: ObjectiveEnv): string {
     const t = this.def.timer;
-    return t !== undefined ? `ESCAPE: ${Math.max(0, t - env.time).toFixed(1)}s` : 'ESCAPE';
+    const left = t !== undefined ? ` ${Math.max(0, t - env.time).toFixed(0)}s` : '';
+    return this.open(env) ? `REACH THE EXIT!${left}` : `ESCAPE: the exit opens ahead${left}`;
   }
 
   draw(g: CanvasRenderingContext2D, env: ObjectiveEnv): void {
-    drawZone(g, this.def.exit, '#4ade80', env.time, 0.14);
+    if (this.open(env)) {
+      drawZone(g, this.def.exit, '#4ade80', env.time, 0.14);
+      const c = zoneCenter(this.def.exit);
+      g.save();
+      g.fillStyle = '#4ade80';
+      g.font = 'bold 14px ui-monospace, Consolas, monospace';
+      g.textAlign = 'center';
+      g.fillText('EXIT', c.x, c.y + 5);
+      g.restore();
+    }
     const w = this.wallY(env.time);
     if (w !== null) {
       g.save();
@@ -241,6 +257,38 @@ class BossFightHandler implements ObjectiveHandler {
   draw(): void {}
 }
 
+// --- scroll ---------------------------------------------------------------------------------------------
+
+class ScrollHandler implements ObjectiveHandler {
+  private pct = 0;
+  private done = false;
+
+  constructor(_def: ScrollObjective) {}
+
+  start(): void {
+    this.pct = 0;
+    this.done = false;
+  }
+
+  update(_dt: number, env: ObjectiveEnv): void {
+    const r = env.host.scroll();
+    if (!r) return;
+    const len = (r as { def?: { length: number } }).def?.length ?? 1;
+    this.pct = Math.min(1, r.distance / len);
+    this.done = r.done;
+  }
+
+  isDone(): boolean {
+    return this.done;
+  }
+
+  hint(): string {
+    return `FLY ON: ${Math.round(this.pct * 100)}%`;
+  }
+
+  draw(): void {}
+}
+
 // --- registry -------------------------------------------------------------------------------------------
 
 type Factories = { [K in ObjectiveType]: (def: Extract<ObjectiveDefinition, { type: K }>) => ObjectiveHandler };
@@ -251,6 +299,7 @@ export const OBJECTIVE_FACTORIES: Factories = {
   survive: (d) => new SurviveHandler(d),
   escape: (d) => new EscapeHandler(d),
   bossFight: (d) => new BossFightHandler(d),
+  scroll: (d) => new ScrollHandler(d),
 };
 
 export function createObjective(def: ObjectiveDefinition): ObjectiveHandler {

@@ -24,6 +24,8 @@ export interface UnitDefinition {
   /** Builds the layered masks and core (called per spawned unit, since carving mutates them). */
   layout: () => BossSpec;
   mirror?: boolean;
+  /** Faction kit id (`src/factions.ts`): paints turrets and the core in the faction's colours. */
+  faction?: string;
   components?: ComponentSpec[];
   /** One small room (catalog function, see src/roomFunctions.ts): its consoles are embedded in the last layer, so you dig to them. Big units only. */
   rooms?: RoomSpec[];
@@ -47,6 +49,11 @@ export interface UnitPlacement {
   entrance?: (u: number) => Point;
   /** Seconds the entrance takes. */
   entranceTime?: number;
+  /**
+   * A FLYBY: the unit flies `path` (screen-space centre, u = 0..1) over `time` s, shooting as it goes, and is then removed
+   * (it left the screen: not a kill). Overrides the entrance, hold and dives; the slot is only the reference point.
+   */
+  flyby?: { path: (u: number) => Point; time: number };
   /** Optional dives out of the slot: after `first` s of holding, every `every` s fly `path` (relative to the slot) over `time` s and return. */
   dive?: { first: number; every: number; time: number; path: (u: number) => Point };
 }
@@ -55,6 +62,16 @@ const smooth = (u: number): number => { const c = Math.min(1, Math.max(0, u)); r
 
 /** Entrance, then idle in the slot with optional dives, as one `Movement` (offsets from the slot centre; t = seconds since spawn). */
 function placementMovement(def: UnitDefinition, p: UnitPlacement): Movement {
+  const fb = p.flyby;
+  if (fb) {
+    return {
+      name: 'flyby',
+      at: (t) => {
+        const q = fb.path(Math.min(1, t / fb.time));
+        return { x: q.x - p.slot.x, y: q.y - p.slot.y };
+      },
+    };
+  }
   const hold = def.hold ?? still;
   const eT = p.entrance ? (p.entranceTime ?? 2) : 0;
   const d = p.dive;
@@ -94,6 +111,7 @@ export function toBossDefinition(def: UnitDefinition, p: UnitPlacement, attackDe
     mirror: def.mirror,
     components: def.components,
     rooms: def.rooms,
+    faction: def.faction,
     coreArmor: def.coreArmor ?? { min: 1 },
     phases: [{ name: 'unit', movement: placementMovement(def, p), attacks: def.attacks, attackDelay: eT + attackDelay }],
   };
@@ -111,6 +129,9 @@ export class Unit {
   dyingFor = 0;
   /** True once removed from play (the system drops it next frame). */
   gone = false;
+  /** Seconds since it spawned; a flyby is removed when it reaches `lifetime`. */
+  age = 0;
+  readonly lifetime: number | null;
   /** Campaign tag it was spawned with (objectives and bonus rules address units by it). */
   tag?: string;
   private readonly deathFraction: number;
@@ -122,6 +143,7 @@ export class Unit {
     ship: Point,
   ) {
     const { def: bd } = toBossDefinition(def, placement, (def.attackDelay ?? 1) + jitter);
+    this.lifetime = placement.flyby ? placement.flyby.time : null;
     this.fight = new BossFight(bd);
     this.fight.components.target = ship;
     this.sched = this.fight.makeScheduler();
@@ -198,7 +220,7 @@ export class UnitSystem {
   /** Spawn now. */
   spawn(def: UnitDefinition, placement: UnitPlacement, tag?: string): Unit {
     const jitter = ((this.counter++ * 0.6180339887) % 1) * 1.4;
-    const u = new Unit(def, placement, jitter, this.ship);
+    const u = new Unit(def, placement, placement.flyby ? jitter * 0.15 : jitter, this.ship);
     u.tag = tag;
     u.fight.components.debug = this.debug;
     u.fight.rooms.host = this.roomHost;
@@ -237,12 +259,22 @@ export class UnitSystem {
     }
     for (const u of this.units) {
       u.fight.update(dt);
+      u.age += dt;
+      if (u.lifetime !== null && u.age >= u.lifetime) {
+        u.gone = true; // a flyby that left the screen
+        continue;
+      }
       if (u.state === 'dying') {
         u.dyingFor += dt;
         if (u.dyingFor >= u.dyingTime) u.gone = true;
         continue;
       }
       if (!firing) continue;
+      // A flyby only shoots while it is on screen.
+      if (u.lifetime !== null) {
+        const c = u.center();
+        if (c.x < -10 || c.x > 550 || c.y < -10 || c.y > 970) continue;
+      }
       const p = u.sched.update(dt);
       if (!p) continue;
       const src = u.sched.lastSource;

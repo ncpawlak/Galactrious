@@ -1,3 +1,4 @@
+import type { FlybyPreset } from '../enemies/flyby';
 import type { WaveDefinition } from '../waves';
 
 /**
@@ -58,6 +59,8 @@ export interface ObstacleField {
   motions?: MotionPreset[];
   /** Keep this screen-x band free of obstacle centres, so the ship always has a lane (optional). */
   lane?: { x: number; width: number };
+  /** Make the lane meander: its centre moves `amp` px either side of `lane.x` over `period` px of scroll. The lane is kept free of obstacle bodies, not just centres. */
+  laneDrift?: { amp: number; period: number };
   seed?: number;
   carvable?: boolean;
 }
@@ -69,6 +72,12 @@ export type ScrollEntry =
   | ObstacleField
   /** One unit of the unit catalogue (src/enemies) entering from above. */
   | { at: number; kind: 'unit'; unit: string; x: number; y?: number }
+  /**
+   * A flyby (src/enemies/flyby.ts): `count` units pass the player on the `preset` path, shooting, and leave. `spacing` = seconds
+   * between units (default 0.35); `x` is the lane (strafe, rear, drift), `y` the height of a cross pass; `side` the side it
+   * enters from, with `alternate: true` successive units use opposite sides.
+   */
+  | { at: number; kind: 'flyby'; unit: string; preset: FlybyPreset; x?: number; y?: number; side?: 'left' | 'right'; count?: number; spacing?: number; alternate?: boolean; xStep?: number; time?: number }
   /** A wave (id from `WAVE_LIST` or a definition), spawned as in a wave node. */
   | { at: number; kind: 'wave'; wave: WaveDefinition | string }
   /** Start a boss fight (a `BossDefinition` id) on top of the scroll (e.g. 'capital-ship'). */
@@ -170,6 +179,7 @@ export interface ScrollHost {
   /** The player ship position. */
   readonly ship: { x: number; y: number };
   spawnUnit(unitId: string, x: number, y: number): void;
+  spawnFlyby(req: import('../enemies/flyby').FlybyRequest): void;
   spawnWave(wave: WaveDefinition | string): void;
   spawnBoss(bossId: string): void;
   setWeaponsLocked(locked: boolean): void;

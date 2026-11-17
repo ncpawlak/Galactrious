@@ -1,7 +1,7 @@
 import { W } from '../config';
 import { AllySystem } from './allies';
 import { ScrollBackground } from './background';
-import { mulberry32, ObstacleSystem } from './obstacles';
+import { mulberry32, ObstacleSystem, SIZES } from './obstacles';
 import type { MotionPreset, ObstacleField, ObstacleSpawn, ScrollEntry, ScrollEvent, ScrollHost, ScrollLevelDef, ScrollRunner } from './types';
 
 /** Expand every `field` into individual obstacle spawns (deterministic per seed) and sort the timeline by distance. */
@@ -26,15 +26,30 @@ export function compileTimeline(entries: ScrollEntry[]): Exclude<ScrollEntry, Ob
           break;
         }
       }
-      let x = 30 + rnd() * (W - 60);
-      if (e.lane) {
-        // Push centres out of the free lane.
-        const half = e.lane.width / 2;
-        if (Math.abs(x - e.lane.x) < half) x = x < e.lane.x ? e.lane.x - half - rnd() * 40 : e.lane.x + half + rnd() * 40;
-        x = Math.min(W - 10, Math.max(10, x));
-      }
       // Spread entries evenly with a little jitter so the field does not clump.
       const at = e.at + ((i + 0.2 + rnd() * 0.6) / n) * (e.to - e.at);
+      let x = 30 + rnd() * (W - 60);
+      if (e.lane) {
+        // Keep the lane free of obstacle BODIES (the centre stays out by half the lane plus half the shape's width), so a corridor
+        // always exists. `laneDrift` makes the corridor meander left and right with the distance.
+        // A tall shape covers a stretch of the winding lane (it spans `h` px of scroll), so it must clear the lane over all of it.
+        const laneAt = (d: number): number => e.lane!.x + (e.laneDrift ? e.laneDrift.amp * Math.sin(((d - e.at) / e.laneDrift.period) * Math.PI * 2) : 0);
+        let minL = Infinity;
+        let maxL = -Infinity;
+        for (let k = 0; k <= 6; k++) {
+          const l = laneAt(at + (k / 6) * SIZES[shape].h);
+          minL = Math.min(minL, l);
+          maxL = Math.max(maxL, l);
+        }
+        const body = SIZES[shape].w * (shape.startsWith('peak') ? 0.52 : 0.72) * (1 + 0.1 * rnd());
+        const half = e.lane.width / 2 + body;
+        if (x > minL - half && x < maxL + half) {
+          const leftX = minL - half - rnd() * 30;
+          const rightX = maxL + half + rnd() * 30;
+          x = Math.abs(x - leftX) < Math.abs(x - rightX) ? leftX : rightX;
+        }
+        x = Math.min(W + 60, Math.max(-60, x));
+      }
       out.push({ at, kind: 'obstacle', shape, x, motion: motions[Math.floor(rnd() * motions.length)], carvable: e.carvable, seed: Math.floor(rnd() * 1e6) });
     }
   }
@@ -168,6 +183,14 @@ export class ScrollRunnerImpl implements ScrollRunner {
       case 'unit':
         this.host.spawnUnit(e.unit, e.x, e.y ?? 150);
         break;
+      case 'flyby': {
+        const n = e.count ?? 1;
+        for (let k = 0; k < n; k++) {
+          const side = e.alternate ? (((e.side ?? 'left') === 'left') === (k % 2 === 0) ? 'left' : 'right') : e.side;
+          this.host.spawnFlyby({ unit: e.unit, preset: e.preset, x: e.x === undefined ? undefined : e.x + k * (e.xStep ?? 0), y: e.y, side, time: e.time, delay: k * (e.spacing ?? 0.35) });
+        }
+        break;
+      }
       case 'wave':
         this.host.spawnWave(e.wave);
         break;

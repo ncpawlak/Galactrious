@@ -25,12 +25,13 @@ import { RewardNode } from './flow/nodes/reward';
 import type { FlowNode, NodeContext } from './flow/node';
 import { Loadout } from './upgrades/stats';
 import { AUX_DEFS, AUX_KEYS, MAIN_DEFS, WEAPON_DEFS, Sweep, WeaponSystem, auxById, effectiveMain, mainById, nearBox, type AuxDef, type Combatant } from './weapons';
-import { drawShipLook, shipById, shipMinY, SHIPS } from './ships';
+import { drawShipLook, SHIP_BY_ID, shipById, shipMinY, SHIPS } from './ships';
 import { cleanLoadout } from './loadouts';
 import { UnitSystem, type Unit } from './units';
 import { divePath, spawnWave, type WaveDefinition } from './waves';
 import type { RoomHost } from './rooms';
 import { UNIT_LIST, WAVE_LIST, unitById } from './enemies';
+import { flybyPlacement, type FlybyRequest } from './enemies/flyby';
 import { SCROLL_LEVELS, ScrollRunnerImpl, scrollLevelById, type ScrollHost, type ScrollLevelDef } from './scroll';
 
 export interface ShipStats {
@@ -148,6 +149,7 @@ export class Game {
   private readonly scrollHost: ScrollHost = {
     ship: this.ship,
     spawnUnit: (id, x, y) => this.spawnDebugUnit(id, x, y),
+    spawnFlyby: (r) => this.spawnFlyby(r),
     spawnWave: (w) => this.spawnDebugWave(w),
     spawnBoss: (id) => this.activateBoss(id),
     setWeaponsLocked: (on) => this.setWeaponsLocked(on),
@@ -427,6 +429,11 @@ export class Game {
     this.combat = true;
   }
 
+  /** A flyby unit (src/enemies/flyby.ts): queued like a campaign spawn, removed by the unit system when its pass ends. */
+  private spawnFlyby(r: FlybyRequest): void {
+    this.units.queue({ at: this.units.time + (r.delay ?? 0), def: unitById(r.unit), placement: flybyPlacement(r), tag: r.tag });
+  }
+
   private spawnCampaignUnit(r: { unit: string; x: number; y: number; tag?: string; delay?: number }): void {
     const def = unitById(r.unit);
     const slot = { x: r.x, y: r.y };
@@ -661,7 +668,7 @@ export class Game {
   }
 
   private setShip(id: string): void {
-    if (!SHIPS.some((s) => s.id === id)) throw new Error(`unknown ship "${id}" (${SHIPS.map((s) => s.id).join(', ')})`);
+    if (!SHIP_BY_ID.has(id)) throw new Error(`unknown ship "${id}" (${[...SHIP_BY_ID.keys()].join(', ')})`);
     this.run.select(id);
     this.afterLoadoutChange();
   }

@@ -233,6 +233,8 @@ export class ComponentSystem implements SourceGate {
   target: Point = { x: 270, y: 800 };
   /** Debug: draw hit areas and ids. */
   debug = false;
+  /** Faction look of the turrets (housing, rim, barrel colours; `src/factions.ts`). Omitted = the generic steel turret. */
+  style: { housing: string; rim: string; barrel: string; light: string } | null = null;
   /** Extra debug drawing (the room system adds room and exposure info). */
   extraDebug: ((ctx: CanvasRenderingContext2D) => void) | null = null;
   /** Core vulnerability, 0..1 (set by BossFight): blast damage to the core is scaled by it. */
@@ -773,22 +775,23 @@ export class ComponentSystem implements SourceGate {
     ctx.globalAlpha *= dim;
 
     if (c.spec.type === 'turret') {
-      ctx.fillStyle = '#2f3544';
-      ctx.strokeStyle = '#9aa6bd';
+      const st = this.style;
+      ctx.fillStyle = st ? st.housing : '#2f3544';
+      ctx.strokeStyle = st ? st.rim : '#9aa6bd';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = '#434c61';
+      ctx.fillStyle = st ? st.light : '#434c61';
       ctx.beginPath();
       ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2);
       ctx.fill();
       ctx.save();
       ctx.rotate(c.angle);
-      ctx.fillStyle = '#c3cad8';
+      ctx.fillStyle = st ? st.barrel : '#c3cad8';
       ctx.fillRect(0, -r * 0.2, r * 1.15, r * 0.4);
-      ctx.fillStyle = '#6b7690';
+      ctx.fillStyle = st ? st.housing : '#6b7690';
       ctx.fillRect(r * 0.9, -r * 0.3, r * 0.3, r * 0.6);
       if (c.muzzle > 0) {
         ctx.fillStyle = '#fff0a0';

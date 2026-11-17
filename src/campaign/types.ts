@@ -3,6 +3,7 @@
  * of levels, a level is a preset ship + a sequence of objectives + medal rules. The runtime is `session.ts`.
  */
 import type { Medal, UnlockKind } from '../save';
+import type { ScrollLevelDef } from '../scroll/types';
 
 export type { Medal };
 
@@ -42,6 +43,11 @@ interface ObjectiveBase {
   beats?: Beat[];
   /** Weapons locked from the start of the objective (chapter 3). */
   weaponsLocked?: boolean;
+  /**
+   * Run the objective over a scrolling level (id in `SCROLL_LEVELS` or an inline definition): background, obstacles, allies,
+   * flybys and the distance timeline. Restarts with the objective. A closed screen with allies is a slow scroll that never ends.
+   */
+  scroll?: string | ScrollLevelDef;
 }
 
 /** What a `destroy` objective waits for: every unit with this tag or def id, or one component / room of the running boss by id. */
@@ -68,6 +74,8 @@ export interface SurviveObjective extends ObjectiveBase {
 export interface EscapeObjective extends ObjectiveBase {
   type: 'escape';
   exit: Zone;
+  /** Scrolling levels: the exit is only open (drawn, reachable) once the scroll distance reaches this many px. Omitted = open from the start. */
+  exitAtDistance?: number;
   /** Reach the exit within this many seconds or the attempt fails (restarts the objective, counts as a death). */
   timer?: number;
   /** A wall of fire that sweeps up (y shrinks) from `fromY` to `toY` over `seconds`; the ship below it fails the attempt. */
@@ -85,7 +93,12 @@ export interface BossFightObjective extends ObjectiveBase {
   restoreSlot?: string;
 }
 
-export type ObjectiveDefinition = DestroyObjective | ReachObjective | SurviveObjective | EscapeObjective | BossFightObjective;
+/** Fly the scrolling level to its end (`scroll` on the objective is required): done when the distance reaches the level's length. Chapter 3. */
+export interface ScrollObjective extends ObjectiveBase {
+  type: 'scroll';
+}
+
+export type ObjectiveDefinition = ScrollObjective | DestroyObjective | ReachObjective | SurviveObjective | EscapeObjective | BossFightObjective;
 export type ObjectiveType = ObjectiveDefinition['type'];
 
 /** Per-attempt counters the bonus criteria read (see session.ts). */

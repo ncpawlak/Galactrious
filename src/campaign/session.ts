@@ -32,6 +32,20 @@ interface Subtitle {
   max: number;
 }
 
+/** Greedy word wrap to `max` characters per line. */
+function wrapLine(text: string, max: number): string[] {
+  const out: string[] = [];
+  let cur = '';
+  for (const w of text.split(' ')) {
+    if (cur && (cur + ' ' + w).length > max) {
+      out.push(cur);
+      cur = w;
+    } else cur = cur ? cur + ' ' + w : w;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 export class CampaignSession {
   /** Level time in seconds: runs from the first update, through deaths, until the level ends. */
   time = 0;
@@ -127,8 +141,9 @@ export class CampaignSession {
       const snap = loadSnapshot(def.restoreSlot);
       if (snap && snap.bossId === def.bossId) restore = snap;
     }
-    this.host.startCombat({ bossId: def.type === 'bossFight' ? def.bossId : undefined, keepHealth, restore });
-    this.host.setWeaponsLocked(!!def.weaponsLocked);
+    this.host.startCombat({ bossId: def.type === 'bossFight' ? def.bossId : undefined, keepHealth, restore, scroll: def.scroll });
+    // startCombat unlocks the weapons; a scroll level may lock them itself, so only ever lock here.
+    if (def.weaponsLocked) this.host.setWeaponsLocked(true);
     this.objTime = 0;
     const live = this.host.counters();
     this.attemptBase = { ...live, killsByTag: { ...live.killsByTag } };
@@ -324,19 +339,22 @@ export class CampaignSession {
       g.font = `bold 20px ${MONO}`;
       g.fillText(this.note.text, W / 2, 420);
     }
-    // Subtitles.
-    this.subtitles.forEach((s, i) => {
-      const y = 170 + i * 46;
+    // Subtitles: wrapped to two lines.
+    let sy = 170;
+    for (const s of this.subtitles) {
+      const line = s.speaker ? `${s.speaker}: ${s.text}` : s.text;
+      const lines = wrapLine(line, 54).slice(0, 3);
+      const h = 14 + lines.length * 18;
       g.globalAlpha = Math.min(1, s.left / 0.5);
       g.fillStyle = 'rgba(5, 6, 13, 0.8)';
-      g.fillRect(30, y - 18, W - 60, 40);
+      g.fillRect(30, sy - 14, W - 60, h);
       g.textAlign = 'left';
       g.font = `14px ${MONO}`;
       g.fillStyle = '#ffffff';
-      const line = s.speaker ? `${s.speaker}: ${s.text}` : s.text;
-      g.fillText(line.length > 56 ? line.slice(0, 55) + '…' : line, 40, y + 6);
+      lines.forEach((l, i) => g.fillText(l, 40, sy + 4 + i * 18));
       g.globalAlpha = 1;
-    });
+      sy += h + 6;
+    }
     g.restore();
     void H;
   }
