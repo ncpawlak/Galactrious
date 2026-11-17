@@ -34,10 +34,15 @@ export interface ObstacleMotion {
    * does (debris that is falling faster than the ship overtakes it from below, chapter 3).
    */
   rise?: number;
+  /**
+   * Screen-space sideways speed in px/s (magnitude; the direction is away from the entry edge): a left or right entry sweeps all the way
+   * across the screen instead of sliding in and stopping, drifting down slowly with the scroll. Chapter 3's debris.
+   */
+  cross?: number;
 }
 
 /** Named motion presets for authoring. */
-export type MotionPreset = 'straight' | 'drift-l' | 'drift-r' | 'tumble' | 'fast' | 'weave' | 'rise' | 'rise-fast' | 'rise-tumble';
+export type MotionPreset = 'straight' | 'drift-l' | 'drift-r' | 'tumble' | 'fast' | 'weave' | 'rise' | 'rise-fast' | 'rise-tumble' | 'cross' | 'cross-fast' | 'cross-tumble';
 
 export interface ObstacleSpawn {
   at: number;
@@ -79,7 +84,8 @@ export interface ObstacleField {
    * Where the field's obstacles enter (default 'top'). 'bottom' = up from below, 'sides' = alternating left and right edges (the
    * `x` is then the inset from that edge), or a weighted mix: `[{ edge: 'top', weight: 2 }, { edge: 'bottom' }]`.
    */
-  edge?: 'top' | 'bottom' | 'sides' | { edge: 'top' | 'bottom' | 'sides'; weight?: number }[];
+  edge?: 'top' | 'bottom' | 'sides' | 'cross' | { edge: 'top' | 'bottom' | 'sides' | 'cross'; weight?: number }[];
+  /** With `edge: 'cross'` (or a mix containing it): the obstacle enters from a random side at a random height from `yMin` to `yMax` (default 180 to 880) and sweeps across (use the `cross` motions). */
   /** Keep this screen-x band free of obstacle centres, so the ship always has a lane (optional). */
   lane?: { x: number; width: number };
   /** Make the lane meander: its centre moves `amp` px either side of `lane.x` over `period` px of scroll. The lane is kept free of obstacle bodies, not just centres. */

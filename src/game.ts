@@ -29,9 +29,9 @@ import { Loadout } from './upgrades/stats';
 import { AUX_DEFS, AUX_KEYS, MAIN_DEFS, WEAPON_DEFS, Sweep, WeaponSystem, auxById, effectiveMain, mainById, nearBox, type AuxDef, type Combatant } from './weapons';
 import { drawShipLook, SHIP_BY_ID, shipById, shipMinY, SHIPS } from './ships';
 import { cleanLoadout } from './loadouts';
-import { UnitSystem, type Unit } from './units';
+import { Unit, UnitSystem } from './units';
 import { FinaleSystem } from './finale/system';
-import type { AssistSpec } from './finale/assists';
+import type { AssistSpec, AssistTarget } from './finale/assists';
 import { finaleSelfTest } from './finale/selfTest';
 import { ACE_UNITS } from './enemies/empireAces';
 import { divePath, spawnWave, type WaveDefinition } from './waves';
@@ -139,7 +139,8 @@ export class Game {
       }
       return n;
     },
-    hitAt: (x, y, r, e) => this.assistHit(x, y, r, e),
+    targets: () => this.assistTargets(),
+    strike: (t, e) => this.assistStrike(t, e),
     blast: (x, y, size) => {
       this.explode(x, y, size);
       this.fx.onComponentDestroy(size);
@@ -233,6 +234,8 @@ export class Game {
   /** Ship height under the autopilot (default H - 140); `game.debug.setAutoY` moves it for range measurements. */
   private autoY = H - 140;
   private testMode = false;
+  /** Campaign-scoped weapon tuning of the current level's ship (multipliers on the base damage / fire rate); 1 outside the campaign. */
+  private shipPower = { damage: 1, fireRate: 1 };
   private readonly fx = new Effects();
   private readonly sfx = new Sfx();
   /** Debug text/panel: off in the normal run, on in `?mode=boss` or with `?debug`. [`] toggles it live. */
@@ -377,9 +380,11 @@ export class Game {
       counters: () => this.combatCounters,
       forceDestroyPlayer: () => this.forceDestroyPlayer(),
       setWeaponsLocked: (on) => this.setWeaponsLocked(on),
-      setShip: (id, loadout) => {
+      setShip: (id, loadout, power) => {
         this.setShip(id);
         if (loadout) this.setLoadout(loadout);
+        this.shipPower = power ?? { damage: 1, fireRate: 1 };
+        this.setTestMode(this.testMode);
       },
       shipAlive: () => this.state === 'playing',
       bossTarget: (kind, id) => this.bossTarget(kind, id),
@@ -869,6 +874,8 @@ export class Game {
   }
 
   private setShip(id: string): void {
+    this.shipPower = { damage: 1, fireRate: 1 }; // campaign power is set after, by the campaign host's setShip
+    this.setTestMode(this.testMode);
     if (!SHIP_BY_ID.has(id)) throw new Error(`unknown ship "${id}" (${[...SHIP_BY_ID.keys()].join(', ')})`);
     this.run.select(id);
     this.afterLoadoutChange();
@@ -910,8 +917,8 @@ export class Game {
   private setTestMode(on: boolean): void {
     this.testMode = on;
     const p = on ? TUNING.testMode : TUNING.ship;
-    this.stats.damage = p.damage;
-    this.stats.fireRate = p.fireRate;
+    this.stats.damage = p.damage * this.shipPower.damage;
+    this.stats.fireRate = p.fireRate * this.shipPower.fireRate;
   }
 
   private readonly hud = new Hud();
@@ -1225,6 +1232,10 @@ export class Game {
 
   private update(dt: number): void {
     this.elapsed += dt;
+    if (this.run.phase !== 'campaign' && (this.shipPower.damage !== 1 || this.shipPower.fireRate !== 1)) {
+      this.shipPower = { damage: 1, fireRate: 1 }; // left the campaign: the ship tuning goes with it
+      this.setTestMode(this.testMode);
+    }
     for (const s of this.scroll ? [] : this.stars) {
       s.y += s.speed * dt;
       if (s.y > H) {
@@ -1298,13 +1309,49 @@ export class Game {
    * A squad assist hit at (x, y): enemy units take it like a shot (carve, components), the boss only has its gun housings hit. Never a
    * boss layer, so armour is unaffected whatever its state.
    */
-  private assistHit(x: number, y: number, r: number, energy: number): void {
+  /** What a squad strafing run may hit: live enemy units, and the boss's gun housings and room consoles that are currently exposed. */
+  private assistTargets(): AssistTarget[] {
+    const out: AssistTarget[] = [];
     for (const u of this.units.units) {
-      if (u.state !== 'alive' || !nearBox(u.fight.boss, x, y, r)) continue;
-      if (u.fight.components.hit(x, y, energy)) continue;
-      this.carveAt(u.fight, x, y, energy, 'default');
+      if (u.state !== 'alive' || u.def.ground || u.leaving !== null) continue;
+      out.push({ kind: 'unit', pos: () => (u.state === 'alive' ? u.center() : null), ref: u });
     }
-    if (this.bossActive && !this.boss.defeated && nearBox(this.boss, x, y, r)) this.fight.components.hit(x, y, energy);
+    if (this.bossActive && !this.boss.defeated) {
+      const cs = this.fight.components;
+      for (const c of cs.items) {
+        if (c.spec.type !== 'turret' && c.spec.type !== 'console') continue;
+        out.push({ kind: c.spec.type === 'turret' ? 'turret' : 'room', pos: () => (cs.targetable(c) ? cs.pos(c) : null), ref: c });
+      }
+    }
+    return out;
+  }
+
+  /** A squad strike: a component takes a heavy hit (flash, sparks, its own explosion when it dies); a unit is carved hard at its centre. */
+  private assistStrike(t: AssistTarget, energy: number): void {
+    const p = t.pos();
+    if (!p) return;
+    if (t.ref instanceof Unit) {
+      const u = t.ref;
+      for (let k = 0; k < 3; k++) {
+        const x = p.x + (k - 1) * 9;
+        if (u.fight.components.hit(x, p.y, energy)) continue;
+        this.carveAt(u.fight, x, p.y, energy * 2, 'default');
+      }
+      this.emitBurst(p.x, p.y);
+    } else {
+      this.fight.components.hit(p.x, p.y, energy);
+      this.emitBurst(p.x, p.y);
+    }
+  }
+
+  private emitBurst(x: number, y: number): void {
+    for (let i = 0; i < 6 && this.particles.length < MAX_PARTICLES; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 80 + Math.random() * 180;
+      const life = 0.2 + Math.random() * 0.25;
+      this.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life, max: life, color: Math.random() < 0.5 ? '#fff3b0' : '#ff9a3c', size: 2 + Math.random() * 2 });
+    }
+    this.sfx.componentHit();
   }
 
   /** The boss fight (when active) and every unit's fight. */

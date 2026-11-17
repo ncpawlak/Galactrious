@@ -38,6 +38,8 @@ export interface ShipStats {
   accel?: number;
   /** Scale on the dodge dash distance (default 1). */
   dodgeScale?: number;
+  /** Campaign tuning: multipliers on weapon stats (`chain.fireRate`, `chain.damage`, ...), applied under upgrades. Endless ships leave it out. */
+  statMul?: Record<string, number>;
 }
 
 export interface WeaponLoadout {
@@ -124,7 +126,7 @@ export const SHIPS: ShipDefinition[] = [
     // wings, slate plating with a bronze nose, the red chevron insignia. A little tougher and faster than the Vanguard, reaches higher.
     id: 'empire-fighter',
     name: 'Empire Fighter',
-    desc: 'Captured empire tech: tougher and faster. Its weapons hurt empire armour. Chain gun with Gauss, Rocket and Arc.',
+    desc: 'Captured empire tech: tougher and faster. Its weapons hurt empire armour. Laser with Energy Wave, Gauss and Rocket.',
     look: {
       hull: { color: EMPIRE.armour, points: [[0, -22], [4, -10], [8, -8], [24, -16], [22, -2], [15, 15], [7, 13], [4, 19], [0, 21], [-4, 19], [-7, 13], [-15, 15], [-22, -2], [-24, -16], [-8, -8], [-4, -10]] },
       details: [
@@ -140,7 +142,7 @@ export const SHIPS: ShipDefinition[] = [
       flame: { color: EMPIRE.glow, x: -3, y: 19, w: 6, len: 4, flicker: 6 },
     },
     baseStats: { maxHealth: 6, speed: 500, dodgeCooldown: 2.2, hitbox: TUNING.player.hitbox, minY: 260 },
-    startingWeapons: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] },
+    startingWeapons: { main: 'laser', aux: ['wave', 'gauss', 'rocket'] },
     unlock: 'empire-fighter',
     unlockHint: 'Finish the Fallen Peace campaign.',
     empireTech: true,
@@ -170,7 +172,8 @@ export const CAMPAIGN_SHIPS: ShipDefinition[] = [
       cockpit: { color: '#ffffff', x: -2, y: -6, w: 4, h: 9 },
       flame: { color: DELTA.flame, x: -3, y: 12, w: 6, len: 4, flicker: 5 },
     },
-    baseStats: { maxHealth: TUNING.player.maxHealth, speed: TUNING.ship.speed, dodgeCooldown: TUNING.dodge.cooldown, hitbox: TUNING.player.hitbox },
+    // Campaign tuning (chapters 1 and 2): the rookie's chain gun fires 25% faster and hits 22% harder than the Endless Vanguard's.
+    baseStats: { maxHealth: TUNING.player.maxHealth, speed: TUNING.ship.speed, dodgeCooldown: TUNING.dodge.cooldown, hitbox: TUNING.player.hitbox, statMul: { 'chain.fireRate': 1.25, 'chain.damage': 1.22 } },
     startingWeapons: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] },
   },
 ];
