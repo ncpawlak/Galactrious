@@ -23,12 +23,24 @@ function prompt(g: CanvasRenderingContext2D, text: string, y: number, t: number)
   if (Math.floor(t * 2) % 2 === 0) drawCentered(g, text, y, '18px monospace', '#ffffff');
 }
 
+/** Touch target on the title that opens the Unlocks screen. */
+export const UNLOCKS_BTN = { x: W / 2 - 110, y: 650, w: 220, h: 56 };
+
 export function drawTitle(g: CanvasRenderingContext2D, t: number, levels: number): void {
   dim(g, 0.35);
   drawCentered(g, 'GALACTRIOUS', 330, 'bold 56px monospace', '#ffd21f');
   drawCentered(g, 'carve the bosses', 372, '18px monospace', '#6ee7ff');
   drawCentered(g, `${levels} levels  /  waves, then a boss  /  one life`, 430, '14px monospace', '#8fa0c8');
   prompt(g, 'tap or press any key to start', 560, t);
+  const b = UNLOCKS_BTN;
+  g.save();
+  g.fillStyle = '#0b1424';
+  g.fillRect(b.x, b.y, b.w, b.h);
+  g.lineWidth = 3;
+  g.strokeStyle = '#6ee7ff';
+  g.strokeRect(b.x + 1.5, b.y + 1.5, b.w - 3, b.h - 3);
+  g.restore();
+  drawCentered(g, 'UNLOCKS [U]', b.y + 35, 'bold 18px monospace', '#6ee7ff');
   drawCentered(g, 'move: drag / arrows / WASD    dodge: Shift / X / button', 860, '12px monospace', '#8fa0c8');
   drawCentered(g, 'debug: [Z] one-boss test mode', 880, '12px monospace', '#5b6a8c');
 }
