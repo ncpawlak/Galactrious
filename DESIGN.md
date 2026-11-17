@@ -567,7 +567,50 @@ Decisions: rooms **react in the middle of the fight** (a Repair room heals while
 Alongside, independent: the room function catalog (can run next to steps 1-2).
 
 ### Open questions
-- Squad/ally behaviour; Conquest death rule; whether ships change handling; number of campaigns/levels; how many weapon variants per ship.
+- Squad/ally behaviour; (Conquest death rule decided: permadeath, see "Conquest"); whether ships change handling; number of campaigns/levels; how many weapon variants per ship.
+
+## Conquest (design, not built)
+Status: **design only**, agreed with the owner. Conquest is the third mode (after Endless and Campaign). The Conquest death rule from the roadmap is now decided: **permadeath**.
+
+### What it is
+A **long but finite run** (target **15 to 25 minutes**) built from waves, bosses and short scroll sections, like Endless in feel, but set in one **region** that comes from a campaign: its look, enemies, hazards and bosses. Each run has **challenges** (kills, survival time, hidden items, boss feats) that **unlock things permanently**. It reuses the flow engine (`Run` nodes `wave`, `boss`, `reward`, `scroll`), the scroll themes and obstacles, the card pool, the loadout builder (1 main + 3 aux), the save system and the objective and medal framework. What is new is the **region definition**, the **challenge layer** and the **hidden items**.
+
+### Rules
+- **Permadeath:** a death ends the run. Challenges already completed in that run still count and are saved; the run result screen lists them.
+- **Loadout:** before a run the player builds a ship from unlocked ships and weapons (as in Endless). Upgrade cards are picked after waves, as in Endless.
+- **Unlocking regions:** **a campaign unlocks the Conquest region tied to it.** Finishing Campaign 1 ("Fallen Peace") unlocks its region, **Empire Base**. This is the only region in the first slice.
+- **Unlocking things:** challenges can unlock **ships, weapons, upgrade cards and cosmetics** (all of the above). They are listed per region and shown on the title run screen with progress. Unlocks use the existing save flags and the Unlocks screen.
+
+### Region definition (data)
+A region is a data pack so more can be added as content: `id`, display name, the campaign that unlocks it, a **theme** (scroll theme and palette), an **enemy roster and flyby set**, a **boss pool**, a **hazard and terrain set**, a **node list** (the ordered run: wave, scroll, reward and boss nodes with scaling), a **challenge list** and the **hidden item placements**. Difficulty ramps along the node list; there is a milestone boss near the middle and a final boss at the end. Mini-bosses appear every few waves.
+
+### Challenges
+Each region shows **3 to 5 challenges** before the run. Types (all measured by the run, saved once met):
+- **Enemies defeated** (a total across the run, for example 200).
+- **Survival time** (for example survive 10 minutes).
+- **Boss feats** (defeat a boss with no damage taken, carve a boss room before its timer, destroy all turrets of a boss).
+- **Hidden items found** (see below).
+- **Clear the run** (reach the end).
+Unlocks are awarded **on the run in which they are earned** and are permanent. A challenge already completed shows as done; the player can keep playing for the others.
+
+### Hidden items
+- **Per-run:** hidden items are found **once per run** (they reset each run; a challenge counts how many were found in a single run). Persistent collection across runs is not planned.
+- Placement is data (per region). Examples: a **secret room in a carvable structure** that must be dug into, a **hidden supply cache** behind a destructible wall, a **disguised turret or crate** that reveals when hit. Rewards a bit of build power (a card, a heal) and counts for the challenge.
+- **Readability rule:** hidden does not mean unfair. Each item has a subtle visible tell (a seam, a flicker, an out-of-place tile) so a player who looks closely or carves can find it without a guide.
+
+### Region 1: Empire Base
+The campaign's military base (chapters 4 and 5): concrete and hangar floors, bunkers, searchlights, turrets, ground defences and indestructible shield barriers, plus empire air squadrons and flybys (the roster from chapters 1 to 7). The boss pool draws from the empire's units and bosses (the capital ship as the final boss, with the aces as mini-bosses). Scroll sections reuse the base and surface scenery from the chapter 4 and 5 themes.
+
+### Build order (first slice)
+1. Region definition type and the Empire Base node list (using existing nodes and content).
+2. Challenge system: track kills, survival time, boss feats and found items in a run; save completed challenges; result screen.
+3. Hidden items and their tells.
+4. Title Conquest entry (region select, challenge list with progress, ship and loadout builder, start); unlock hook from the campaign finish.
+5. Unlock rewards wired into the existing unlock flags and the Unlocks screen.
+Tuning is by bot runs and the owner's playtest, as with the campaign.
+
+### Open
+The exact challenge numbers and rewards per challenge; the node list pacing and boss order; the number of hidden items and their placements; how many regions and which campaigns come next (a second campaign will define the next region).
 
 ## Combat range
 
