@@ -1,15 +1,19 @@
 import { H, W } from '../../config';
-import { drawUpgradeStrip, groupColor } from '../../upgrades/draw';
+import { cardHeading, drawUpgradeStrip, groupColor } from '../../upgrades/draw';
 import { Loadout, drawCards, previewCard } from '../../upgrades/stats';
 import type { CardDef } from '../../upgrades/model';
 import type { FlowNode, NodeContext, NodeOutcome, RewardNodeDefinition } from '../node';
 import { drawCentered } from '../screens';
 
 const CARD_W = 480;
-const CARD_H = 176;
+const CARD_H = 202;
 const CARD_X = (W - CARD_W) / 2;
-const CARD_Y0 = 150;
-const CARD_GAP = 14;
+const CARD_Y0 = 140;
+const CARD_GAP = 12;
+const RARITY: Record<string, { label: string; color: string; border: string }> = {
+  rare: { label: 'RARE', color: '#ffd21f', border: '#6a5a2a' },
+  epic: { label: 'EPIC', color: '#d79bff', border: '#6b3f9a' },
+};
 const MONO = 'ui-monospace, Consolas, monospace';
 
 /**
@@ -112,7 +116,8 @@ export class RewardNode implements FlowNode {
     g.fillStyle = chosen ? '#1b3a5c' : hot ? '#152a47' : '#0b1424';
     g.fillRect(CARD_X, y, CARD_W, CARD_H);
     g.lineWidth = chosen || hot ? 4 : 3;
-    g.strokeStyle = chosen ? '#ffd21f' : hot ? '#6ee7ff' : c.rarity === 'rare' ? '#6a5a2a' : '#26324d';
+    const rar = c.rarity ? RARITY[c.rarity] : undefined;
+    g.strokeStyle = chosen ? '#ffd21f' : hot ? '#6ee7ff' : (rar?.border ?? '#26324d');
     g.strokeRect(CARD_X + 1.5, y + 1.5, CARD_W - 3, CARD_H - 3);
     g.fillStyle = col;
     g.fillRect(CARD_X, y, 7, CARD_H);
@@ -122,21 +127,23 @@ export class RewardNode implements FlowNode {
     g.fillStyle = '#6ee7ff';
     g.fillText(`[${i + 1}]`, CARD_X + 22, y + 28);
     g.fillStyle = col;
-    g.fillText(c.group.toUpperCase(), CARD_X + 64, y + 28);
+    g.fillText(cardHeading(c, [this.ctx.run.loadout.main, ...this.ctx.run.loadout.aux]).toUpperCase(), CARD_X + 64, y + 28);
     g.textAlign = 'right';
     g.font = `13px ${MONO}`;
-    g.fillStyle = c.rarity === 'rare' ? '#ffd21f' : '#8fa0c8';
+    g.fillStyle = rar?.color ?? '#8fa0c8';
     const owned = new Loadout(held, this.ctx.run.shipId).stackOf(c.id);
-    g.fillText(`${c.rarity === 'rare' ? 'RARE  ' : ''}owned ${owned}/${c.maxStacks ?? 1}`, CARD_X + CARD_W - 16, y + 28);
+    g.fillText(`${rar ? `${rar.label}  ` : ''}owned ${owned}/${c.maxStacks ?? 1}`, CARD_X + CARD_W - 16, y + 28);
     g.textAlign = 'left';
     g.fillStyle = '#ffffff';
     g.font = `bold 26px ${MONO}`;
-    g.fillText(c.name, CARD_X + 22, y + 64);
-    g.fillStyle = '#b6c2e0';
-    g.font = `14px ${MONO}`;
-    this.wrap(g, c.desc, CARD_W - 44, 2).forEach((l, k) => g.fillText(l, CARD_X + 22, y + 92 + k * 18));
-    previewCard(c, held, this.ctx.run.shipId).slice(0, 2).forEach((p, k) => {
-      const ry = y + 140 + k * 22;
+    g.fillText(c.name, CARD_X + 22, y + 62);
+    g.fillStyle = '#d3dcf2';
+    g.font = `16px ${MONO}`;
+    this.wrap(g, c.desc, CARD_W - 40, 3).forEach((l, k) => g.fillText(l, CARD_X + 22, y + 90 + k * 20));
+    // One row per stat the card changes (at most three), anchored to the bottom so a longer text above never meets them.
+    const rows = previewCard(c, held, this.ctx.run.shipId).slice(0, 3);
+    rows.forEach((p, k) => {
+      const ry = y + CARD_H - 14 - (rows.length - 1 - k) * 21;
       g.font = `15px ${MONO}`;
       g.fillStyle = '#8fa0c8';
       g.fillText(p.label, CARD_X + 22, ry);

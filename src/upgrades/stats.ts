@@ -5,6 +5,7 @@ import { TAG_IDS, type TagSet } from '../tags';
 import { CARD_BY_ID, CARDS } from './cards';
 import { isUnlocked } from '../save';
 import { shipBase, shipById } from '../ships';
+import { auxById } from '../weapons';
 import type { CardDef } from './model';
 
 /**
@@ -28,7 +29,39 @@ export const GAUSS_SHAPES: CarveShapeName[] = ['narrow', 'narrow1', 'narrow2', '
 /** Laser width tiers (`laser.width`), see `shapeTiers` of the Laser in weapons.ts. */
 export const LASER_SHAPES: CarveShapeName[] = ['laser', 'laser1', 'laser2', 'laser3'];
 
+const pct = (v: number): string => `${Math.round(v * 100)}%`;
+/** The generic aux stats; each exists for all aux weapons (`aux.*`) and per slot (`aux1.*` .. `aux3.*`). Base 1 = a multiplier, base 0 = an add. */
+const AUX_GENERIC: Record<string, StatInfo> = {
+  cooldown: { label: 'recharge time', base: () => 1, good: 'down', show: pct },
+  damage: { label: 'damage', base: () => 1, good: 'up', show: pct },
+  count: { label: 'extra shots', base: () => 0, good: 'up', show: (v) => `+${num(v)}` },
+  radius: { label: 'blast size', base: () => 1, good: 'up', show: pct },
+};
+const AUX_STATS: Record<string, StatInfo> = {};
+for (const [k, i] of Object.entries(AUX_GENERIC)) {
+  AUX_STATS[`aux.${k}`] = { ...i, label: `All aux ${i.label}` };
+  for (const n of [1, 2, 3]) AUX_STATS[`aux${n}.${k}`] = { ...i, label: `Aux ${n} ${i.label}` };
+}
+
 export const STATS: Record<string, StatInfo> = {
+  // Slot-scoped (generic) stats: the weapon defs read these for their slot on top of their own `<weapon>.*` stat (weapons.ts `slotStat`, `effectiveMain`).
+  'main.fireRate': { label: 'Main gun fire rate', base: () => 1, good: 'up', show: pct },
+  'main.damage': { label: 'Main gun damage', base: () => 1, good: 'up', show: pct },
+  'main.barrels': { label: 'Main gun extra barrels', base: () => 0, good: 'up', show: (v) => `+${num(v)}` },
+  'main.pierce': { label: 'Main gun pierce', base: () => 0, good: 'up', show: (v) => `+${Math.round(v * 100)}%` },
+  'main.tag.burn': { label: 'Main gun burn', base: () => 0, good: 'up', show: (v) => `+${num(v)}` },
+  'aux.tag.burn': { label: 'Aux weapon burn', base: () => 0, good: 'up', show: (v) => `+${num(v)}` },
+  ...AUX_STATS,
+  'lance.duration': { label: 'Lance beam time', base: () => WEAPONS.lance.duration, good: 'up', show: secs },
+  'flak.fuse': { label: 'Bomb fuse', base: () => WEAPONS.flak.fuse, good: 'down', show: secs },
+  'mine.count': { label: 'Mines per drop', base: () => 1, good: 'up', show: num },
+  'mine.arm': { label: 'Mine arm time', base: () => WEAPONS.mine.arm, good: 'down', show: secs },
+  'mine.trigger': { label: 'Mine trigger range', base: () => WEAPONS.mine.trigger, good: 'up', show: (v) => `${num(v)}px` },
+  'drone.count': { label: 'Drones', base: () => 1, good: 'up', show: num },
+  'drone.fireRate': { label: 'Drone fire rate', base: () => WEAPONS.drone.rate, good: 'up', show: (v) => `${num(v)}/s` },
+  'drone.duration': { label: 'Drone flight time', base: () => WEAPONS.drone.duration, good: 'up', show: secs },
+  'shield.duration': { label: 'Shield time', base: () => WEAPONS.shield.duration, good: 'up', show: secs },
+  'shield.radius': { label: 'Shield radius', base: () => WEAPONS.shield.radius, good: 'up', show: (v) => `${num(v)}px` },
   'chain.fireRate': { label: 'Chain gun rate', base: () => TUNING.ship.fireRate, good: 'up', show: (v) => `${num(v)}/s` },
   'chain.damage': { label: 'Chain gun damage', base: () => TUNING.ship.damage, good: 'up', show: num },
   'chain.barrels': { label: 'Chain gun barrels', base: () => 1, good: 'up', show: num },
@@ -115,11 +148,11 @@ export class Loadout {
     return (base + (this.add.get(stat) ?? 0)) * (this.mul.get(stat) ?? 1) * (this.shipMul[stat] ?? 1);
   }
 
-  /** The tags a weapon's shots carry (`<weapon>.tag.<id>` stacks), or undefined when none. */
-  tags(weapon: string): TagSet | undefined {
+  /** The tags a weapon's shots carry (`<weapon>.tag.<id>` stacks plus the stacks of each slot scope in `scopes`: 'main', 'aux', 'aux2'), or undefined when none. */
+  tags(weapon: string, scopes: readonly string[] = []): TagSet | undefined {
     let out: TagSet | undefined;
     for (const id of TAG_IDS) {
-      const n = this.get(`${weapon}.tag.${id}`, 0);
+      const n = [weapon, ...scopes].reduce((sum, w) => sum + this.get(`${w}.tag.${id}`, 0), 0);
       if (n > 0) (out ??= {})[id] = n;
     }
     return out;
@@ -152,10 +185,25 @@ export function cardUnlocked(card: CardDef): boolean {
   return !card.unlock || isUnlocked('cards', card.unlock);
 }
 
-/** `equipped` = the weapon ids in the run's slots: a card for a weapon that is not equipped is never offered. */
+/**
+ * `equipped` = the weapon ids in the run's slots, main first and then the aux weapons in slot order (a Set keeps insertion order).
+ * A weapon card is offered only while that weapon is equipped; a slot card only while its slot is filled (and, with `needs`, while an
+ * aux weapon in scope supports it); a burn synergy only with a burn stack held; a hull trade-off only with enough hull to pay.
+ */
 export function canOffer(card: CardDef, lo: Loadout, equipped?: ReadonlySet<string>): boolean {
-  if (card.weapon && equipped && !equipped.has(card.weapon)) return false;
-  return cardUnlocked(card) && lo.stackOf(card.id) < (card.maxStacks ?? 1);
+  if (!cardUnlocked(card) || lo.stackOf(card.id) >= (card.maxStacks ?? 1)) return false;
+  if (card.minHull !== undefined && lo.get('ship.maxHealth') < card.minHull) return false;
+  if (card.requiresAny && !card.requiresAny.some((k) => lo.get(k, 0) > 0)) return false;
+  if (!equipped) return true;
+  if (card.weapon && !equipped.has(card.weapon)) return false;
+  if (card.slot !== undefined && card.slot !== 'main') {
+    const aux = [...equipped].slice(1);
+    const scope = card.slot === 'aux' ? aux : aux.slice(card.slot - 1, card.slot);
+    if (scope.length === 0) return false;
+    const need = card.needs;
+    if (need && !scope.some((id) => auxById(id)?.supports?.[need])) return false;
+  }
+  return true;
 }
 
 /** Pick up to `n` distinct cards, weighted, without replacement, using the run's seeded `rng`. Cards at max stacks are skipped. */

@@ -5,6 +5,7 @@ import { H, MAINS, W, WEAPONS } from './config';
 import type { StyleName } from './attackStyles';
 import type { TagSet } from './tags';
 import { gaussShape } from './upgrades/stats';
+import { DroneBay, MineField, ShieldBubble, type DroneInit, type MineInit, type ShieldInit, type UnitsHost } from './auxUnits';
 
 /**
  * Auto-firing player weapons (issue #12). Each weapon is DATA (`WeaponDef`): id, name, cooldown and a `fire`
@@ -30,6 +31,8 @@ interface WeaponBase {
   unlockHint?: string;
   /** Short unlock requirement shown in the ship builder while locked. */
   requirement?: string;
+  /** Builder icon: draws a glyph centred at (x, y) inside a ring of radius `r` (the ring and the lock are the builder's). Omitted = the weapon's initial. */
+  icon?: (g: CanvasRenderingContext2D, x: number, y: number, r: number) => void;
   /** Stashed for later: defined and usable through the debug loadout, but hidden from every select screen and never available to a player. */
   stashed?: boolean;
 }
@@ -41,6 +44,10 @@ export interface AuxDef extends WeaponBase {
   cooldown: (stat: StatFn) => number;
   /** Spawn this weapon's projectiles. */
   fire(c: FireContext): void;
+  /** Which generic aux cards mean something for this weapon: `count` ("Extra Volley") and `radius` ("Wide Blasts"). */
+  supports?: { count?: boolean; radius?: boolean };
+  /** What one point of the generic `aux.count` is worth for this weapon (default 1; the Swarm gets 2 missiles). */
+  countStep?: number;
 }
 
 /**
@@ -84,6 +91,10 @@ export interface FireContext {
   effect(e: EffectInit): void;
   /** A random solid pixel of a random live target (the boss or a unit) in its local coordinates, or null when nothing is left. */
   pickTarget(): { target: Combatant; lx: number; ly: number } | null;
+  /** Lay a mine / launch drones / raise the shield bubble (src/auxUnits.ts). */
+  mine(m: MineInit, cap: number): void;
+  drone(d: DroneInit): void;
+  shield(s: ShieldInit): void;
 }
 
 export interface ProjectileInit {
@@ -168,6 +179,7 @@ const AUX: AuxDef[] = [
     slot: 'aux',
     desc: 'Explodes on the first hit: a wide crater and shock.',
     color: '#ffa94d',
+    supports: { radius: true },
     cooldown: (s) => s('rocket.cooldown', WEAPONS.rocket.cooldown),
     fire: (c) => {
       const r = WEAPONS.rocket;
@@ -191,6 +203,7 @@ const AUX: AuxDef[] = [
     slot: 'aux',
     desc: 'Homing pair that curves in to random spots.',
     color: '#7dff9a',
+    supports: { count: true },
     cooldown: (s) => s('arc.cooldown', WEAPONS.arc.cooldown),
     fire: (c) => {
       const a = WEAPONS.arc;
@@ -238,7 +251,7 @@ const AUX: AuxDef[] = [
     cooldown: (s) => s('lance.cooldown', WEAPONS.lance.cooldown),
     fire: (c) => {
       const l = WEAPONS.lance;
-      c.effect({ kind: 'beam', weapon: 'lance', duration: l.duration, tick: l.tick, energy: c.stat('lance.energy', l.energy) * c.power, pierce: l.pierce, shape: l.shape, tags: c.tags });
+      c.effect({ kind: 'beam', weapon: 'lance', duration: c.stat('lance.duration', l.duration), tick: l.tick, energy: c.stat('lance.energy', l.energy) * c.power, pierce: l.pierce, shape: l.shape, tags: c.tags });
     },
   },
   {
@@ -250,10 +263,11 @@ const AUX: AuxDef[] = [
     unlock: 'blades',
     unlockHint: 'Unlock the Warden ship.',
     requirement: 'Unlock the Warden (defeat the first boss)',
+    supports: { count: true, radius: true },
     cooldown: (s) => s('blades.cooldown', WEAPONS.blades.cooldown),
     fire: (c) => {
       const b = WEAPONS.blades;
-      c.effect({ kind: 'blades', weapon: 'blades', duration: b.duration, tick: b.tick, energy: b.energy * c.power, shape: b.shape, count: Math.max(1, Math.round(c.stat('blades.count', b.count))), radius: b.radius, spin: b.spin, tags: c.tags });
+      c.effect({ kind: 'blades', weapon: 'blades', duration: b.duration, tick: b.tick, energy: b.energy * c.power, shape: b.shape, count: Math.max(1, Math.round(c.stat('blades.count', b.count))), radius: c.stat('blades.radius', b.radius), spin: b.spin, tags: c.tags });
     },
   },
   {
@@ -265,6 +279,8 @@ const AUX: AuxDef[] = [
     unlock: 'swarm',
     unlockHint: 'Unlock the Wisp ship.',
     requirement: 'Unlock the Wisp (clear an Endless run)',
+    supports: { count: true },
+    countStep: 2,
     cooldown: (s) => s('swarm.cooldown', WEAPONS.swarm.cooldown),
     fire: (c) => {
       const w = WEAPONS.swarm;
@@ -299,6 +315,7 @@ const AUX: AuxDef[] = [
     unlock: 'flak',
     unlockHint: 'Complete Fallen Peace with every chapter on gold.',
     requirement: 'Finish Fallen Peace, all chapters gold',
+    supports: { radius: true },
     cooldown: (s) => s('flak.cooldown', WEAPONS.flak.cooldown),
     fire: (c) => {
       const r = WEAPONS.flak;
@@ -311,10 +328,89 @@ const AUX: AuxDef[] = [
         accel: r.accel,
         maxSpeed: r.maxSpeed,
         blast: { ...r.blast, radius: c.stat('flak.radius', r.blast.radius), energy: c.stat('flak.energy', r.blast.energy) * c.power, damage: r.blast.damage * c.power, coreDamage: r.blast.coreDamage * c.power },
-        fuse: { time: r.fuse, range: r.range, cap: r.maxLive },
+        fuse: { time: c.stat('flak.fuse', r.fuse), range: r.range, cap: r.maxLive },
         tags: c.tags,
         trailLife: 0.2,
       });
+    },
+  },
+  {
+    id: 'mine',
+    name: 'Mine Layer',
+    slot: 'aux',
+    desc: 'Drops a mine at your ship. It drifts up, arms, and bursts when an enemy is close.',
+    color: '#ffb347',
+    unlock: 'mine',
+    unlockHint: 'Conquest, Empire Base: defeat 220 enemies in one run.',
+    requirement: 'Conquest, Empire Base: defeat 220 enemies in one run',
+    supports: { count: true, radius: true },
+    icon: (g, x, y, r) => drawMineIcon(g, x, y, r),
+    cooldown: (s) => s('mine.cooldown', WEAPONS.mine.cooldown),
+    fire: (c) => {
+      const m = WEAPONS.mine;
+      const n = Math.max(1, Math.round(c.stat('mine.count', 1)));
+      const arm = Math.max(0.1, c.stat('mine.arm', m.arm));
+      for (let i = 0; i < n; i++) {
+        const fan = n === 1 ? 0 : (i / (n - 1) - 0.5) * 2; // -1..1 across the drop
+        c.mine(
+          {
+            x: c.ship.x + fan * 26,
+            y: c.ship.y - 8,
+            drift: m.drift,
+            arm,
+            life: m.life,
+            trigger: c.stat('mine.trigger', m.trigger),
+            blast: { ...m.blast, radius: c.stat('mine.radius', m.blast.radius), energy: m.blast.energy * c.power, damage: m.blast.damage * c.power, coreDamage: m.blast.coreDamage * c.power },
+            tags: c.tags,
+          },
+          m.maxLive + 2 * (n - 1),
+        );
+      }
+    },
+  },
+  {
+    id: 'drone',
+    name: 'Drone',
+    slot: 'aux',
+    desc: 'A drone flies beside your ship for 12 s, firing small shots at the nearest enemy.',
+    color: '#6ee7ff',
+    unlock: 'drone',
+    unlockHint: 'Conquest, Empire Base: find 3 hidden items in one run.',
+    requirement: 'Conquest, Empire Base: find 3 hidden items in one run',
+    supports: { count: true },
+    icon: (g, x, y, r) => drawDroneIcon(g, x, y, r),
+    // The cooldown is the whole cycle: the flight time plus the recharge (cards shorten the recharge only).
+    cooldown: (s) => s('drone.duration', WEAPONS.drone.duration) + s('drone.cooldown', WEAPONS.drone.recharge),
+    fire: (c) => {
+      const d = WEAPONS.drone;
+      c.drone({
+        weapon: 'drone',
+        count: Math.max(1, Math.round(c.stat('drone.count', 1))),
+        duration: c.stat('drone.duration', d.duration),
+        rate: c.stat('drone.fireRate', d.rate),
+        energy: d.energy * c.power,
+        speed: d.speed,
+        pierce: d.pierce,
+        offset: d.offset,
+        tags: c.tags,
+      });
+    },
+  },
+  {
+    id: 'shield',
+    name: 'Shield Pulse',
+    slot: 'aux',
+    desc: 'A bubble around your ship for 2.5 s that stops enemy bullets. Not beams, blasts or collisions.',
+    color: '#9fe0ff',
+    unlock: 'shield-pulse',
+    unlockHint: 'Conquest, Empire Base: destroy every gun of the capital ship.',
+    requirement: 'Conquest, Empire Base: destroy every gun of the capital ship',
+    supports: { radius: true },
+    icon: (g, x, y, r) => drawShieldIcon(g, x, y, r),
+    cooldown: (s) => s('shield.cooldown', WEAPONS.shield.cooldown),
+    fire: (c) => {
+      const w = WEAPONS.shield;
+      c.shield({ weapon: 'shield', duration: c.stat('shield.duration', w.duration), radius: c.stat('shield.radius', w.radius) });
     },
   },
   {
@@ -428,10 +524,11 @@ export interface MainStats {
 }
 
 export function effectiveMain(def: MainDef, base: { damage: number; fireRate: number }, stat: StatFn): MainStats {
+  // The weapon's own stat first, then the generic main-slot stat (`main.*`), so a card works for whatever main gun is equipped.
   return {
-    damage: stat(`${def.id}.damage`, base.damage * def.damageMul),
-    fireRate: stat(`${def.id}.fireRate`, base.fireRate * def.rateMul),
-    projectiles: Math.max(1, Math.round(def.projectiles + stat(`${def.id}.barrels`, 1) - 1)),
+    damage: stat(`${def.id}.damage`, base.damage * def.damageMul) * stat('main.damage', 1),
+    fireRate: stat(`${def.id}.fireRate`, base.fireRate * def.rateMul) * stat('main.fireRate', 1),
+    projectiles: Math.max(1, Math.round(def.projectiles + stat(`${def.id}.barrels`, 1) - 1 + stat('main.barrels', 0))),
   };
 }
 
@@ -454,8 +551,10 @@ export interface WeaponHost {
   onFire(id: WeaponId): void;
   /** Effective stat value (base + upgrades). */
   stat: StatFn;
-  /** Tags a weapon's shots carry. */
-  tags(weapon: string): TagSet | undefined;
+  /** Tags a weapon's shots carry (`scopes` = the slot scopes that add stacks, e.g. 'aux', 'aux2'). */
+  tags(weapon: string, scopes?: readonly string[]): TagSet | undefined;
+  /** Remove the enemy bullets within `r` px of (x, y) (the Shield Pulse); returns where they were. Beams, hazards and contact are not bullets. */
+  absorb(x: number, y: number, r: number): { x: number; y: number }[];
   /** The tag hook: a tagged projectile landed (see src/tags.ts). */
   onHit(tags: TagSet, x: number, y: number, energy: number, target: Combatant): void;
 }
@@ -526,8 +625,24 @@ export class WeaponSystem {
   private projectiles: Projectile[] = [];
   private effects: Effect[] = [];
   private flashes: { x: number; y: number; color: string; t: number; max?: number; r?: number }[] = [];
+  private readonly mines = new MineField();
+  private readonly drones = new DroneBay();
+  private readonly shield = new ShieldBubble();
+  /** Seconds since the system was made: the blink and sweep phase of the drawn units. */
+  private clock = 0;
+  private readonly unitsHost: UnitsHost;
 
   constructor(private readonly host: WeaponHost) {
+    this.unitsHost = {
+      ship: host.ship,
+      touching: (x, y, r) => this.touching(x, y, r),
+      blast: (x, y, blast, tags) => this.blastAt(x, y, blast, tags),
+      shoot: (p) => this.spawn(p),
+      aimNear: (x, y) => this.aimNear(x, y),
+      hasTargets: () => this.host.targets().some((t) => !t.boss.defeated),
+      absorb: (x, y, r) => this.host.absorb(x, y, r),
+      flash: (x, y, color, t, r) => this.flashes.push({ x, y, color, t, max: t, r }),
+    };
     this.equip(this.defs);
   }
 
@@ -538,8 +653,16 @@ export class WeaponSystem {
       this.enabled[d.id] ??= true;
       this.timers[d.id] = 0;
     }
+    this.clearField();
+  }
+
+  /** Everything this system left in the field (shots, beams, mines, drones, the bubble). */
+  private clearField(): void {
     this.projectiles = [];
     this.effects = [];
+    this.mines.clear();
+    this.drones.clear();
+    this.shield.clear();
   }
 
   /** Debug: scale every cooldown (0.1 .. 10). */
@@ -551,8 +674,7 @@ export class WeaponSystem {
   }
 
   reset(): void {
-    this.projectiles = [];
-    this.effects = [];
+    this.clearField();
     this.flashes = [];
     for (const d of this.defs) this.timers[d.id] = 0;
   }
@@ -563,9 +685,31 @@ export class WeaponSystem {
     WEAPONS.cooldownScale = 1;
   }
 
+  /**
+   * The stat function of the weapon in aux slot `index`: its own `<weapon>.*` stats, then the slot-scoped ones on top (DESIGN.md "Upgrade rework").
+   * `*.cooldown` is multiplied by `aux.cooldown` and `aux<n>.cooldown`, `*.radius` by `aux.radius` and `aux<n>.radius`, and `*.count` gains `aux.count` and `aux<n>.count`
+   * (times the weapon's `countStep`). Damage is the other way: it scales the `power` the weapon fires with (`slotPower`).
+   */
+  slotStat(index: number, d: AuxDef): StatFn {
+    const scopes = ['aux', `aux${index + 1}`];
+    return (key, base) => {
+      let v = this.host.stat(key, base);
+      const kind = key.slice(key.lastIndexOf('.') + 1);
+      if (kind === 'cooldown') for (const sc of scopes) v *= this.host.stat(`${sc}.cooldown`, 1);
+      else if (kind === 'radius') for (const sc of scopes) v *= this.host.stat(`${sc}.radius`, 1);
+      else if (kind === 'count') for (const sc of scopes) v += this.host.stat(`${sc}.count`, 0) * (d.countStep ?? 1);
+      return v;
+    };
+  }
+
+  /** The damage scale of slot `index`: the run's power times `aux.damage` and `aux<n>.damage`. */
+  private slotPower(index: number): number {
+    return this.host.power() * this.host.stat('aux.damage', 1) * this.host.stat(`aux${index + 1}.damage`, 1);
+  }
+
   /** Effective cooldown of a weapon in seconds (upgrades and the debug scale applied). */
   cd(d: AuxDef): number {
-    return d.cooldown(this.host.stat) * WEAPONS.cooldownScale;
+    return d.cooldown(this.slotStat(Math.max(0, this.defs.indexOf(d)), d)) * WEAPONS.cooldownScale;
   }
 
   /** 0..1 progress of a weapon's cooldown (1 = fires now). */
@@ -588,15 +732,19 @@ export class WeaponSystem {
     this.timers[d.id] = 0;
     this.host.onFire(d.id);
     const ship = this.host.ship;
+    const slot = Math.max(0, this.defs.indexOf(d));
     this.flashes.push({ x: ship.x, y: ship.y - 22, color: d.color, t: 0.12 });
     d.fire({
       ship,
-      power: this.host.power(),
-      stat: this.host.stat,
-      tags: this.host.tags(d.id),
+      power: this.slotPower(slot),
+      stat: this.slotStat(slot, d),
+      tags: this.host.tags(d.id, ['aux', `aux${slot + 1}`]),
       spawn: (p) => this.spawn(p),
       effect: (e) => this.effects.push({ ...e, age: 0, acc: 0, endY: 0, angle: 0, seen: new Set() }),
       pickTarget: () => this.pickTarget(),
+      mine: (m, cap) => this.mines.lay(m, cap, this.unitsHost),
+      drone: (dr) => this.drones.deploy(dr, this.unitsHost),
+      shield: (sh) => this.shield.start(sh),
     });
   }
 
@@ -618,21 +766,49 @@ export class WeaponSystem {
     if (all.length === 0) return null;
     const first = Math.floor(Math.random() * all.length);
     for (let k = 0; k < all.length; k++) {
-      const target = all[(first + k) % all.length];
-      const boss = target.boss;
-      for (let i = 0; i < 400; i++) {
-        const lx = Math.floor(Math.random() * boss.width);
-        const ly = Math.floor(Math.random() * boss.height);
-        for (let li = 0; li < boss.layers.length; li++) if (boss.isSolid(li, lx, ly)) return { target, lx, ly };
-      }
-      // Almost nothing left: scan for any solid pixel.
-      for (let ly = 0; ly < boss.height; ly++) {
-        for (let lx = 0; lx < boss.width; lx++) {
-          for (let li = 0; li < boss.layers.length; li++) if (boss.isSolid(li, lx, ly)) return { target, lx, ly };
-        }
-      }
+      const hit = pickSolid(all[(first + k) % all.length]);
+      if (hit) return hit;
     }
     return null;
+  }
+
+  /** A random solid pixel of the live target nearest to (x, y), in screen coordinates (the drones' aim). */
+  private aimNear(x: number, y: number): { x: number; y: number } | null {
+    const all = this.host.targets().filter((t) => !t.boss.defeated);
+    const d = (t: Combatant): number => Math.hypot(t.boss.x + t.boss.width / 2 - x, t.boss.y + t.boss.height / 2 - y);
+    all.sort((a, b) => d(a) - d(b));
+    for (const t of all) {
+      const hit = pickSolid(t);
+      if (hit) return { x: t.boss.x + hit.lx, y: t.boss.y + hit.ly };
+    }
+    return null;
+  }
+
+  /** Is a solid pixel or a component of any live target within `r` px of (x, y)? Samples the centre and two rings: the mine trigger. */
+  private touching(x: number, y: number, r: number): boolean {
+    for (const t of this.host.targets()) {
+      if (t.boss.defeated || !nearBox(t.boss, x, y, r)) continue;
+      for (let i = -1; i < 12; i++) {
+        const rr = i < 0 ? 0 : i < 6 ? r * 0.5 : r;
+        const a = (i * Math.PI * 2) / 6;
+        const px = x + Math.cos(a) * rr;
+        const py = y + Math.sin(a) * rr;
+        if (t.components.componentAt(px, py) || solidAt(t.boss, px, py)) return true;
+      }
+    }
+    return false;
+  }
+
+  /** A blast at (x, y) on every live target within its reach (a mine burst); the burn of its tags lands on the first target hit. */
+  private blastAt(x: number, y: number, blast: BlastSpec, tags: TagSet | undefined): void {
+    const radius = resolveBlast('turret', blast).radius;
+    let hit: Combatant | undefined;
+    for (const o of this.host.targets()) {
+      if (o.boss.defeated || !nearBox(o.boss, x, y, radius)) continue;
+      o.components.playerBlast(x, y, blast);
+      hit ??= o;
+    }
+    if (tags && hit) this.host.onHit(tags, x, y, blast.energy ?? 0, hit);
   }
 
   /** `active` = the ship is alive and playing: timers only run then. */
@@ -647,7 +823,14 @@ export class WeaponSystem {
         if (this.timers[d.id] >= this.cd(d)) this.fire(d);
       }
     }
+    this.clock += dt;
     this.updateEffects(dt);
+    // The things left in the field only live while the ship is playing (equip and reset clear them).
+    if (active) {
+      this.mines.update(dt, this.unitsHost);
+      this.drones.update(dt, this.unitsHost);
+      this.shield.update(dt, this.unitsHost);
+    }
     this.updateProjectiles(dt);
     for (const f of this.flashes) f.t -= dt;
     this.flashes = this.flashes.filter((f) => f.t > 0);
@@ -924,7 +1107,10 @@ export class WeaponSystem {
     }
     ctx.restore();
     for (const e of this.effects) this.drawEffect(ctx, e);
+    this.mines.draw(ctx, this.clock);
     for (const p of this.projectiles) this.drawProjectile(ctx, p);
+    this.drones.draw(ctx);
+    this.shield.draw(ctx, this.host.ship, this.clock);
   }
 
   private drawEffect(ctx: CanvasRenderingContext2D, e: Effect): void {
@@ -1008,7 +1194,7 @@ export class WeaponSystem {
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    const col = p.weapon === 'gauss' ? '191,246,255' : p.weapon === 'flak' ? '255,90,74' : p.weapon === 'rocket' ? '255,169,77' : p.weapon === 'swarm' ? '255,120,220' : '125,255,154';
+    const col = p.weapon === 'drone' ? '110,231,255' : p.weapon === 'gauss' ? '191,246,255' : p.weapon === 'flak' ? '255,90,74' : p.weapon === 'rocket' ? '255,169,77' : p.weapon === 'swarm' ? '255,120,220' : '125,255,154';
     const width = p.weapon === 'gauss' ? 7 : p.weapon === 'rocket' ? 5 : p.weapon === 'swarm' ? 2.5 : 4;
     ctx.globalCompositeOperation = 'lighter';
     // Trail: segments fade and thin with age.
@@ -1098,6 +1284,11 @@ export class WeaponSystem {
         ctx.fillStyle = '#9aa3b8';
         ctx.fillRect(-6, 3, 3, 6);
         ctx.fillRect(3, 3, 3, 6);
+      } else if (p.weapon === 'drone') {
+        ctx.fillStyle = 'rgba(110,231,255,0.4)';
+        ctx.fillRect(-3, -8, 6, 16);
+        ctx.fillStyle = '#eafcff';
+        ctx.fillRect(-1, -8, 2, 12);
       } else {
         if (p.weapon === 'swarm') ctx.scale(0.55, 0.55);
         ctx.fillStyle = p.weapon === 'swarm' ? 'rgba(255,120,220,0.4)' : 'rgba(125,255,154,0.35)';
@@ -1120,4 +1311,88 @@ export class WeaponSystem {
 function solidAtLocal(boss: Boss, lx: number, ly: number): boolean {
   for (let i = 0; i < boss.layers.length; i++) if (boss.isSolid(i, Math.floor(lx), Math.floor(ly))) return true;
   return false;
+}
+
+/** A random solid pixel (any layer) of one target, target-local; null when it has none left. */
+function pickSolid(target: Combatant): { target: Combatant; lx: number; ly: number } | null {
+  const boss = target.boss;
+  for (let i = 0; i < 400; i++) {
+    const lx = Math.floor(Math.random() * boss.width);
+    const ly = Math.floor(Math.random() * boss.height);
+    for (let li = 0; li < boss.layers.length; li++) if (boss.isSolid(li, lx, ly)) return { target, lx, ly };
+  }
+  // Almost nothing left: scan for any solid pixel.
+  for (let ly = 0; ly < boss.height; ly++) {
+    for (let lx = 0; lx < boss.width; lx++) {
+      for (let li = 0; li < boss.layers.length; li++) if (boss.isSolid(li, lx, ly)) return { target, lx, ly };
+    }
+  }
+  return null;
+}
+
+// --- builder icons of the new aux weapons (drawn inside the builder's ring) -------------------------------
+
+function drawMineIcon(g: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  g.save();
+  g.translate(x, y);
+  g.strokeStyle = '#ffb347';
+  g.fillStyle = '#2b3140';
+  g.lineWidth = Math.max(2, r * 0.1);
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4;
+    g.beginPath();
+    g.moveTo(Math.cos(a) * r * 0.42, Math.sin(a) * r * 0.42);
+    g.lineTo(Math.cos(a) * r * 0.66, Math.sin(a) * r * 0.66);
+    g.stroke();
+  }
+  g.beginPath();
+  g.arc(0, 0, r * 0.42, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
+  g.fillStyle = '#ff5a3c';
+  g.beginPath();
+  g.arc(0, 0, r * 0.15, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+}
+
+function drawDroneIcon(g: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  g.save();
+  g.translate(x, y);
+  g.fillStyle = '#9fe9ff';
+  g.strokeStyle = '#0b2a36';
+  g.lineWidth = Math.max(1.5, r * 0.07);
+  g.beginPath();
+  g.moveTo(0, -r * 0.62);
+  g.lineTo(r * 0.5, r * 0.28);
+  g.lineTo(0, r * 0.52);
+  g.lineTo(-r * 0.5, r * 0.28);
+  g.closePath();
+  g.fill();
+  g.stroke();
+  g.fillStyle = '#0b2a36';
+  g.fillRect(-r * 0.12, -r * 0.2, r * 0.24, r * 0.32);
+  g.fillStyle = '#ffd21f';
+  g.fillRect(-r * 0.06, r * 0.52, r * 0.12, r * 0.18);
+  g.restore();
+}
+
+function drawShieldIcon(g: CanvasRenderingContext2D, x: number, y: number, r: number): void {
+  g.save();
+  g.translate(x, y);
+  g.strokeStyle = '#bff3ff';
+  g.lineWidth = Math.max(2, r * 0.12);
+  g.beginPath();
+  g.arc(0, 0, r * 0.62, 0, Math.PI * 2);
+  g.stroke();
+  g.fillStyle = 'rgba(110, 231, 255, 0.25)';
+  g.fill();
+  g.fillStyle = '#e8fbff';
+  g.beginPath();
+  g.moveTo(0, -r * 0.3);
+  g.lineTo(r * 0.2, r * 0.22);
+  g.lineTo(-r * 0.2, r * 0.22);
+  g.closePath();
+  g.fill();
+  g.restore();
 }

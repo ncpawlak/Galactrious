@@ -10,7 +10,7 @@ import { BLAST, BLAST_DEFAULT_SCALE, H, setBlastScale, TUNING, W, WEAPONS } from
 import { saveStore, type UnlockKind } from './save';
 import type { CinematicHost, ShipPose } from './campaign/cinematic';
 import { setScrollHooks } from './campaign/hooks';
-import { REGIONS } from './conquest/regions';
+import { REGIONS, syncChallengeRewards } from './conquest/regions';
 import { applyUnlocks } from './finale/unlocks';
 import { DebugPanel, modifierMult } from './debugControls';
 import { Effects } from './effects';
@@ -26,7 +26,7 @@ import { DamageFx, type Emit } from './damageFx';
 import { dodgeTarget } from './debugBot';
 import { scaleBoss } from './difficulty';
 import { TagSystem, type TagSet } from './tags';
-import { CARDS, CARD_BY_ID } from './upgrades/cards';
+import { CARDS, CARD_BY_ID, cardById } from './upgrades/cards';
 import { RewardNode } from './flow/nodes/reward';
 import type { FlowNode, NodeContext } from './flow/node';
 import { Loadout } from './upgrades/stats';
@@ -171,7 +171,8 @@ export class Game {
     carve: (t, x, y, energy, shape) => this.carveAt(t as BossFight, x, y, energy, shape),
     onFire: (id) => this.sfx.weapon(id),
     stat: (key, base) => this.loadout.get(key, base),
-    tags: (w) => this.loadout.tags(w),
+    tags: (w, scopes) => this.loadout.tags(w, scopes),
+    absorb: (x, y, r) => this.attacks.absorb(x, y, r),
     onHit: (tags, x, y, energy, target) => this.tags.onHit(tags, x, y, energy, target),
   });
   /** Tag hooks (src/tags.ts): elemental effects of upgrades. Handlers only ever touch targets, never the ship. */
@@ -314,6 +315,7 @@ export class Game {
   constructor(canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
     this.input = new Input(canvas);
+    syncChallengeRewards();
     this.fight = this.makeFight();
     // The campaign framework's scroll hooks drive the running scroll level (speed beats, distance triggers).
     setScrollHooks({ setSpeed: (v, e) => this.scroll?.setSpeed(v, e ?? 0), distance: () => this.scroll?.distance ?? 0 });
@@ -728,6 +730,14 @@ export class Game {
       upgrades: () => Object.fromEntries(this.loadout.held().map((h) => [h.card.id, h.n])),
       /** Grant a card by id (stacks, ignoring the max-stack limit). Applies in run mode and in the one-boss test mode. */
       grant: (id: string, n = 1) => this.grant(id, n),
+      /** Same as `grant`: put a card into the run (e.g. giveCard('aux2-cooldown', 2)). */
+      giveCard: (id: string, n = 1) => this.grant(id, n),
+      /** Unlock a weapon by id (`game.debug.unlockWeapon('mine')`), through its unlock flag; weapons without a flag are always open. */
+      unlockWeapon: (id: string) => {
+        const def = WEAPON_DEFS.find((w) => w.id === id);
+        if (!def) throw new Error(`unknown weapon "${id}"`);
+        return def.unlock ? saveStore.unlock('weapons', def.unlock) : false;
+      },
       /** Drop every held upgrade. */
       clearUpgrades: () => (this.run.state.upgrades.length = 0),
       /** Open the reward screen on demand over the current scene (sim paused until a card is picked). */
@@ -946,7 +956,7 @@ export class Game {
   }
 
   private grant(id: string, n = 1): void {
-    const card = CARD_BY_ID.get(id);
+    const card = cardById(id); // follows the ids of cards that were folded into the slot cards
     if (!card) throw new Error(`unknown card "${id}"`);
     for (let i = 0; i < n; i++) this.run.state.upgrades.push(card);
   }
@@ -1651,12 +1661,12 @@ export class Game {
     const lo = this.loadout;
     const def = mainById(this.run.state.loadout.main);
     const { projectiles, damage } = effectiveMain(def, this.stats, (k, b) => lo.get(k, b));
-    const tags = lo.tags(def.id);
+    const tags = lo.tags(def.id, ['main']);
     const custom = def.id !== 'chain';
     // Upgrade-driven shape and pierce (cards add `<id>.width` / `<id>.pierce`; no card = the def's own values, unchanged).
     const tiers = def.shapeTiers;
     const shape = tiers ? tiers[Math.max(0, Math.min(tiers.length - 1, Math.round(lo.get(`${def.id}.width`, 0))))] : def.shape;
-    const pierce = Math.min(0.95, lo.get(`${def.id}.pierce`, def.pierce));
+    const pierce = Math.min(0.95, lo.get(`${def.id}.pierce`, def.pierce) + lo.get('main.pierce', 0));
     if (def.bullet.glow) this.sfx.weapon(def.id);
     const ship = shipById(this.run.state.shipId).baseStats;
     const muzzles = ship.twinMuzzles ?? 1;

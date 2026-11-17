@@ -180,6 +180,15 @@ export const WEAPONS = {
    * (an `arcDeg` wide arc); every `tick` s each of `samples` points on the front carves `energy` x power x the distance factor
    * (1 at the ship, `edge` at `reach`), with the `wave` carve shape. Passes through components like the other aux (soaks only their hp).
    */
+  /**
+   * Mine Layer (aux): one mine per use at the ship, `maxLive` at most (the oldest bursts early). It drifts up at `drift` px/s, arms after `arm` s, bursts when a
+   * target's solid pixel or component is within `trigger` px (or after `life` s) as a small rocket-like blast.
+   */
+  mine: { cooldown: 3.5, maxLive: 4, drift: 40, arm: 0.6, life: 8, trigger: 38, blast: { radius: 60, energy: 1400, damage: 30, coreDamage: 28, falloff: 1 } },
+  /** Drone (aux): `duration` s of flight at a side offset (`offset` px, more drones fan out), `rate` aimed chip shots/s of `energy` each; `recharge` s after it expires. */
+  drone: { recharge: 6, duration: 12, offset: 52, rate: 3, energy: 450, speed: 760, pierce: 0.2 },
+  /** Shield Pulse (aux): a bubble of `radius` px for `duration` s that removes enemy bullets touching it (not beams, hazards or contact). */
+  shield: { cooldown: 10, duration: 2.5, radius: 55 },
   wave: { cooldown: 4, duration: 0.42, tick: 0.03, reach: 160, arcDeg: 100, samples: 15, energy: 120, edge: 0.25, shape: 'wave' as const },
 };
 

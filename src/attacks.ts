@@ -213,6 +213,19 @@ export class Attacks {
     this.hazards = this.hazards.filter((h) => hazardPhase(h) !== null && (!h.alive || h.alive()));
   }
 
+  /** The Shield Pulse: remove every bullet within `r` px of (x, y) (plus the bullet radius); returns where they were. Hazards and beams are not bullets and stay. */
+  absorb(x: number, y: number, r: number): { x: number; y: number }[] {
+    const out: { x: number; y: number }[] = [];
+    for (const b of this.bullets) {
+      if (b.alive && Math.hypot(b.x - x, b.y - y) <= r + TUNING.attacks.bulletRadius) {
+        b.alive = false;
+        out.push({ x: b.x, y: b.y });
+      }
+    }
+    if (out.length > 0) this.bullets = this.bullets.filter((b) => b.alive);
+    return out;
+  }
+
   /** Remove and return the total damage of bullets touching the player hitbox (circle). */
   collect(x: number, y: number, r: number): number {
     let dmg = 0;

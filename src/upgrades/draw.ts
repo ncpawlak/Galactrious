@@ -1,4 +1,6 @@
+import { WEAPON_DEFS } from '../weapons';
 import { CARD_BY_ID } from './cards';
+import type { CardDef } from './model';
 import type { Loadout } from './stats';
 
 /** Accent colour per card group (card border bar, strip chips). */
@@ -14,11 +16,34 @@ export const GROUP_COLORS: Record<string, string> = {
   Swarm: '#ff78dc',
   Laser: '#ff5a7a',
   'Energy Wave': '#8f9bff',
+  'Energy Bomb': '#ff5a4a',
+  'Mine Layer': '#ffb347',
+  Drone: '#6ee7ff',
+  'Shield Pulse': '#9fe0ff',
+  'Main gun': '#ffd21f',
+  'All aux': '#7dd3ff',
+  'Aux 1': '#7dd3ff',
+  'Aux 2': '#7dd3ff',
+  'Aux 3': '#7dd3ff',
+  Burn: '#ff7a3c',
+  'Trade-off': '#ff6b6b',
   Ship: '#c4a8ff',
 };
 
 export function groupColor(id: string): string {
   return GROUP_COLORS[CARD_BY_ID.get(id)?.group ?? ''] ?? '#ffffff';
+}
+
+/**
+ * The heading of a card on the reward screen. A slot card names what it will act on right now: "MAIN GUN: Chain gun", "AUX 2: Rocket".
+ * `equipped` = the run's weapon ids, main first, then the aux weapons in slot order (as `canOffer` reads them).
+ */
+export function cardHeading(card: CardDef, equipped: readonly string[]): string {
+  const name = (id: string | undefined): string => (id ? (WEAPON_DEFS.find((w) => w.id === id)?.name ?? id) : '');
+  if (card.slot === 'main') return card.group === 'Main gun' ? `Main gun: ${name(equipped[0])}` : card.group;
+  if (typeof card.slot === 'number') return `Aux ${card.slot}: ${name(equipped[card.slot])}`;
+  if (card.slot === 'aux' && card.group === 'All aux') return 'All aux weapons';
+  return card.group;
 }
 
 /**
