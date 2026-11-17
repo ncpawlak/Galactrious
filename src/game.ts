@@ -460,6 +460,7 @@ export class Game {
       takeTap: () => this.taps.shift() ?? null,
       takeKey: () => this.keyPresses.shift() ?? null,
       pointer: () => this.input.hover,
+      pointerHeld: () => (this.input.pointerDown ? { x: this.input.px, y: this.input.py } : null),
     };
   }
 

@@ -60,12 +60,12 @@ export interface ShipDefinition {
   look: ShipLook;
   baseStats: ShipStats;
   startingWeapons: WeaponLoadout;
-  /** How many aux slots the loadout builder offers (default 3). */
-  auxSlots?: number;
   /** Unlock flag (`save.unlocks.ships`). Omitted = always unlocked. */
   unlock?: string;
   /** Shown on the select screen while locked: how to get it. */
   unlockHint?: string;
+  /** Short unlock requirement shown under the silhouette in the ship builder while locked. */
+  requirement?: string;
   /** No guns at all: firing and the weapon rings are off (the escape pod). */
   noWeapons?: boolean;
   /**
@@ -109,6 +109,7 @@ export const SHIPS: ShipDefinition[] = [
     startingWeapons: { main: 'scatter', aux: ['blades', 'rocket', 'lance'] },
     unlock: 'warden',
     unlockHint: 'Defeat the first boss in a run.',
+    requirement: 'Defeat the first boss in an Endless run',
   },
   {
     id: 'wisp',
@@ -127,6 +128,7 @@ export const SHIPS: ShipDefinition[] = [
     startingWeapons: { main: 'needle', aux: ['swarm', 'gauss', 'arc'] },
     unlock: 'wisp',
     unlockHint: 'Clear a whole run.',
+    requirement: 'Clear a whole Endless run',
   },
   {
     // The commandeered empire fighter (Fallen Peace chapters 5 to 7), a hero version of the empire fighter unit: angular, forward-swept
@@ -150,9 +152,9 @@ export const SHIPS: ShipDefinition[] = [
     },
     baseStats: { maxHealth: 6, speed: 500, dodgeCooldown: 2.2, hitbox: TUNING.player.hitbox, minY: 260 },
     startingWeapons: { main: 'pulse', aux: ['flak'] },
-    auxSlots: 1,
     unlock: 'empire-fighter',
     unlockHint: 'Finish the Fallen Peace campaign.',
+    requirement: 'Finish Fallen Peace',
     empireTech: true,
   },
 ];
@@ -233,19 +235,25 @@ export function shipBase(id: string): Record<string, number> {
   return { 'ship.maxHealth': b.maxHealth, 'ship.speed': b.speed, 'dodge.cooldown': b.dodgeCooldown, 'ship.hitbox': b.hitbox };
 }
 
-/** Draws a ship centred at (x, y) at `scale` (1 = in-game size). The flame flickers with Math.random, as the in-game ship always did. */
-export function drawShipLook(g: CanvasRenderingContext2D, look: ShipLook, x: number, y: number, scale = 1): void {
+/** Draws a ship centred at (x, y) at `scale` (1 = in-game size); `silhouette` draws it as a plain black shape. The flame flickers with Math.random, as the in-game ship always did. */
+export function drawShipLook(g: CanvasRenderingContext2D, look: ShipLook, x: number, y: number, scale = 1, silhouette = false): void {
   g.save();
   g.translate(Math.round(x), Math.round(y));
   if (scale !== 1) g.scale(scale, scale);
   const poly = (p: ShipPart): void => {
-    g.fillStyle = p.color;
+    g.fillStyle = silhouette ? '#000' : p.color;
     g.beginPath();
     p.points.forEach(([px, py], i) => (i === 0 ? g.moveTo(px, py) : g.lineTo(px, py)));
     g.closePath();
     g.fill();
   };
   poly(look.hull);
+  if (silhouette) {
+    // A locked body: the hull and detail shapes in one black fill (details can reach past the hull), no cockpit or flame.
+    for (const d of look.details ?? []) poly(d);
+    g.restore();
+    return;
+  }
   for (const d of look.details ?? []) poly(d);
   const c = look.cockpit;
   g.fillStyle = c.color;

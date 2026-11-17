@@ -676,8 +676,8 @@ The first three rewards are the three gated cards that already existed (`demoCar
 - The hidden item tells are subtle by design and were checked on screen at one scale only; any carving can find a cache by accident. The wave formations and ace placements are first guesses.
 - The boss backdrop is a slow `scroll` level with no entries; Bulwark was not designed for a scrolling floor (it looks fine), nothing else was tuned for it.
 
-## Ship builder screen (Endless and Conquest) (design, not built)
-Status: **design only**, agreed with the owner. It replaces the two-screen flow (`ShipSelectScreen` list, then `LoadoutScreen` slots in `src/flow/shipScreens.ts`) with **one screen**. It is used by **Endless and Conquest only**; Campaign chapters keep their preset ships and loadouts.
+## Ship builder screen (Endless and Conquest) (built; skins deferred)
+Status: **built** (see 'As built' at the end of this section); skins are still design only. Agreed with the owner. It replaces the two-screen flow (`ShipSelectScreen` list, then `LoadoutScreen` slots in `src/flow/shipScreens.ts`) with **one screen**. It is used by **Endless and Conquest only**; Campaign chapters keep their preset ships and loadouts.
 
 ### Layout (540x960 portrait, top to bottom)
 1. **Header:** the ship body's name with `<` `>` arrows to change the body (swipe on the model works too). Keyboard: left/right.
@@ -696,6 +696,7 @@ Status: **design only**, agreed with the owner. It replaces the two-screen flow 
 - Slots start filled with the body's **preset loadout**, so START is one tap away. The last used loadout per body stays remembered (existing `saveStore.setLastLoadout`).
 
 ### Skins and awards
+**Deferred: skins are out of scope for the first build of this screen** (tracked as a GitHub issue, 'Ship skins as awards'). The first build has no skin arrows and no skins; the layout leaves room for them under the model. This section is the plan for that later work.
 - A **skin** is a palette (and, where it helps, trim) variant of a body. A body always has a **default skin**, unlocked from the start.
 - **Skins are awards.** Each locked skin names its requirement in the UI. They are tied to Campaign, Conquest and Endless results. First slice, kept small (1 or 2 per mode, adding more is a data change):
   - **Campaign:** a skin for finishing "Fallen Peace"; a gold skin for finishing it with all gold medals.
@@ -713,6 +714,17 @@ Status: **design only**, agreed with the owner. It replaces the two-screen flow 
 - Silhouettes: the ship model is drawn from its layout; locked bodies draw it with a single black fill and no detail. Locked weapon icons do the same with the existing `weaponIcon` helper (a `silhouette` flag).
 - The slot data model is unchanged (`{ main, aux: [3] }`); only the UI and skin selection are new. `Run.select` takes the chosen body, skin and loadout.
 - Keep keyboard support: arrows change body, `[`/`]` or up/down change skin, 1 to 4 open a slot, enter starts, esc goes back.
+
+### As built
+- `ShipBuilderScreen` (`src/flow/shipScreens.ts`) replaces `ShipSelectScreen` and `LoadoutScreen`; `Run` has one phase `builder` (was `ships` + `loadout`), opened from ENDLESS and, after the region screen, from CONQUEST (subtitle `Conquest: <region>`). It opens on the last used body with its last loadout. START goes through `Run.select` and `saveStore.setLastLoadout`.
+- Layout as designed. No skin arrows; the model panel has free space under it. Locked bodies: black silhouette (`drawShipLook(..., silhouette)`), padlock, `requirement` text. FIRE in the stats strip is the equipped main weapon's rate multiplier (a body has no fire stat).
+- Slots: 1 main + 3 aux on every body (the Empire fighter's `auxSlots: 1` is gone). Slots may be empty ("empty", e.g. the Empire fighter's preset has one aux weapon; a preset weapon the player has not unlocked also leaves a slot empty). Edits persist per body while the screen is open; the last started loadout is saved per body (`save.loadouts`) as well as the single `lastLoadout`.
+- Weapon sheet: slides up from the bottom, lists every non-stashed weapon (unlocked by name, then locked with padlock icon and requirement). Tap a row to fill, tap above the sheet or esc to close, drag to scroll, keys up/down/enter. A weapon already in another aux slot swaps.
+- Any weapon on any ship: the `shipOnly` flag is removed, so Pulse Orbs and Energy Bomb are usable on every body once unlocked.
+- `requirement` strings were added to ships and weapons (next to `unlockHint`, which the Unlocks screen still uses).
+- NEW dots: save version 6 adds `seen: { ships, weapons }` (ship id / weapon id). The v5 migration marks everything already unlocked as seen (weapons that came with an owned ship through a frozen table). A body centred or a sheet opened marks items seen at once, but their dot stays until the screen is left. Dots: arrows (another body is new), body name, weapon rows, title ENDLESS and CONQUEST entries. Only gated bodies and weapons can be NEW.
+- Swipe on the model needs the pointer's held state: `NodeHost.pointerHeld()`.
+- Not built: skins and skin arrows (issue #92), live weapon preview, a way to clear an aux slot back to empty.
 
 ### Open
 Skin names and the exact award thresholds; Endless milestones; a live weapon preview on the model (optional, not in v1).

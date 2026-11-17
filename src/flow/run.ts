@@ -5,17 +5,17 @@ import { drawConquestResult, RegionScreen, RegionSelectScreen } from '../conques
 import { ConquestTracker, type ConquestResult } from '../conquest/tracker';
 import type { RegionDefinition } from '../conquest/types';
 import { NO_SCALE, type EnemyScale } from '../difficulty';
-import { cleanLoadout, defaultLoadoutFor, initialSelection } from '../loadouts';
+import { anythingNew, cleanLoadout, defaultLoadoutFor, initialSelection } from '../loadouts';
 import { saveStore } from '../save';
 import { DEFAULT_SHIP_ID, SHIP_BY_ID, shipById, SHIPS, type WeaponLoadout } from '../ships';
 import type { FlowNode, NodeContext, NodeDefinition, NodeHost, NodeHud, NodePosition, RunDefinition, RunState } from './node';
 import { createNode } from './nodes';
 import { CAMPAIGN_BTN, CONQUEST_BTN, ENDLESS_BTN, UNLOCKS_BTN, drawRunOver, drawRunWon, drawTitle } from './screens';
-import { LoadoutScreen, ShipSelectScreen } from './shipScreens';
+import { ShipBuilderScreen } from './shipScreens';
 import { UnlocksScreen } from './unlocksScreen';
 
 /** title -> node (the current level's nodes, then its reward) -> ... -> won; death at any node -> over. */
-export type RunPhase = 'title' | 'unlocks' | 'regions' | 'region' | 'ships' | 'loadout' | 'campaign' | 'node' | 'over' | 'won';
+export type RunPhase = 'title' | 'unlocks' | 'regions' | 'region' | 'builder' | 'campaign' | 'node' | 'over' | 'won';
 
 /** Seconds a result screen ignores input, so the press that ended the last node cannot skip it. */
 const SCREEN_LOCKOUT = 1;
@@ -52,8 +52,7 @@ export class Run {
   private nodeTime = 0;
   private nodeDef: NodeDefinition | null = null;
   private unlocksScreen: UnlocksScreen | null = null;
-  private shipScreen: ShipSelectScreen | null = null;
-  private loadoutScreen: LoadoutScreen | null = null;
+  private builderScreen: ShipBuilderScreen | null = null;
   private regionsScreen: RegionSelectScreen | null = null;
   private regionScreen: RegionScreen | null = null;
   /** Conquest (src/conquest): the region being played or chosen, the tracker of the running run and the result of the last one. Null in Endless. */
@@ -273,9 +272,7 @@ export class Run {
         this.regionsScreen = new RegionSelectScreen();
         this.setPhase('regions');
       } else if (r === 'start') {
-        const sel = initialSelection();
-        this.shipScreen = new ShipSelectScreen(sel.shipId, `Conquest: ${this.region!.name}`);
-        this.setPhase('ships');
+        this.openBuilder(`Conquest: ${this.region!.name}`);
       }
       return;
     }
@@ -287,27 +284,14 @@ export class Run {
       if (this.unlocksScreen!.update(dt, this.host)) this.toTitle();
       return;
     }
-    if (this.phase === 'ships') {
-      const r = this.shipScreen!.update(dt, this.host);
+    if (this.phase === 'builder') {
+      const r = this.builderScreen!.update(dt, this.host);
       if (r === 'back') {
         if (this.region) this.openRegion(this.region);
         else this.toTitle();
-      }
-      else if (r === 'next') {
-        const ship = this.shipScreen!.ship;
-        // Keep the saved weapons when the same ship is picked again, else start from the ship's own.
-        const last = saveStore.current.lastLoadout;
-        this.loadoutScreen = new LoadoutScreen(ship.id, last && last.ship === ship.id ? last : defaultLoadoutFor(ship.id));
-        this.setPhase('loadout');
-      }
-      return;
-    }
-    if (this.phase === 'loadout') {
-      const r = this.loadoutScreen!.update(dt, this.host);
-      if (r === 'back') this.setPhase('ships');
-      else if (r === 'start') {
-        const ship = this.shipScreen!.ship;
-        const l = this.loadoutScreen!.loadout;
+      } else if (r === 'start') {
+        const ship = this.builderScreen!.ship;
+        const l = this.builderScreen!.loadout;
         this.select(ship.id, l);
         saveStore.setLastLoadout({ ship: ship.id, main: l.main, aux: l.aux });
         this.startFromTitle();
@@ -331,9 +315,7 @@ export class Run {
         this.setPhase('regions');
       } else if (key === 'Enter' || key === 'Space' || key === 'KeyE' || inBtn(ENDLESS_BTN)) {
         this.region = null;
-        const sel = initialSelection();
-        this.shipScreen = new ShipSelectScreen(sel.shipId);
-        this.setPhase('ships');
+        this.openBuilder('Endless');
       }
     } else if (this.phaseTime > SCREEN_LOCKOUT) {
       // A result screen: back to the region screen after a Conquest run (to see the challenges), else the title.
@@ -343,6 +325,13 @@ export class Run {
         this.openRegion(region);
       } else this.toTitle();
     }
+  }
+
+  /** Endless and Conquest: the one-screen ship builder, opened on the last used ship and loadout. */
+  private openBuilder(subtitle: string): void {
+    const sel = initialSelection();
+    this.builderScreen = new ShipBuilderScreen(sel.shipId, subtitle, sel.loadout);
+    this.setPhase('builder');
   }
 
   private startFromTitle(): void {
@@ -375,7 +364,7 @@ export class Run {
     const summary = { level: this.state.levelIndex + 1, levels: this.activeDef.levels.length, time: this.state.time, upgrades: this.state.upgrades.map((u) => u.name), unlocked: this.unlockedNames };
     switch (this.phase) {
       case 'title':
-        drawTitle(g, this.phaseTime, this.def.levels.length, REGIONS.some((r) => saveStore.isRegionUnlocked(r.id)) ? `${REGIONS.filter((r) => saveStore.isRegionUnlocked(r.id)).length}/${REGIONS.length} region open` : 'locked: finish Fallen Peace');
+        drawTitle(g, this.phaseTime, this.def.levels.length, REGIONS.some((r) => saveStore.isRegionUnlocked(r.id)) ? `${REGIONS.filter((r) => saveStore.isRegionUnlocked(r.id)).length}/${REGIONS.length} region open` : 'locked: finish Fallen Peace', anythingNew());
         break;
       case 'unlocks':
         this.unlocksScreen!.draw(g);
@@ -386,11 +375,8 @@ export class Run {
       case 'region':
         this.regionScreen!.draw(g);
         break;
-      case 'ships':
-        this.shipScreen!.draw(g);
-        break;
-      case 'loadout':
-        this.loadoutScreen!.draw(g);
+      case 'builder':
+        this.builderScreen!.draw(g);
         break;
       case 'campaign':
         this.campaign.draw(g);

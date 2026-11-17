@@ -9,11 +9,13 @@
  *
  * Version 5 added `conquest` (unlocked regions, completed challenges and best results per region); a v4 save that already owns the Empire Fighter (Campaign 1 finished) gets the Empire Base region.
  *
+ * Version 6 added `seen` (ship and weapon ids the player has looked at in the ship builder; unlocked but unseen items get a NEW dot). A v5 save counts everything it has unlocked as seen.
+ *
  * To add a new field: add it to `SaveData`, give it a default in `defaults()`, bump `SAVE_VERSION` and add a step to `MIGRATIONS`.
  */
 
 export const SAVE_KEY = 'galactrious.save';
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export type UnlockKind = 'cards' | 'ships' | 'weapons';
 export type Medal = 'bronze' | 'silver' | 'gold';
@@ -66,7 +68,11 @@ export interface SaveData {
   medals: Record<string, MedalRecord>;
   campaign: CampaignProgress;
   conquest: ConquestProgress;
+  /** Ship ids and weapon ids already viewed in the ship builder. An unlocked item missing here shows a NEW dot. */
+  seen: { ships: string[]; weapons: string[] };
   lastLoadout?: LastLoadout;
+  /** The last loadout started with each body (ship id -> weapons), remembered by the ship builder. */
+  loadouts?: Record<string, { main: string; aux: string[] }>;
   stats?: { runs?: number; bossesKilled?: number };
 }
 
@@ -74,7 +80,7 @@ const KINDS: UnlockKind[] = ['cards', 'ships', 'weapons'];
 const MEDAL_RANK: Record<Medal, number> = { bronze: 1, silver: 2, gold: 3 };
 
 export function defaults(): SaveData {
-  return { version: SAVE_VERSION, unlocks: { cards: [], ships: [], weapons: [] }, medals: {}, campaign: { snapshots: {} }, conquest: { regions: [], challenges: {}, best: {} } };
+  return { version: SAVE_VERSION, unlocks: { cards: [], ships: [], weapons: [] }, medals: {}, campaign: { snapshots: {} }, conquest: { regions: [], challenges: {}, best: {} }, seen: { ships: [], weapons: [] } };
 }
 
 /** MIGRATIONS[n] upgrades a version-n blob to version n+1. Empty until the format first changes. */
@@ -96,6 +102,15 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => Record<string, 
     const u = (d.unlocks ?? {}) as Record<string, unknown>;
     const ships = Array.isArray(u.ships) ? (u.ships as unknown[]) : [];
     if (ships.includes('empire-fighter')) d.conquest = { regions: ['empire-base'], challenges: {}, best: {} };
+    return d;
+  },
+  5: (d) => {
+    // v6: `seen`. Everything already unlocked counts as seen. Weapons that come with an owned ship are listed here as they were at v5 (a frozen table).
+    const u = (d.unlocks ?? {}) as Record<string, unknown>;
+    const ships = Array.isArray(u.ships) ? (u.ships as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+    const weapons = Array.isArray(u.weapons) ? (u.weapons as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+    const withShip: Record<string, string[]> = { warden: ['lance', 'blades', 'scatter'], wisp: ['swarm', 'needle'], 'empire-fighter': ['pulse', 'flak'] };
+    d.seen = { ships: [...ships], weapons: [...new Set([...weapons.map((w) => (w === 'pulse-orb' ? 'pulse' : w)), ...ships.flatMap((s) => withShip[s] ?? [])])] };
     return d;
   },
 };
@@ -162,9 +177,24 @@ function normalize(raw: unknown): SaveData | null {
       }
     }
   }
+  const sn = d.seen as Record<string, unknown> | undefined;
+  if (sn && typeof sn === 'object') {
+    for (const k of ['ships', 'weapons'] as const) {
+      const list = sn[k];
+      if (Array.isArray(list)) out.seen[k] = [...new Set(list.filter((x): x is string => typeof x === 'string'))];
+    }
+  }
   const ll = d.lastLoadout as Record<string, unknown> | undefined;
   if (ll && typeof ll === 'object' && typeof ll.ship === 'string' && typeof ll.main === 'string' && Array.isArray(ll.aux)) {
     out.lastLoadout = { ship: ll.ship, main: ll.main, aux: ll.aux.filter((x): x is string => typeof x === 'string').slice(0, 3) };
+  }
+  const lo = d.loadouts;
+  if (lo && typeof lo === 'object' && !Array.isArray(lo)) {
+    out.loadouts = {};
+    for (const [ship, rec] of Object.entries(lo as Record<string, unknown>)) {
+      const r = rec as Record<string, unknown> | null;
+      if (r && typeof r === 'object' && typeof r.main === 'string' && Array.isArray(r.aux)) out.loadouts[ship] = { main: r.main, aux: r.aux.filter((x): x is string => typeof x === 'string').slice(0, 3) };
+    }
   }
   const s = d.stats;
   if (s && typeof s === 'object' && !Array.isArray(s)) {
@@ -248,9 +278,21 @@ export class SaveStore {
     return true;
   }
 
-  /** Remember the last ship and loadout the player started a run with. */
+  isSeen(kind: 'ships' | 'weapons', id: string): boolean {
+    return this.data.seen[kind].includes(id);
+  }
+
+  /** Mark a ship or weapon as viewed (clears its NEW dot). */
+  markSeen(kind: 'ships' | 'weapons', id: string): void {
+    if (this.isSeen(kind, id)) return;
+    this.data.seen[kind].push(id);
+    this.save();
+  }
+
+  /** Remember the last ship and loadout the player started a run with (and that body's own last loadout). */
   setLastLoadout(l: LastLoadout): void {
     this.data.lastLoadout = { ship: l.ship, main: l.main, aux: [...l.aux] };
+    (this.data.loadouts ??= {})[l.ship] = { main: l.main, aux: [...l.aux] };
     this.save();
   }
 
