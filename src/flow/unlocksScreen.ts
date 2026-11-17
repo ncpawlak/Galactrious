@@ -1,9 +1,11 @@
 import { H, W } from '../config';
 import { saveStore } from '../save';
+import { weaponAvailable } from '../loadouts';
 import { CARDS } from '../upgrades/cards';
 import { groupColor } from '../upgrades/draw';
 import { cardUnlocked } from '../upgrades/stats';
 import { drawCentered } from './screens';
+import { WEAPON_DEFS } from '../weapons';
 import type { NodeHost } from './node';
 
 const MONO = 'ui-monospace, Consolas, monospace';
@@ -28,6 +30,26 @@ const BACK: Btn = { x: W - 250, y: 856, w: 220, h: 56 };
 const YES: Btn = { x: 30, y: 856, w: 220, h: 56 };
 const NO: Btn = { x: W - 250, y: 856, w: 220, h: 56 };
 
+/** One row of the list: a card, or a weapon that has an unlock flag (listed after the cards, with its unlock hint while locked). */
+interface Row {
+  name: string;
+  desc: string;
+  hint?: string;
+  color: string;
+  open: boolean;
+  /** Shown as UNLOCKED (true) or ALWAYS (false) when open. */
+  gated: boolean;
+}
+
+function rows(): Row[] {
+  const out: Row[] = CARDS.map((c) => ({ name: c.name, desc: c.desc, hint: c.unlockHint, color: groupColor(c.id), open: cardUnlocked(c), gated: !!c.unlock }));
+  for (const w of WEAPON_DEFS) {
+    if (!w.unlock) continue;
+    out.push({ name: `${w.name} (${w.slot})`, desc: w.desc, hint: w.unlockHint, color: w.color, open: weaponAvailable(w), gated: true });
+  }
+  return out;
+}
+
 const hit = (b: Btn, p: { x: number; y: number }): boolean => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
 
 /** The Unlocks screen (from the title): every card, unlocked or "???" with how to get it, paging, and a confirmed save reset. */
@@ -41,7 +63,7 @@ export class UnlocksScreen {
     this.t += dt;
     const tap = host.takeTap();
     const key = host.takeKey();
-    const pages = Math.ceil(CARDS.length / PER_PAGE);
+    const pages = Math.ceil(rows().length / PER_PAGE);
     if (this.t < 0.25) return false; // the press that opened the screen cannot act on it
     if (key === 'ArrowRight' && this.page < pages - 1) this.page++;
     if (key === 'ArrowLeft' && this.page > 0) this.page--;
@@ -85,19 +107,20 @@ export class UnlocksScreen {
     g.fillStyle = 'rgba(5, 6, 13, 0.82)';
     g.fillRect(0, 0, W, H);
     g.restore();
-    const have = CARDS.filter(cardUnlocked).length;
+    const all = rows();
+    const have = all.filter((r) => r.open).length;
     drawCentered(g, 'UNLOCKS', 70, `bold 36px ${MONO}`, '#ffd21f');
-    drawCentered(g, `cards ${have}/${CARDS.length} unlocked`, 104, `15px ${MONO}`, '#6ee7ff');
+    drawCentered(g, `cards and weapons ${have}/${all.length} unlocked`, 104, `15px ${MONO}`, '#6ee7ff');
     if (!saveStore.persistent) drawCentered(g, 'in-memory save: nothing is stored', 128, `12px ${MONO}`, '#ff8a5a');
     else if (saveStore.degraded) drawCentered(g, 'storage unavailable: progress is not stored', 128, `12px ${MONO}`, '#ff8a5a');
-    const pages = Math.ceil(CARDS.length / PER_PAGE);
-    CARDS.slice(this.page * PER_PAGE, (this.page + 1) * PER_PAGE).forEach((c, i) => {
+    const pages = Math.ceil(all.length / PER_PAGE);
+    all.slice(this.page * PER_PAGE, (this.page + 1) * PER_PAGE).forEach((c, i) => {
       const y = ROW_Y0 + i * (ROW_H + ROW_GAP);
-      const open = cardUnlocked(c);
+      const open = c.open;
       g.save();
       g.fillStyle = open ? '#0b1424' : '#080d18';
       g.fillRect(X, y, ROW_W, ROW_H);
-      g.fillStyle = open ? groupColor(c.id) : '#3a4560';
+      g.fillStyle = open ? c.color : '#3a4560';
       g.fillRect(X, y, 6, ROW_H);
       g.textAlign = 'left';
       g.textBaseline = 'alphabetic';
@@ -106,12 +129,12 @@ export class UnlocksScreen {
       g.fillText(open ? c.name : '???', X + 20, y + 24);
       g.font = `12px ${MONO}`;
       g.fillStyle = open ? '#b6c2e0' : '#8fa0c8';
-      const line = open ? c.desc : (c.unlockHint ?? 'unlock requirement unknown');
+      const line = open ? c.desc : (c.hint ?? 'unlock requirement unknown');
       g.fillText(line.length > 60 ? `${line.slice(0, 59)}…` : line, X + 20, y + 44);
       g.textAlign = 'right';
       g.font = `bold 12px ${MONO}`;
       g.fillStyle = open ? '#4ade80' : '#ff8a5a';
-      g.fillText(open ? (c.unlock ? 'UNLOCKED' : 'ALWAYS') : 'LOCKED', X + ROW_W - 12, y + 24);
+      g.fillText(open ? (c.gated ? 'UNLOCKED' : 'ALWAYS') : 'LOCKED', X + ROW_W - 12, y + 24);
       g.restore();
     });
     drawCentered(g, `page ${this.page + 1}/${pages}`, 822, `14px ${MONO}`, '#8fa0c8');

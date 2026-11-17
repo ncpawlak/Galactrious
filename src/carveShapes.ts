@@ -33,6 +33,14 @@ export const CARVE_SHAPES = {
   ember3: { lateralPenalty: 1, backPenalty: 1, reach: 14 } as CarveShape,
   /** Needler main gun: a thin, deepish tunnel. */
   needle: { lateralPenalty: 2.6, backPenalty: 2.5, reach: 70 } as CarveShape,
+  /** Laser main gun: a narrow deep tunnel (thinner than the Gauss shaft, much deeper than a chain gun hit). */
+  laser: { lateralPenalty: 3.6, backPenalty: 2.5, reach: 90 } as CarveShape,
+  /** Laser width upgrade tiers (`laser.width`): the same tunnel, progressively wider. */
+  laser1: { lateralPenalty: 3.0, backPenalty: 2.5, reach: 90 } as CarveShape,
+  laser2: { lateralPenalty: 2.5, backPenalty: 2.5, reach: 90 } as CarveShape,
+  laser3: { lateralPenalty: 2.1, backPenalty: 2.5, reach: 90 } as CarveShape,
+  /** Energy Wave: one bite of the expanding crescent front, a small round bite; the field is many of them swept across the arc. */
+  wave: { lateralPenalty: 1, backPenalty: 1, reach: 11 } as CarveShape,
   /** Swarm missile: a small round bite. */
   swarm: { lateralPenalty: 1.2, backPenalty: 1.2, reach: 22 } as CarveShape,
   /** Arc missile: a round, medium crater whatever direction it arrives from. */
