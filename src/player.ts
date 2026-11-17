@@ -17,6 +17,8 @@ export class Health {
   invuln = 0;
   /** Seconds since the last hit, for the bar flash. */
   sinceHit = 99;
+  /** Hit points before the last hit (for the health bar's shatter). */
+  lostFrom = -1;
 
   /** Change max hull: a higher max also heals by the difference (the card's point), a lower one clamps. */
   setMax(n: number): void {
@@ -37,6 +39,7 @@ export class Health {
   /** Apply damage unless invulnerable. Returns true if it landed. */
   hit(dmg: number, invulnerable: boolean): boolean {
     if (invulnerable || this.invuln > 0 || this.dead) return false;
+    this.lostFrom = this.hp;
     this.hp = Math.max(0, this.hp - dmg);
     this.invuln = TUNING.player.hitInvuln;
     this.sinceHit = 0;
@@ -47,6 +50,7 @@ export class Health {
     this.hp = this.maxHp;
     this.invuln = 0;
     this.sinceHit = 99;
+    this.lostFrom = -1;
   }
 
   /** Top-right health bar (the left/bottom of the screen belongs to the HUD and debug overlay). */
@@ -66,8 +70,30 @@ export class Health {
     ctx.fillText('HULL', x, y + h + 3);
     ctx.fillStyle = 'rgba(255,255,255,0.15)';
     ctx.fillRect(x, y, w, h);
+    const warn = frac <= 0.4;
     ctx.fillStyle = this.sinceHit < 0.2 ? '#ffffff' : frac > 0.4 ? '#4ade80' : '#ff5a5a';
     ctx.fillRect(x, y, w * frac, h);
+    // The segments just lost shatter: a white-to-red flash that fades with shards flying off.
+    if (this.lostFrom >= 0 && this.sinceHit < 0.55) {
+      const k = this.sinceHit / 0.55;
+      const x0 = x + (w * this.hp) / this.maxHp;
+      const x1 = x + (w * this.lostFrom) / this.maxHp;
+      ctx.globalAlpha = 1 - k;
+      ctx.fillStyle = k < 0.25 ? '#ffffff' : '#ff3b3b';
+      ctx.fillRect(x0, y - k * 4, x1 - x0, h);
+      for (let i = 0; i < 6; i++) {
+        const sx = x0 + ((x1 - x0) * (i + 0.5)) / 6;
+        ctx.fillRect(sx + (i - 2.5) * k * 8, y + h * 0.3 + k * k * 30, 3, 3);
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (warn && !this.dead) {
+      ctx.strokeStyle = '#ff3b3b';
+      ctx.globalAlpha = 0.4 + 0.4 * Math.sin(performance.now() / 160);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+      ctx.globalAlpha = 1;
+    }
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     for (let i = 1; i < this.maxHp; i++) ctx.fillRect(x + (w * i) / this.maxHp - 1, y, 2, h);
     ctx.strokeStyle = 'rgba(255,255,255,0.5)';

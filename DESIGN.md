@@ -545,3 +545,14 @@ Status: **built**. Title -> CAMPAIGN -> campaign select -> (story intro on first
 **How to add a level:** append a `CampaignLevel` to a campaign in `content.ts` (ship, objectives, medals with a bonus). **A campaign:** add a `CampaignDefinition` to `CAMPAIGNS`.
 
 **Stubbed / not done:** chapters 1 to 3 are placeholders (no capital ship, scrolling, obstacles, allies); `setScrollSpeed`/`atDistance` do nothing until the scroll session installs hooks; no searchlights or pickups (`bump` is the hook); no touch control to abandon a level (keyboard `[Esc]` only; a tap there would also steer); level select shows up to 7 levels without paging; `?mode=boss` has no campaign.
+
+## Damage feedback
+
+Feedback when the player takes damage (`src/damageFx.ts`, hooks in `Game.afterPlayerHit`, `Effects.onPlayerHit`, `Sfx.playerHit/lowAlarm`, `Health.draw`). All tunables are in `JUICE.damage` (`src/config.ts`) and everything is switched off with the other juice by [J] (`damage.enabled` for just this). No damage numbers, hitboxes, i-frame durations or invulnerability rules were touched.
+
+- **On every hit:** a strong screen shake (`shake.hit` + `perDamage` per extra point; `shake.scrape` for obstacle contact), a `hitStop` of 0.04 s, the hull flashes white (`flash.white`) then red (`flash.red`), a spark burst (`sparks`), a red edge vignette that fades in `vignette.fade` s, and a low thud + metallic crack (rate-limited).
+- **i-frames:** the ship blinks at `blink.hz` while `Health.invuln > 0`; the dodge keeps its cyan ring and is not blinked.
+- **Low hull:** at or below `lowHealth.smoke` (40%) a grey smoke trail; at 1 hp or `lowHealth.fire` (20%) flames on the ship, embers, a slow red vignette pulse (`vignette.lowPeak/lowPulse`) and a quiet beep every `alarm.interval` s. It is derived from current hp, so any heal clears it. Offsets scale with the hull's extent, so it fits every ship.
+- **Obstacle scrape:** `afterPlayerHit(dmg, true)`: more sparks across the hull, bigger shake and a longer grinding sound.
+- **Health bar:** the lost segments flash white then red and shatter into shards; the bar border pulses red at 40% or less.
+- **Debug:** `game.debug.hurt(n, scrape?)` takes n damage (respects i-frames and dodge); `game.debug.setHealth(n)` sets hp and clears i-frames.
