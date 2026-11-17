@@ -18,9 +18,9 @@ import { COMMAND, COMMAND_SHIP_NAME, EMPIRE_CONTROL, SQUAD_LEADER, WINGMAN_1, WI
 import type { AssistSpec, Beat, CampaignLevel } from './types';
 
 /** The commandeered empire fighter with the campaign's preset loadout (no builder, no cards). */
-export const EMPIRE_SHIP = { id: 'empire-fighter', loadout: { main: 'laser', aux: ['wave', 'gauss', 'rocket'] }, power: { damage: 1.25, fireRate: 1.25 } };
+export const EMPIRE_SHIP = { id: 'empire-fighter', loadout: { main: 'pulse', aux: ['flak'] }, power: { damage: 1.25, fireRate: 1.25 } };
 /** Chapter 7 only: the capital ship is the toughest thing in the campaign, so the guns hit much harder (measured, DESIGN.md). */
-export const FINALE_SHIP = { ...EMPIRE_SHIP, power: { damage: 2.2, fireRate: 1.25 } };
+export const FINALE_SHIP = { ...EMPIRE_SHIP, power: { damage: 1.1, fireRate: 1.25 } };
 
 const CHAPTER_6: CampaignLevel = {
   id: 'fp-6',

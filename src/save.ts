@@ -5,13 +5,13 @@
  * game must still work, so the data then lives in memory only. A corrupt or unreadable blob falls back to defaults.
  * `?nosave` in the URL (and the one-boss debug mode) uses a pure in-memory save, so tests and debug sims never touch the real one.
  *
- * Version 2 added `lastLoadout`. Version 3 added `campaign` (boss snapshots) and `MedalRecord.bonus`.
+ * Version 2 added `lastLoadout`. Version 3 added `campaign` (boss snapshots) and `MedalRecord.bonus`. Version 4 changed the Fallen Peace rewards (empire ship for any medals; Pulse Orbs and Energy Bomb for all gold; Laser and Energy Wave stashed).
  *
  * To add a new field: add it to `SaveData`, give it a default in `defaults()`, bump `SAVE_VERSION` and add a step to `MIGRATIONS`.
  */
 
 export const SAVE_KEY = 'galactrious.save';
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export type UnlockKind = 'cards' | 'ships' | 'weapons';
 export type Medal = 'bronze' | 'silver' | 'gold';
@@ -63,6 +63,16 @@ export function defaults(): SaveData {
 const MIGRATIONS: Record<number, (d: Record<string, unknown>) => Record<string, unknown>> = {
   1: (d) => d, // v2 only added the optional `lastLoadout`
   2: (d) => d, // v3 only added `campaign` and `MedalRecord.bonus` (both default when missing)
+  3: (d) => {
+    // v4: the old campaign reward was the ship + Laser + Energy Wave for any medals. Those flags stay in the list (harmless: the two weapons are stashed
+    // and hidden). A player who earned all seven gold medals qualifies for the new gold reward, so grant it; everyone else keeps the ship only.
+    const u = (d.unlocks ?? {}) as Record<string, unknown>;
+    const weapons = Array.isArray(u.weapons) ? (u.weapons as unknown[]) : [];
+    const medals = (d.medals ?? {}) as Record<string, { best?: unknown } | undefined>;
+    const gold = ['fp-1', 'fp-2', 'fp-3', 'fp-4', 'fp-5', 'fp-6', 'fp-7'].every((id) => medals[id]?.best === 'gold');
+    if (gold) d.unlocks = { ...u, weapons: [...new Set([...weapons, 'pulse-orb', 'flak'])] };
+    return d;
+  },
 };
 
 /** Validate and migrate an arbitrary parsed value; returns null when it is unusable. */

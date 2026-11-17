@@ -2,6 +2,7 @@ import type { Boss, HitResult } from './boss';
 import type { CarveShapeName } from './carveShapes';
 import { resolveBlast, type BlastSpec, type ComponentSystem } from './components';
 import { H, MAINS, W, WEAPONS } from './config';
+import type { StyleName } from './attackStyles';
 import type { TagSet } from './tags';
 import { gaussShape } from './upgrades/stats';
 
@@ -27,6 +28,10 @@ interface WeaponBase {
   unlock?: string;
   /** Shown in the loadout builder while locked. */
   unlockHint?: string;
+  /** Stashed for later: defined and usable through the debug loadout, but hidden from every select screen and never available to a player. */
+  stashed?: boolean;
+  /** The weapon is NOT granted just because an unlocked ship starts with it: it needs its own unlock flag (or that ship, see `weaponAvailable`). */
+  shipOnly?: boolean;
 }
 
 /** An auto-firing aux weapon: fires on its own timer. */
@@ -58,7 +63,7 @@ export interface MainDef extends WeaponBase {
   /** Energy multiplier by distance travelled: `near` up to `start` px, easing to `far` at `end` px where the bullet dies. */
   fall?: { start: number; end: number; near: number; far: number };
   /** Bullet look: colour and size in px. */
-  bullet: { color: string; w: number; h: number; /** Charged-beam look: additive glow colour as 'r,g,b' (muzzle glow-in, streak, impact flare). */ glow?: string };
+  bullet: { color: string; w: number; h: number; /** Draw as the enemy bullet style of this name (an orb) instead of a rectangle. */ orb?: StyleName; /** Charged-beam look: additive glow colour as 'r,g,b' (muzzle glow-in, streak, impact flare). */ glow?: string };
 }
 
 export type WeaponDef = AuxDef | MainDef;
@@ -277,13 +282,40 @@ const AUX: AuxDef[] = [
     },
   },
   {
+    id: 'flak',
+    name: 'Energy Bomb',
+    slot: 'aux',
+    desc: 'One slow shell that bursts on impact in a wide blast.',
+    color: '#ff5a4a',
+    unlock: 'flak',
+    unlockHint: 'Complete Fallen Peace with every chapter on gold.',
+    shipOnly: true,
+    cooldown: (s) => s('flak.cooldown', WEAPONS.flak.cooldown),
+    fire: (c) => {
+      const r = WEAPONS.flak;
+      c.spawn({
+        weapon: 'flak',
+        x: c.ship.x,
+        y: c.ship.y - 24,
+        angle: -Math.PI / 2,
+        speed: r.speed,
+        accel: r.accel,
+        maxSpeed: r.maxSpeed,
+        blast: { ...r.blast, radius: c.stat('flak.radius', r.blast.radius), energy: c.stat('flak.energy', r.blast.energy) * c.power, damage: r.blast.damage * c.power, coreDamage: r.blast.coreDamage * c.power },
+        tags: c.tags,
+        trailLife: 0.2,
+      });
+    },
+  },
+  {
     id: 'wave',
     name: 'Energy Wave',
     slot: 'aux',
     desc: 'Half-moon blast: strong up close, fading with distance.',
     color: '#8f9bff',
+    stashed: true,
     unlock: 'energy-wave',
-    unlockHint: 'Complete Fallen Peace with gold.',
+    unlockHint: 'Stashed for later.',
     cooldown: (s) => s('wave.cooldown', WEAPONS.wave.cooldown),
     fire: (c) => {
       const w = WEAPONS.wave;
@@ -333,13 +365,26 @@ const MAIN: MainDef[] = [
     bullet: { color: '#e9c8ff', w: 2, h: 14 },
   },
   {
+    id: 'pulse',
+    name: 'Pulse Orbs',
+    slot: 'main',
+    desc: 'Slow round pulse orbs, the enemy fire turned around.',
+    color: '#ff2d9a',
+    unlock: 'pulse-orb',
+    unlockHint: 'Complete Fallen Peace with every chapter on gold.',
+    shipOnly: true,
+    ...MAINS.pulse,
+    bullet: { color: '#ff2d9a', w: 12, h: 12, orb: 'aimed' },
+  },
+  {
     id: 'laser',
     name: 'Laser',
     slot: 'main',
     desc: 'Slow heavy bolt: bores a deep, narrow tunnel.',
     color: '#ff5a7a',
+    stashed: true,
     unlock: 'laser',
-    unlockHint: 'Complete Fallen Peace with gold.',
+    unlockHint: 'Stashed for later.',
     ...MAINS.laser,
     shapeTiers: ['laser', 'laser1', 'laser2', 'laser3'],
     bullet: { color: '#ffd9e0', w: 4, h: 34, glow: '255,70,110' },
@@ -902,7 +947,7 @@ export class WeaponSystem {
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    const col = p.weapon === 'gauss' ? '191,246,255' : p.weapon === 'rocket' ? '255,169,77' : p.weapon === 'swarm' ? '255,120,220' : '125,255,154';
+    const col = p.weapon === 'gauss' ? '191,246,255' : p.weapon === 'flak' ? '255,90,74' : p.weapon === 'rocket' ? '255,169,77' : p.weapon === 'swarm' ? '255,120,220' : '125,255,154';
     const width = p.weapon === 'gauss' ? 7 : p.weapon === 'rocket' ? 5 : p.weapon === 'swarm' ? 2.5 : 4;
     ctx.globalCompositeOperation = 'lighter';
     // Trail: segments fade and thin with age.
@@ -933,6 +978,28 @@ export class WeaponSystem {
         ctx.fillRect(-2, -30, 4, 40);
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(-1, -34, 2, 8);
+      } else if (p.weapon === 'flak') {
+        // The flak shell: a red orb (the enemy flak's colours) inside a dashed ring showing the blast it will make.
+        ctx.rotate(-(p.angle + Math.PI / 2));
+        const br = p.blast?.radius ?? 56;
+        ctx.strokeStyle = 'rgba(255,90,74,0.45)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(0, 0, br, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(255,90,74,0.3)';
+        ctx.beginPath();
+        ctx.arc(0, 0, 11, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ff5a4a';
+        ctx.strokeStyle = '#ffe3dc';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       } else if (p.weapon === 'rocket') {
         // Exhaust flame, then the body.
         ctx.fillStyle = '#ffd24a';

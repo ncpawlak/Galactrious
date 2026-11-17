@@ -1,6 +1,6 @@
 import { H, W } from '../config';
 import { auxById, AUX_DEFS, MAIN_DEFS, mainById, type WeaponDef } from '../weapons';
-import { cleanLoadout, defaultLoadoutFor, weaponAvailable } from '../loadouts';
+import { auxSlotsOf, cleanLoadout, defaultLoadoutFor, weaponAvailable } from '../loadouts';
 import { drawShipLook, SHIPS, shipById, shipUnlocked, type WeaponLoadout } from '../ships';
 import { drawCentered } from './screens';
 import type { NodeHost } from './node';
@@ -198,7 +198,7 @@ export class LoadoutScreen {
   ) {
     const l = cleanLoadout(start, shipId);
     const d = defaultLoadoutFor(shipId);
-    this.slots = [l.main, ...[0, 1, 2].map((i) => l.aux[i] ?? d.aux[i])];
+    this.slots = [l.main, ...Array.from({ length: auxSlotsOf(shipId) }, (_, i) => l.aux[i] ?? d.aux[i])].filter((id): id is string => !!id);
   }
 
   get loadout(): WeaponLoadout {
@@ -206,7 +206,7 @@ export class LoadoutScreen {
   }
 
   private pool(): WeaponDef[] {
-    return this.focus === 0 ? MAIN_DEFS : AUX_DEFS;
+    return (this.focus === 0 ? MAIN_DEFS : AUX_DEFS).filter((d) => !d.stashed);
   }
 
   private poolY(i: number): number {
@@ -215,7 +215,7 @@ export class LoadoutScreen {
 
   /** Put `id` in the focused slot (an aux already in another aux slot swaps places). Locked weapons are refused with a message. */
   private assign(def: WeaponDef): void {
-    if (!weaponAvailable(def)) {
+    if (!weaponAvailable(def, this.shipId)) {
       this.say(def.unlockHint ?? 'locked');
       return;
     }
@@ -238,7 +238,7 @@ export class LoadoutScreen {
     let i = pool.findIndex((d) => d.id === this.slots[this.focus]);
     for (let n = 0; n < pool.length; n++) {
       i = (i + dir + pool.length) % pool.length;
-      if (weaponAvailable(pool[i])) {
+      if (weaponAvailable(pool[i], this.shipId)) {
         this.assign(pool[i]);
         return;
       }
@@ -251,8 +251,8 @@ export class LoadoutScreen {
     const tap = host.takeTap();
     const key = host.takeKey();
     if (this.t < LOCKOUT) return null;
-    if (key === 'ArrowLeft') this.focus = (this.focus + 3) % 4;
-    if (key === 'ArrowRight') this.focus = (this.focus + 1) % 4;
+    if (key === 'ArrowLeft') this.focus = (this.focus + this.slots.length - 1) % this.slots.length;
+    if (key === 'ArrowRight') this.focus = (this.focus + 1) % this.slots.length;
     if (key === 'ArrowUp') this.cycle(-1);
     if (key === 'ArrowDown') this.cycle(1);
     if (key === 'Escape') return 'back';
@@ -265,7 +265,7 @@ export class LoadoutScreen {
       this.slots = [d.main, ...d.aux];
       return null;
     }
-    for (let i = 0; i < 4; i++) if (hit({ x: slotX(i), y: SLOT_Y, w: SLOT_W, h: SLOT_H }, tap)) this.focus = i;
+    for (let i = 0; i < this.slots.length; i++) if (hit({ x: slotX(i), y: SLOT_Y, w: SLOT_W, h: SLOT_H }, tap)) this.focus = i;
     this.pool().forEach((def, i) => {
       if (hit({ x: 30, y: this.poolY(i), w: W - 60, h: POOL_H }, tap)) this.assign(def);
     });
@@ -279,10 +279,10 @@ export class LoadoutScreen {
     g.restore();
     const ship = shipById(this.shipId);
     drawCentered(g, 'LOADOUT', 62, `bold 36px ${MONO}`, '#ffd21f');
-    drawCentered(g, `${ship.name}: 1 main + 3 aux`, 94, `15px ${MONO}`, '#6ee7ff');
+    drawCentered(g, `${ship.name}: 1 main + ${this.slots.length - 1} aux`, 94, `15px ${MONO}`, '#6ee7ff');
     drawShipLook(g, ship.look, W - 60, 66, 1.3);
     // Slots.
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this.slots.length; i++) {
       const id = this.slots[i];
       const def = i === 0 ? mainById(id) : auxById(id);
       const x = slotX(i);
@@ -301,7 +301,7 @@ export class LoadoutScreen {
     drawCentered(g, this.focus === 0 ? 'MAIN WEAPON' : `AUX ${this.focus} WEAPON`, 236, `bold 14px ${MONO}`, '#8fa0c8');
     this.pool().forEach((def, i) => {
       const y = this.poolY(i);
-      const open = weaponAvailable(def);
+      const open = weaponAvailable(def, this.shipId);
       const here = this.slots[this.focus] === def.id;
       const elsewhere = this.focus > 0 ? this.slots.findIndex((id, k) => k > 0 && k !== this.focus && id === def.id) : -1;
       g.save();

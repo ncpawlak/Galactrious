@@ -15,7 +15,7 @@
  */
 import { FP2_EXIT_DISTANCE } from '../scroll/fallenPeace';
 import { CAPITAL_SHIP_ID } from '../bosses/capitalShip';
-import { FALLEN_PEACE_UNLOCKS } from '../finale/unlocks';
+import { FALLEN_PEACE_GOLD_UNLOCKS, FALLEN_PEACE_UNLOCKS } from '../finale/unlocks';
 import { STREAM_SECONDS } from '../enemies/empireWaves';
 import { FP1_APPROACH, FP1_BREAK_OFF, FP1_EXIT, FP2_SHOT_DOWN, FP3_CRASH } from './fallenPeaceCinematics';
 import { FALLEN_PEACE_45_LEVELS } from './fallenPeace45';
@@ -164,6 +164,7 @@ export const FALLEN_PEACE: CampaignDefinition = {
     'It will not go to plan.',
   ],
   levels: [CHAPTER_1, CHAPTER_2, CHAPTER_3, ...FALLEN_PEACE_45_LEVELS],
-  // The real reward, granted when the last level (chapter 7) completes: the empire fighter, the Laser and the Energy Wave.
+  // The real reward, granted when the last level (chapter 7) completes: the empire fighter; with every chapter on gold also Pulse Orbs and the Energy Bomb.
   unlocks: FALLEN_PEACE_UNLOCKS,
+  goldUnlocks: FALLEN_PEACE_GOLD_UNLOCKS,
 };

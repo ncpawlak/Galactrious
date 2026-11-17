@@ -4,7 +4,7 @@
  */
 import type { Medal, UnlockKind } from '../save';
 import type { AssistSpec } from '../finale/assists';
-import type { UnlockSpec } from '../finale/unlocks';
+import type { UnlockItem, UnlockSpec } from '../finale/unlocks';
 import type { ScrollLevelDef } from '../scroll/types';
 import type { Cinematic } from './cinematic';
 
@@ -237,6 +237,8 @@ export interface CampaignDefinition {
    * "Fallen Peace" sets this to `FALLEN_PEACE_UNLOCKS` once chapter 7 is its last level (and drops `completionUnlock`).
    */
   unlocks?: UnlockSpec[];
+  /** Also written when EVERY level of the campaign holds a gold medal (`campaignUnlockSpecs`). */
+  goldUnlocks?: UnlockSpec[];
 }
 
 
@@ -253,7 +255,7 @@ export interface LevelResult {
   newBestMedal: boolean;
   /** Labels of unlocks newly awarded by this result. */
   unlocked: string[];
-  /** The `CampaignDefinition.unlocks` that were new with this result (the reveal screen lists them). */
-  newUnlocks?: UnlockSpec[];
+  /** Everything the campaign's unlock rules grant with this result (the ship always, the gold weapons only on all gold); `isNew` is false for ones already owned. The reveal screen lists them. */
+  newUnlocks?: UnlockItem[];
   counters: LevelCounters;
 }

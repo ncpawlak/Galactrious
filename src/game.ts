@@ -1,4 +1,5 @@
 import { Attacks, PATTERNS } from './attacks';
+import { drawBullet, type StyleName } from './attackStyles';
 import { Sfx } from './audio';
 import type { Boss, HitResult } from './boss';
 import { BossFight } from './bossFight';
@@ -76,7 +77,7 @@ interface Bullet {
   /** Main-weapon extras (src/weapons.ts `MainDef`); the chain gun sets none of these, so its bullets behave exactly as before. */
   speed?: number;
   shape?: CarveShapeName;
-  look?: { color: string; w: number; h: number; glow?: string };
+  look?: { color: string; w: number; h: number; orb?: StyleName; glow?: string };
   /** Distance fall-off: `base` energy x a factor that eases from `near` to `far` between `start` and `end` px; the bullet dies at `end`. */
   fall?: { start: number; end: number; near: number; far: number; base: number; travelled: number };
 }
@@ -740,8 +741,8 @@ export class Game {
         counters: () => this.run.campaign.session?.counters() ?? null,
         flow: this.run.campaign,
         snapshotRoundTrip: () => this.snapshotRoundTrip(),
-        /** Open the unlock reveal screen for a campaign (writes its unlocks into the save): showUnlocks('fallen-peace'). */
-        showUnlocks: (campaignId: string) => this.run.showCampaignUnlocks(campaignId),
+        /** Open the unlock reveal screen for a campaign (writes its unlocks into the save): showUnlocks('fallen-peace', gold?): gold=true adds the all-gold weapons. */
+        showUnlocks: (campaignId: string, gold = false) => this.run.showCampaignUnlocks(campaignId, gold),
       },
       /**
        * Finale systems (src/finale), usable in any combat: assist(spec) schedules a squad assist, ace(id, x, y) spawns an ace
@@ -885,7 +886,7 @@ export class Game {
   }
 
   private setLoadout(l: { main: string; aux: string[] }): void {
-    const clean = cleanLoadout(l, this.run.state.shipId);
+    const clean = cleanLoadout(l, this.run.state.shipId, true);
     if (clean.main !== l.main || clean.aux.length !== l.aux.length) throw new Error(`bad loadout: unknown main or aux id, or duplicate aux (mains: ${MAIN_DEFS.map((d) => d.id).join(', ')}; aux: ${AUX_DEFS.map((d) => d.id).join(', ')})`);
     this.run.select(this.run.state.shipId, clean);
     this.afterLoadoutChange();
@@ -1608,16 +1609,21 @@ export class Game {
     const shape = tiers ? tiers[Math.max(0, Math.min(tiers.length - 1, Math.round(lo.get(`${def.id}.width`, 0))))] : def.shape;
     const pierce = Math.min(0.95, lo.get(`${def.id}.pierce`, def.pierce));
     if (def.bullet.glow) this.sfx.weapon(def.id);
-    for (let i = 0; i < projectiles; i++) {
-      const offset = i - (projectiles - 1) / 2;
+    const ship = shipById(this.run.state.shipId).baseStats;
+    const muzzles = ship.twinMuzzles ?? 1;
+    const perStream = muzzles > 1 ? (ship.muzzleDamage ?? 1 / muzzles) : 1;
+    for (let i = 0; i < projectiles * muzzles; i++) {
+      const m = i % muzzles;
+      const offset = Math.floor(i / muzzles) - (projectiles - 1) / 2;
+      const muzzleX = (m - (muzzles - 1) / 2) * (ship.muzzleGap ?? 0);
       const jitter = def.jitterDeg ? (Math.random() * 2 - 1) * def.jitterDeg : 0;
       const angle = ((offset * def.spreadDeg + jitter) * Math.PI) / 180;
       const bullet: Bullet = {
-        x: this.ship.x + offset * 6,
+        x: this.ship.x + offset * 6 + muzzleX,
         y: this.ship.y - 22,
         dx: Math.sin(angle),
         dy: -Math.cos(angle),
-        energy: damage,
+        energy: damage * perStream,
         pierce,
         alive: true,
         tags,
@@ -1919,6 +1925,10 @@ export class Game {
     this.drawMuzzleCharge();
     ctx.fillStyle = '#fff7a8';
     for (const b of this.bullets) {
+      if (b.look?.orb) {
+        drawBullet(ctx, b.x, b.y, b.look.orb);
+        continue;
+      }
       if (b.look?.glow) {
         // Charged beam-bolt: additive halo, bright core, long streak.
         ctx.save();

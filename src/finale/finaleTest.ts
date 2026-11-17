@@ -1,6 +1,6 @@
 import { CAPITAL_SHIP_ID } from '../bosses/capitalShip';
 import type { Beat, CampaignDefinition, CampaignLevel } from '../campaign/types';
-import { FALLEN_PEACE_UNLOCKS } from './unlocks';
+import { FALLEN_PEACE_GOLD_UNLOCKS, FALLEN_PEACE_UNLOCKS } from './unlocks';
 
 /**
  * The finale test level (`game.debug.campaign.start('finale-test')`): every finale system end to end in about three minutes, as the
@@ -31,7 +31,7 @@ const LEVEL: CampaignLevel = {
     'You are flying the commandeered empire fighter. Its guns fire on the empire frequency: 8 seconds in, the armour becomes hittable. Dig to the core.',
     'The squad covers on a fixed timer you cannot change. Watch for the ASSIST INCOMING ring.',
   ],
-  ship: { id: 'empire-fighter', loadout: { main: 'laser', aux: ['wave', 'gauss', 'rocket'] } },
+  ship: { id: 'empire-fighter', loadout: { main: 'pulse', aux: ['flak'] } },
   objectives: [
     {
       id: 'finale',
@@ -63,4 +63,5 @@ export const FINALE_TEST: CampaignDefinition = {
   intro: ['Debug campaign. One level that exercises the finale systems. Finishing it unlocks the Fallen Peace rewards in your save.'],
   levels: [LEVEL],
   unlocks: FALLEN_PEACE_UNLOCKS,
+  goldUnlocks: FALLEN_PEACE_GOLD_UNLOCKS,
 };

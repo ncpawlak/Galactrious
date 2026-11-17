@@ -15,7 +15,7 @@
  */
 import { H, W } from '../config';
 import type { CombatCounters, NodeHost } from '../flow/node';
-import { applyUnlocks } from '../finale/unlocks';
+import { applyUnlocks, campaignUnlockSpecs } from '../finale/unlocks';
 import { fallbackSnapshot } from '../finale/fallback';
 import { shipHasEmpireTech } from '../finale/system';
 import { saveStore } from '../save';
@@ -360,13 +360,8 @@ export class CampaignSession {
     const award = this.campaign.completionUnlock;
     if (award && last.id === this.level.id && saveStore.unlock(award.kind, award.id)) unlocked.push(award.label);
     // The campaign's real reward list (src/finale/unlocks.ts): written to the save here, shown by the reveal screen afterwards.
-    const newUnlocks =
-      this.campaign.unlocks && last.id === this.level.id
-        ? applyUnlocks(this.campaign.unlocks)
-            .filter((i) => i.isNew)
-            .map((i) => i.spec)
-        : undefined;
-    for (const u of newUnlocks ?? []) unlocked.push(u.name ?? u.id);
+    const newUnlocks = this.campaign.unlocks && last.id === this.level.id ? applyUnlocks(campaignUnlockSpecs(this.campaign)) : undefined;
+    for (const u of newUnlocks ?? []) if (u.isNew) unlocked.push(u.spec.name ?? u.spec.id);
     this.host.endCombat();
     scrollHooks().setSpeed(0);
     this.result = { campaignId: this.campaign.id, levelId: this.level.id, timeMs, deaths: this.deaths, medal, goldRoute, bonusDone, newBestTime, newBestMedal, unlocked, newUnlocks, counters };
