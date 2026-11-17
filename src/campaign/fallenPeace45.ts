@@ -17,8 +17,8 @@ import type { CampaignLevel } from './types';
 
 /** The escape pod: tiny, two hull, no weapons (src/ships.ts). */
 export const POD_SHIP = { id: 'escape-pod', loadout: { main: 'chain', aux: [] as string[] } };
-/** The commandeered empire fighter with the preset loadout (chain gun, Gauss, Rocket, Arc). Campaign levels may use it whatever the Endless lock says. */
-export const EMPIRE_SHIP = { id: 'empire-fighter', loadout: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] } };
+/** The commandeered empire fighter with the preset loadout (Laser, Energy Wave, Gauss, Rocket) with the campaign power tuning (+25% damage and fire rate). Campaign levels may use it whatever the Endless lock says. */
+export const EMPIRE_SHIP = { id: 'empire-fighter', loadout: { main: 'laser', aux: ['wave', 'gauss', 'rocket'] }, power: { damage: 1.25, fireRate: 1.25 } };
 
 const ME = SPEAKER_PLAYER;
 const SYS = 'SYSTEM';

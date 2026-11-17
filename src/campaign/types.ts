@@ -12,6 +12,12 @@ export type { AssistSpec, UnlockSpec };
 
 export type { Medal };
 
+/** Campaign-scoped weapon tuning of a level's ship: multipliers on the base damage and fire rate (the Endless ship is untouched). */
+export interface ShipPower {
+  damage: number;
+  fireRate: number;
+}
+
 /** A rectangle (x, y = top-left) or circle (x, y = centre) in 540x960 screen px. */
 export type Zone = { x: number; y: number; w: number; h: number } | { x: number; y: number; r: number };
 
@@ -30,7 +36,7 @@ export type BeatAction =
   | { do: 'forceDestroyPlayer' }
   | { do: 'lockWeapons'; locked?: boolean }
   /** Swap the ship (and its weapons) mid-level, e.g. the escape pod or the commandeered fighter. */
-  | { do: 'setShip'; ship: string; loadout?: { main: string; aux: string[] } }
+  | { do: 'setShip'; ship: string; loadout?: { main: string; aux: string[] }; power?: ShipPower }
   | { do: 'spawn'; spawn: SpawnSpec }
   /** Scroll hook (src/campaign/hooks.ts); a no-op until the scrolling session installs one. */
   | { do: 'setScrollSpeed'; speed: number; ease?: number }
@@ -197,7 +203,7 @@ export interface CampaignLevel {
   /** Shown on the briefing screen. */
   briefing: string[];
   /** The preset ship and weapons (no builder, no cards). */
-  ship: { id: string; loadout?: { main: string; aux: string[] } };
+  ship: { id: string; loadout?: { main: string; aux: string[] }; power?: ShipPower };
   objectives: ObjectiveDefinition[];
   medals: MedalRules;
   /** Level-wide beats (`at` = level seconds, fired once, not repeated after a death). */

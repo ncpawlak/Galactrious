@@ -194,7 +194,7 @@ export interface NodeHost {
   /** Weapons off (no main fire, no aux triggers) or on. Reset by `startCombat`. */
   setWeaponsLocked(locked: boolean): void;
   /** Swap the ship and, optionally, its weapons (heals the ship). */
-  setShip(shipId: string, loadout?: { main: string; aux: string[] }): void;
+  setShip(shipId: string, loadout?: { main: string; aux: string[] }, power?: { damage: number; fireRate: number }): void;
   /** False while the ship is exploding or gone (after a death or `forceDestroyPlayer`). */
   shipAlive(): boolean;
   /** State of a component or room of the running boss, by id: `destroyed`, `intact` or `missing` (no such id, or no boss). */

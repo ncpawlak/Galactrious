@@ -126,7 +126,7 @@ export const SHIPS: ShipDefinition[] = [
     // wings, slate plating with a bronze nose, the red chevron insignia. A little tougher and faster than the Vanguard, reaches higher.
     id: 'empire-fighter',
     name: 'Empire Fighter',
-    desc: 'Captured empire tech: tougher and faster. Its weapons hurt empire armour. Chain gun with Gauss, Rocket and Arc.',
+    desc: 'Captured empire tech: tougher and faster. Its weapons hurt empire armour. Laser with Energy Wave, Gauss and Rocket.',
     look: {
       hull: { color: EMPIRE.armour, points: [[0, -22], [4, -10], [8, -8], [24, -16], [22, -2], [15, 15], [7, 13], [4, 19], [0, 21], [-4, 19], [-7, 13], [-15, 15], [-22, -2], [-24, -16], [-8, -8], [-4, -10]] },
       details: [
@@ -142,7 +142,7 @@ export const SHIPS: ShipDefinition[] = [
       flame: { color: EMPIRE.glow, x: -3, y: 19, w: 6, len: 4, flicker: 6 },
     },
     baseStats: { maxHealth: 6, speed: 500, dodgeCooldown: 2.2, hitbox: TUNING.player.hitbox, minY: 260 },
-    startingWeapons: { main: 'chain', aux: ['gauss', 'rocket', 'arc'] },
+    startingWeapons: { main: 'laser', aux: ['wave', 'gauss', 'rocket'] },
     unlock: 'empire-fighter',
     unlockHint: 'Finish the Fallen Peace campaign.',
     empireTech: true,
