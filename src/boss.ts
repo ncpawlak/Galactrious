@@ -251,6 +251,8 @@ export class Boss {
   private coreDeadFor = 0;
   private fragments: Fragment[] = [];
   private checkTimer = 0;
+  /** Debug A/B switch: false = the old per-layer-only anchoring (loose room chunks stay), see DESIGN.md. */
+  unionAnchoring = true;
   /** Per layer: original connected region id of each pixel (0 = empty). Regions anchor independently. */
   private regions: Int32Array[];
   /** Dust from vanished specks and break-aways, in screen space; the game may drain this for particles. */
@@ -303,9 +305,20 @@ export class Boss {
     this.checkTimer -= dt;
     if (this.checkTimer <= 0 && this.layers.some((l) => l.needsCheck)) {
       this.checkTimer = CONNECTIVITY_INTERVAL;
+      // Anchoring is judged on the union of all layers (see `unionAnchor`): a carve in any layer can cut a
+      // piece of another one loose, so one flagged layer re-checks the whole stack when something is orphaned.
+      const u = this.unionAnchor();
+      const flagged = this.layers.map((l) => l.needsCheck);
+      let removedAny = false;
       for (let i = 0; i < this.layers.length; i++) {
-        if (this.layers[i].needsCheck) this.detachOrphans(i);
+        if (this.layers[i].indestructible) {
+          this.layers[i].needsCheck = false;
+          continue;
+        }
+        if (flagged[i] || (this.unionAnchoring && u.orphans > 0)) removedAny = this.detachOrphans(i, u) || removedAny;
       }
+      // Chunks removed by the per-region rule may have been holding other layers' pixels up.
+      if (removedAny) for (const l of this.layers) l.needsCheck = true;
     }
 
     this.regrowth?.update(dt);
@@ -323,14 +336,53 @@ export class Boss {
    * is the component holding the core (innermost layer, when the core is still buried in it) or else
    * the largest component. Everything else is cut loose: specks vanish, bigger chunks break away.
    */
-  private detachOrphans(li: number): void {
+  /**
+   * Union connectivity: every solid pixel of every layer (armour included) is one mask. The main mass is the
+   * component holding the core (while it is alive and sits in the union) or else the largest one. A pixel of any
+   * layer that is not in the main mass hangs on nothing, however well connected it is inside its own layer
+   * (a room cut free of the frame and hull around it).
+   */
+  private unionAnchor(): { label: Int32Array; main: number; orphans: number } {
+    const w = this.width;
+    const h = this.height;
+    const mask = new Uint8Array(w * h);
+    for (const l of this.layers) for (let i = 0; i < mask.length; i++) if (l.mask[i]) mask[i] = 1;
+    const { label, sizes, count } = labelMask(mask, w, h);
+    let main = 0;
+    if (this.core.hp > 0) {
+      const cx = Math.round(this.core.x);
+      const cy = Math.round(this.core.y);
+      for (let dy = -2; dy <= 2 && !main; dy++) {
+        for (let dx = -2; dx <= 2 && !main; dx++) {
+          const x = cx + dx;
+          const y = cy + dy;
+          if (x >= 0 && y >= 0 && x < w && y < h) main = label[y * w + x];
+        }
+      }
+    }
+    if (!main) for (let c = 1; c <= count; c++) if (main === 0 || sizes[c] > sizes[main]) main = c;
+    return { label, main, orphans: count > 0 ? count - 1 : 0 };
+  }
+
+  /** Debug: per layer, live pixels that are not connected to the boss's main mass. Should always settle to 0. */
+  unanchoredPixels(): number[] {
+    const u = this.unionAnchor();
+    const w = this.width * this.height;
+    return this.layers.map((l) => {
+      let n = 0;
+      for (let i = 0; i < w; i++) if (l.mask[i] && u.label[i] !== u.main) n++;
+      return n;
+    });
+  }
+
+  private detachOrphans(li: number, u: { label: Int32Array; main: number }): boolean {
     const layer = this.layers[li];
     layer.needsCheck = false;
     const w = this.width;
     const h = this.height;
     const mask = layer.mask;
     const { label, sizes, count } = labelMask(mask, w, h);
-    if (count === 0) return;
+    if (count === 0) return false;
 
     // Each component belongs to one original region (current mask is a subset of the initial one).
     // Every region is anchored independently by its own largest component, or by the one holding
@@ -359,7 +411,13 @@ export class Boss {
     }
     const anchored = new Uint8Array(count + 1);
     for (const c of bestOf.values()) anchored[c] = 1;
-    if (anchored.reduce((n, v) => n + v, 0) === count) return;
+    const regionRemoved = anchored.reduce((n, v) => n + v, 0) !== count;
+    // A component that is its region's main mass still falls if it hangs on nothing in the union of all layers.
+    for (let i = 0; i < w * h; i++) {
+      const c = label[i];
+      if (c && anchored[c] && this.unionAnchoring && u.label[i] !== u.main) anchored[c] = 0;
+    }
+    if (anchored.reduce((n, v) => n + v, 0) === count) return false;
     this.version++;
     this.onDetach?.(li, (x, y) => {
       if (x < 0 || y < 0 || x >= w || y >= h) return false;
@@ -445,6 +503,7 @@ export class Boss {
       // Removing an outer chunk can expose inner-layer pixels, but those are already connected
       // by definition of their own layer; deeper layers get their own pass when carved.
     }
+    return regionRemoved;
   }
 
   /** Returns the fraction (0..1) of a layer still solid. */

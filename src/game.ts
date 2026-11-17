@@ -510,6 +510,9 @@ export class Game {
       },
       attacks: this.attacks,
       setAttacks: (on: boolean) => (this.attacks.enabled = on),
+      /** Live pixels per layer not connected to the boss's main mass (must be 0 once settled). */
+      anchoring: () => this.fight.boss.unanchoredPixels(),
+      setUnionAnchoring: (on: boolean) => (this.fight.boss.unionAnchoring = on),
       components: this.fight.components,
       rooms: this.fight.rooms,
       regrowth: this.fight.regrowth,
