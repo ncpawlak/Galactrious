@@ -1348,6 +1348,8 @@ export class Game {
           this.sfx.componentDamage(e.level);
           break;
         case 'destroy':
+          // Boss gun housings count for the campaign's Full dismantle bonus (killsByTag 'boss-turret').
+          if (fight === this.fight && e.type === 'turret') this.combatCounters.killsByTag['boss-turret'] = (this.combatCounters.killsByTag['boss-turret'] ?? 0) + 1;
           this.fx.onComponentDestroy(e.radius);
           this.sfx.componentDestroy(e.radius);
           break;
@@ -1736,7 +1738,7 @@ export class Game {
       if (this.panelVisible) this.panel.draw(this.ctx);
       this.drawHitbox();
     }
-    if (this.state === 'won' && this.bossActive) this.drawWin();
+    if (this.state === 'won' && this.bossActive && !this.cineLock && !this.run.campaign.session) this.drawWin(); // a campaign level has its own victory cinematic and result screen
     if (this.state === 'lost') this.drawLost();
     if (this.mode === 'run') this.run.draw(ctx);
     this.overlay?.draw(ctx);

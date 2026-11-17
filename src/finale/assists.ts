@@ -62,6 +62,8 @@ export class AssistSystem {
   /** Enemy bullets cleared and unit/turret hits dealt so far (verification). */
   stats = { cleared: 0, hits: 0 };
   private clock = 0;
+  /** The squad stands down (the core is going): nothing new is scheduled until `reset`. */
+  halted = false;
   private decoy: Point = { x: W / 2, y: 190 };
   private sparks: { x: number; y: number; vy: number; life: number }[] = [];
 
@@ -72,10 +74,12 @@ export class AssistSystem {
     this.active = [];
     this.sparks = [];
     this.clock = 0;
+    this.halted = false;
   }
 
   /** Queue an assist: it fires `spec.warn` seconds from now (default 4). */
   schedule(spec: AssistSpec): void {
+    if (this.halted) return;
     const warn = spec.warn ?? DEFAULT_WARN;
     this.pending.push({ spec, left: warn, warn });
   }

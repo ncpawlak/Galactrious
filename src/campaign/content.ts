@@ -6,7 +6,11 @@
  */
 import { FINALE_TEST } from '../finale/finaleTest';
 import { FALLEN_PEACE } from './fallenPeace';
+import { CHAPTERS_6_7 } from './fallenPeace67';
 import type { CampaignDefinition, CampaignLevel } from './types';
+
+// Chapters 6 and 7 are built in fallenPeace67.ts and appended here (after whatever the main file lists).
+FALLEN_PEACE.levels.push(...CHAPTERS_6_7);
 
 export { FALLEN_PEACE };
 

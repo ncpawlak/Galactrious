@@ -119,6 +119,8 @@ export interface BossFightObjective extends ObjectiveBase {
    * skipped chapter 1) a generated fallback is used if the boss has one (src/finale/fallback.ts: the capital ship's disabled state).
    */
   restoreSlot?: string;
+  /** The boss id the slot's snapshot was taken from, when it differs from `bossId` (chapter 7 restores chapter 1's capital ship onto its finale variant). */
+  restoreBossId?: string;
   /** Seconds after the objective starts at which the armour becomes carvable, IF the player's ship has `empireTech` (the armour resonance cue plays). Omitted = never. */
   armourResonance?: number;
   /** The boss's death plays the core overload sequence (src/finale/overload.ts) before the objective completes. */
@@ -155,6 +157,8 @@ export type BonusCriteria = { text: string } & (
   | { kind: 'destroyAll'; tag: string; count: number }
   | { kind: 'roomsDestroyed'; count: number }
   | { kind: 'noDetection' }
+  /** Full dismantle (chapter 7): this many boss rooms taken offline AND this many boss gun housings destroyed. */
+  | { kind: 'dismantle'; rooms: number; turrets: number }
 );
 
 export interface MedalRules {

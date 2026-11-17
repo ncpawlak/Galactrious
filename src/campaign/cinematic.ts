@@ -9,6 +9,7 @@
  * No audio for now: the radio is subtitles with a 'static' look.
  */
 import { H, W } from '../config';
+import { drawAllySprite } from '../scroll/allies';
 
 export type Ease = 'linear' | 'in' | 'out' | 'inOut';
 
@@ -59,14 +60,42 @@ export type WorldEvent = { t: number } & (
   | { do: 'dismissUnits'; tag?: string }
 );
 
+/** One keyframe of a wingman's path (cinematic seconds). `x`/`y` are absolute screen px; `dx`/`dy` are offsets from the ship's LIVE position (formation flying). */
+export interface WingKey {
+  t: number;
+  x?: number;
+  y?: number;
+  dx?: number;
+  dy?: number;
+  /** Radians, 0 = nose up. Default: points along the direction of travel's last value (0). */
+  rot?: number;
+  /** Easing of the segment that ENDS at this key (default 'inOut'). */
+  ease?: Ease;
+}
+
+/** A Delta wingman for a cinematic: visible from its first key to its last. */
+export interface WingPath {
+  /** Callsign tag drawn under the ship (optional). */
+  tag?: string;
+  keys: WingKey[];
+}
+
 /** Scenery drawn by the runner (not part of the combat sim). */
-export type Prop = { t: number } & {
-  do: 'slope';
-  /** The slope's surface line in its final place, screen px; the mountain mass is the part ABOVE the line (toward the top of the screen). */
-  line: [number, number, number, number];
-  /** Seconds the slope takes to sweep in from the top of the screen (the world rushing past). */
-  enter: number;
-};
+export type Prop = { t: number } & (
+  | {
+      do: 'slope';
+      /** The slope's surface line in its final place, screen px; the mountain mass is the part ABOVE the line (toward the top of the screen). */
+      line: [number, number, number, number];
+      /** Seconds the slope takes to sweep in from the top of the screen (the world rushing past). */
+      enter: number;
+    }
+  /** Delta wingmen (the squad sprite) flying the given paths, drawn under the ship. The reunion and the victory formation. */
+  | { do: 'wingmen'; wings: WingPath[]; scale?: number }
+  /** A targeting reticle on the ship (red, "weapons lock") with a label, from this time until `until`; thin lock lines run from each wingman to it. */
+  | { do: 'scope'; until: number; label: string }
+  /** A pulsing callsign beacon on the ship (green rings and a label) from this time on. */
+  | { do: 'beacon'; label: string; until?: number }
+);
 
 export interface Overlay {
   t: number;
@@ -501,11 +530,107 @@ export class CinematicRunner {
 
   /** Scenery (drawn by the game between the background and the ship). */
   private drawProps(g: CanvasRenderingContext2D): void {
-    for (const p of this.def.props ?? []) if (this.time >= p.t) this.drawSlope(g, p, this.time);
+    const ship = this.host.shipPos();
+    const wings: { x: number; y: number; rot: number; tag?: string; alpha: number }[] = [];
+    for (const p of this.def.props ?? []) {
+      if (this.time < p.t) continue;
+      if (p.do === 'slope') this.drawSlope(g, p, this.time);
+      else if (p.do === 'wingmen') {
+        for (const w of p.wings) {
+          const pos = this.wingAt(w, ship);
+          if (!pos) continue;
+          g.save();
+          g.translate(pos.x, pos.y);
+          g.rotate(pos.rot);
+          drawAllySprite(g, 0, 0, 1.15 * (p.scale ?? 1));
+          g.restore();
+          wings.push({ ...pos, tag: w.tag, alpha: 1 });
+        }
+      } else if (p.do === 'scope') {
+        if (this.time < p.until) this.drawScope(g, ship, wings, p.label, this.time - p.t);
+      } else if (p.do === 'beacon') {
+        if (p.until === undefined || this.time < p.until) this.drawBeacon(g, ship, p.label, this.time - p.t);
+      }
+    }
+    g.save();
+    g.font = 'bold 11px ui-monospace, Consolas, monospace';
+    g.textAlign = 'center';
+    g.fillStyle = 'rgba(190, 255, 220, 0.85)';
+    for (const w of wings) if (w.tag) g.fillText(w.tag, w.x, w.y + 38);
+    g.restore();
+  }
+
+  /** A wingman's position and heading now, or null before its first key / after its last. */
+  private wingAt(w: WingPath, ship: { x: number; y: number }): { x: number; y: number; rot: number; tag?: string } | null {
+    const ks = w.keys;
+    if (ks.length === 0 || this.time < ks[0].t || this.time > ks[ks.length - 1].t) return null;
+    const pt = (k: WingKey): { x: number; y: number; rot: number } => ({
+      x: k.x ?? (k.dx === undefined ? ship.x : ship.x + k.dx),
+      y: k.y ?? (k.dy === undefined ? ship.y : ship.y + k.dy),
+      rot: k.rot ?? 0,
+    });
+    let i = 0;
+    while (i < ks.length - 2 && this.time > ks[i + 1].t) i++;
+    if (ks.length === 1) return pt(ks[0]);
+    const a = pt(ks[i]);
+    const b = pt(ks[i + 1]);
+    const u = easeFn[ks[i + 1].ease ?? 'inOut'](clamp01((this.time - ks[i].t) / Math.max(0.001, ks[i + 1].t - ks[i].t)));
+    return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u, rot: a.rot + (b.rot - a.rot) * u };
+  }
+
+  /** The red weapons-lock look: rotating brackets, lock lines from the wingmen, a warning label. */
+  private drawScope(g: CanvasRenderingContext2D, ship: { x: number; y: number }, wings: { x: number; y: number }[], label: string, age: number): void {
+    const pulse = 0.6 + 0.4 * Math.sin(age * 9);
+    g.save();
+    g.strokeStyle = `rgba(255, 70, 60, ${0.55 + 0.4 * pulse})`;
+    g.lineWidth = 2;
+    for (const w of wings) {
+      g.setLineDash([6, 8]);
+      g.lineDashOffset = -age * 40;
+      g.beginPath();
+      g.moveTo(w.x, w.y - 18);
+      g.lineTo(ship.x, ship.y);
+      g.stroke();
+    }
+    g.setLineDash([]);
+    g.lineWidth = 3;
+    const r = 46 - 8 * Math.min(1, age / 1.2);
+    g.translate(ship.x, ship.y);
+    g.rotate(age * 0.8);
+    for (let k = 0; k < 4; k++) {
+      g.beginPath();
+      g.arc(0, 0, r, k * (Math.PI / 2) + 0.15, k * (Math.PI / 2) + 1.2);
+      g.stroke();
+    }
+    g.rotate(-age * 0.8);
+    g.font = 'bold 12px ui-monospace, Consolas, monospace';
+    g.textAlign = 'center';
+    g.fillStyle = `rgba(255, 110, 100, ${0.65 + 0.35 * pulse})`;
+    g.fillText(label, 0, -r - 10);
+    g.restore();
+  }
+
+  /** The green callsign beacon: rings expanding off the ship and the callsign over it. */
+  private drawBeacon(g: CanvasRenderingContext2D, ship: { x: number; y: number }, label: string, age: number): void {
+    g.save();
+    g.translate(ship.x, ship.y);
+    for (let k = 0; k < 3; k++) {
+      const u = (age * 0.9 + k / 3) % 1;
+      g.strokeStyle = `rgba(120, 255, 190, ${(1 - u) * 0.85})`;
+      g.lineWidth = 4 * (1 - u) + 1;
+      g.beginPath();
+      g.arc(0, 0, 18 + u * 90, 0, Math.PI * 2);
+      g.stroke();
+    }
+    g.font = 'bold 13px ui-monospace, Consolas, monospace';
+    g.textAlign = 'center';
+    g.fillStyle = 'rgba(140, 255, 200, 0.95)';
+    g.fillText(label, 0, -52);
+    g.restore();
   }
 
   /** A snow slope that sweeps in from the top and settles with its surface on `line`; the mountain mass is above the line. */
-  private drawSlope(g: CanvasRenderingContext2D, p: Prop, t: number): void {
+  private drawSlope(g: CanvasRenderingContext2D, p: Extract<Prop, { do: 'slope' }>, t: number): void {
     const u = clamp01((t - p.t) / Math.max(0.01, p.enter));
     const dy = -(1 - easeFn.out(u)) * (H + 260);
     const [x0, y0, x1, y1] = p.line;

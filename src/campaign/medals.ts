@@ -53,6 +53,8 @@ export function evaluateBonus(b: BonusCriteria, c: LevelCounters): boolean {
       return c.roomsDestroyed >= b.count;
     case 'noDetection':
       return c.detections === 0;
+    case 'dismantle':
+      return c.roomsDestroyed >= b.rooms && (c.killsByTag['boss-turret'] ?? 0) >= b.turrets;
   }
 }
 
@@ -67,6 +69,8 @@ export function bonusProgress(b: BonusCriteria, c: LevelCounters): string | null
       return `${Math.min(c.killsByTag[b.tag] ?? 0, b.count)}/${b.count}`;
     case 'roomsDestroyed':
       return `${Math.min(c.roomsDestroyed, b.count)}/${b.count}`;
+    case 'dismantle':
+      return `${Math.min(c.roomsDestroyed, b.rooms) + Math.min(c.killsByTag['boss-turret'] ?? 0, b.turrets)}/${b.rooms + b.turrets}`;
     default:
       return null;
   }

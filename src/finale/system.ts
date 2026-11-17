@@ -75,6 +75,8 @@ export class FinaleSystem {
   /** Start the overload sequence for this boss; `done` fires when it ends. */
   startOverload(boss: Boss, done: () => void): void {
     if (this.overload) return;
+    this.assists.pending = []; // the squad stands down: no countdowns over the overload and the victory
+    this.assists.halted = true;
     this.overload = new OverloadSequence(this.host, boss, () => {
       this.hooks.onOverloadComplete?.();
       done();

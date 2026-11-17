@@ -2,6 +2,7 @@ import type { BossSnapshot } from '../campaign/snapshot';
 import { captureSnapshot } from '../campaign/snapshot';
 import { BossFight } from '../bossFight';
 import { capitalShip, CAPITAL_SHIP_ID, ENGINE_ROOM_ID } from '../bosses/capitalShip';
+import { CAPITAL_FINALE_ID } from '../bosses/capitalShipFinale';
 
 /**
  * Fallback snapshots: when a campaign objective restores a snapshot slot that is empty (a debug start, or a player who skipped
@@ -10,6 +11,7 @@ import { capitalShip, CAPITAL_SHIP_ID, ENGINE_ROOM_ID } from '../bosses/capitalS
  */
 export const FALLBACK_SNAPSHOTS: Record<string, () => BossSnapshot> = {
   [CAPITAL_SHIP_ID]: disabledCapitalShip,
+  [CAPITAL_FINALE_ID]: disabledCapitalShip, // the finale variant has the same hull and engine-room damage
 };
 
 export function fallbackSnapshot(bossId: string): BossSnapshot | null {

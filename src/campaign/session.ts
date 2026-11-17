@@ -157,7 +157,7 @@ export class CampaignSession {
     let restore;
     if (def.type === 'bossFight' && def.restoreSlot) {
       let snap = loadSnapshot(def.restoreSlot);
-      if (!snap || snap.bossId !== def.bossId) snap = fallbackSnapshot(def.bossId); // no chapter 1 on record: a generated disabled ship
+      if (!snap || snap.bossId !== (def.restoreBossId ?? def.bossId)) snap = fallbackSnapshot(def.bossId); // no chapter 1 on record: a generated disabled ship
       if (snap) restore = def.coreHp !== undefined ? { ...snap, coreHp: def.coreHp } : snap;
     }
     this.host.startCombat({

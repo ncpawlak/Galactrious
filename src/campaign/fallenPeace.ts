@@ -15,6 +15,7 @@
  */
 import { FP2_EXIT_DISTANCE } from '../scroll/fallenPeace';
 import { CAPITAL_SHIP_ID } from '../bosses/capitalShip';
+import { FALLEN_PEACE_UNLOCKS } from '../finale/unlocks';
 import { STREAM_SECONDS } from '../enemies/empireWaves';
 import { FP1_APPROACH, FP1_BREAK_OFF, FP1_EXIT, FP2_SHOT_DOWN, FP3_CRASH } from './fallenPeaceCinematics';
 import type { Beat, CampaignDefinition, CampaignLevel } from './types';
@@ -162,7 +163,6 @@ export const FALLEN_PEACE: CampaignDefinition = {
     'It will not go to plan.',
   ],
   levels: [CHAPTER_1, CHAPTER_2, CHAPTER_3],
-  // TEST UNLOCK: a placeholder flag so the unlock flow can be seen working after chapters 1-3. Slice 3 replaces it with the real
-  // reward (the enemy ship, the Laser and the Energy Wave) when chapter 7 is the last level.
-  completionUnlock: { kind: 'cards', id: 'campaign-test-fallen-peace', label: 'TEST UNLOCK: Fallen Peace slice 1' },
+  // The real reward, granted when the last level (chapter 7) completes: the empire fighter, the Laser and the Energy Wave.
+  unlocks: FALLEN_PEACE_UNLOCKS,
 };
