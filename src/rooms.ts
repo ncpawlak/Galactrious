@@ -195,6 +195,22 @@ export class RoomSystem {
     return this.setState(id, 'online');
   }
 
+  /**
+   * Campaign snapshot restore (src/campaign/snapshot.ts): put a room straight into a saved state without playing its
+   * reactions. An offline room runs its offline handlers with `natural = false` (no blast), so function state such as
+   * engine speed or shield armor matches. Returns false for an unknown room.
+   */
+  restoreState(id: string, exposed: boolean, offline: boolean): boolean {
+    const room = this.find(id);
+    if (!room) return false;
+    room.exposed = exposed;
+    if (offline && !room.offline) {
+      room.offline = true;
+      for (const fn of room.fns) fn.handler.onOffline?.(fn, room, this.env, false);
+    }
+    return true;
+  }
+
   get active(): boolean {
     return this.rooms.length > 0;
   }

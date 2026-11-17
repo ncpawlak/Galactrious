@@ -214,14 +214,14 @@ export function placementFor(g: WaveGroup, slot: Point, i: number): UnitPlacemen
 }
 
 /** Queue every unit of `wave` on the unit system, timed from its current clock. Returns the number of units. */
-export function spawnWave(units: UnitSystem, wave: WaveDefinition, lookup: (id: string) => UnitDefinition): number {
+export function spawnWave(units: UnitSystem, wave: WaveDefinition, lookup: (id: string) => UnitDefinition, tag?: string): number {
   const base = units.time;
   let total = 0;
   for (const g of wave.groups) {
     const def = lookup(g.unit);
     const slots = formationSlots(g.formation).map((p) => ({ x: p.x, y: p.y + (wave.lower ?? 0) }));
     slots.forEach((slot, i) => {
-      units.queue({ at: base + (g.start ?? 0) + i * (g.stagger ?? 0.25), def, placement: placementFor(g, slot, i) });
+      units.queue({ at: base + (g.start ?? 0) + i * (g.stagger ?? 0.25), def, placement: placementFor(g, slot, i), tag });
       total++;
     });
   }
