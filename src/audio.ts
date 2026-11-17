@@ -70,8 +70,8 @@ export class Sfx {
     this.tone(c, 90, 30, 0.7, 'sine', JUICE.audio.volume * 2);
   }
 
-  /** An auto weapon fired: gauss = sharp zap, rocket = low whoosh, arc = two quick chirps. */
-  weapon(id: 'gauss' | 'rocket' | 'arc'): void {
+  /** An auto weapon fired: gauss = sharp zap, rocket = low whoosh, arc = two quick chirps; lance, blades and swarm have their own. */
+  weapon(id: string): void {
     const c = this.ready();
     if (!c) return;
     const v = JUICE.audio.volume;
@@ -81,6 +81,12 @@ export class Sfx {
     } else if (id === 'rocket') {
       this.tone(c, 180, 420, 0.3, 'triangle', v * 0.9);
       this.tone(c, 120, 60, 0.25, 'sawtooth', v * 0.5);
+    } else if (id === 'lance') {
+      this.tone(c, 300, 700, 0.5, 'sawtooth', v * 0.5);
+    } else if (id === 'blades') {
+      this.tone(c, 700, 300, 0.3, 'triangle', v * 0.6);
+    } else if (id === 'swarm') {
+      for (let i = 0; i < 3; i++) setTimeout(() => this.tone(c, 800 + i * 150, 1400, 0.06, 'square', v * 0.35), i * 45);
     } else {
       this.tone(c, 500, 900, 0.1, 'square', v * 0.5);
       setTimeout(() => this.tone(c, 650, 1100, 0.1, 'square', v * 0.5), 70);

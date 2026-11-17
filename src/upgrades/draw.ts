@@ -7,6 +7,11 @@ export const GROUP_COLORS: Record<string, string> = {
   Gauss: '#8fe9ff',
   Rocket: '#ffa94d',
   Arc: '#7dff9a',
+  Scatter: '#ff9f43',
+  Needler: '#c77dff',
+  Lance: '#ff6bd6',
+  Blades: '#e0f0ff',
+  Swarm: '#ff78dc',
   Ship: '#c4a8ff',
 };
 

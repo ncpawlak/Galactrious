@@ -115,7 +115,8 @@ export class DebugPanel {
     return [this.host.defaultDamage(), ...DAMAGE_PRESETS.slice(1)];
   }
 
-  private layout(): void {
+  /** Rebuild the buttons (the equipped aux weapons changed). */
+  layout(): void {
     const b: Button[] = [];
     const x0 = this.px;
     const rows = this.open ? 9 : 1;
