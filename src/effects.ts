@@ -111,6 +111,11 @@ export class Effects {
     this.trauma = 1;
   }
 
+  /** A soft, low rumble (thunder): a small trauma kick, never above 0.3. */
+  rumble(a: number): void {
+    if (this.enabled) this.addTrauma(a, 0.3);
+  }
+
   private addTrauma(a: number, cap = JUICE.shake.maxTrauma): void {
     this.trauma = Math.min(1, Math.max(this.trauma, Math.min(cap, this.trauma + a)));
   }
