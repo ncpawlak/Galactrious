@@ -46,6 +46,7 @@ export class BossFight {
   constructor(readonly def: BossDefinition) {
     this.boss = new Boss(def.mirror ? mirrorSpec(def.layout()) : def.layout(), def.spawn.x, def.spawn.y);
     this.maxCoreHp = this.boss.core.hp;
+    if (def.coreColor) this.boss.coreColor = def.coreColor;
     const rooms = def.rooms ?? [];
     const specs = [...(def.components ?? []), ...consoleSpecs(rooms, this.boss.layers.length - 1)];
     this.components = new ComponentSystem(this.boss, specs, !!def.mirror);
@@ -225,6 +226,7 @@ export class BossFight {
     }
     this.lastOffset = off;
     this.boss.setOffset(off.x, off.y);
+    if (!this.boss.coreSimple) this.boss.coreVuln = this.coreVulnerability(); // reactor look only
     this.boss.update(dt);
     this.components.update(dt);
     this.rooms.update(dt);
