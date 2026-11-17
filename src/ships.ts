@@ -133,7 +133,7 @@ export const SHIPS: ShipDefinition[] = [
     // wings, slate plating with a bronze nose, the red chevron insignia. A little tougher and faster than the Vanguard, reaches higher.
     id: 'empire-fighter',
     name: 'Empire Fighter',
-    desc: 'Captured empire tech: tougher and faster. Its weapons hurt empire armour. Pulse Orbs with a Flak Burst.',
+    desc: 'Captured empire tech: tougher and faster. Its weapons hurt empire armour. Pulse Orbs with a Energy Bomb.',
     look: {
       hull: { color: EMPIRE.armour, points: [[0, -22], [4, -10], [8, -8], [24, -16], [22, -2], [15, 15], [7, 13], [4, 19], [0, 21], [-4, 19], [-7, 13], [-15, 15], [-22, -2], [-24, -16], [-8, -8], [-4, -10]] },
       details: [

@@ -22,7 +22,7 @@ export interface UnlockSpec {
   desc?: string;
 }
 
-/** The "Fallen Peace" reward for finishing the campaign with any medals: the enemy ship (with its own Pulse Orbs and Flak Burst on it). */
+/** The "Fallen Peace" reward for finishing the campaign with any medals: the enemy ship (with its own Pulse Orbs and Energy Bomb on it). */
 export const FALLEN_PEACE_UNLOCKS: UnlockSpec[] = [
   { kind: 'ships', id: 'empire-fighter', name: 'Empire Fighter', desc: 'The captured empire ship: tougher, faster, and its guns hurt empire armour.' },
 ];
@@ -30,7 +30,7 @@ export const FALLEN_PEACE_UNLOCKS: UnlockSpec[] = [
 /** The extra reward when EVERY chapter holds a gold medal: the two weapons of the empire ship, usable on any ship. (The Laser and Energy Wave are stashed for later.) */
 export const FALLEN_PEACE_GOLD_UNLOCKS: UnlockSpec[] = [
   { kind: 'weapons', id: 'pulse-orb', name: 'Pulse Orbs', desc: 'A new main weapon: the enemy pulse orbs, turned around.' },
-  { kind: 'weapons', id: 'flak', name: 'Flak Burst', desc: 'A new aux weapon: one slow shell that bursts in a wide blast.' },
+  { kind: 'weapons', id: 'flak', name: 'Energy Bomb', desc: 'A new aux weapon: one slow shell that bursts in a wide blast.' },
 ];
 
 /** True when every level of the campaign has a gold medal in the save. */

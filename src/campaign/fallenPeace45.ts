@@ -17,7 +17,7 @@ import type { CampaignLevel } from './types';
 
 /** The escape pod: tiny, two hull, no weapons (src/ships.ts). */
 export const POD_SHIP = { id: 'escape-pod', loadout: { main: 'chain', aux: [] as string[] } };
-/** The commandeered empire fighter with the preset loadout (Pulse Orbs main, Flak Burst aux) with the campaign power tuning (+25% damage and fire rate). Campaign levels may use it whatever the Endless lock says. */
+/** The commandeered empire fighter with the preset loadout (Pulse Orbs main, Energy Bomb aux) with the campaign power tuning (+25% damage and fire rate). Campaign levels may use it whatever the Endless lock says. */
 export const EMPIRE_SHIP = { id: 'empire-fighter', loadout: { main: 'pulse', aux: ['flak'] }, power: { damage: 1.25, fireRate: 1.25 } };
 
 const ME = SPEAKER_PLAYER;

@@ -164,7 +164,7 @@ export const FALLEN_PEACE: CampaignDefinition = {
     'It will not go to plan.',
   ],
   levels: [CHAPTER_1, CHAPTER_2, CHAPTER_3, ...FALLEN_PEACE_45_LEVELS],
-  // The real reward, granted when the last level (chapter 7) completes: the empire fighter; with every chapter on gold also Pulse Orbs and the Flak Burst.
+  // The real reward, granted when the last level (chapter 7) completes: the empire fighter; with every chapter on gold also Pulse Orbs and the Energy Bomb.
   unlocks: FALLEN_PEACE_UNLOCKS,
   goldUnlocks: FALLEN_PEACE_GOLD_UNLOCKS,
 };

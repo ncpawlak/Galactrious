@@ -5,7 +5,7 @@
  * game must still work, so the data then lives in memory only. A corrupt or unreadable blob falls back to defaults.
  * `?nosave` in the URL (and the one-boss debug mode) uses a pure in-memory save, so tests and debug sims never touch the real one.
  *
- * Version 2 added `lastLoadout`. Version 3 added `campaign` (boss snapshots) and `MedalRecord.bonus`. Version 4 changed the Fallen Peace rewards (empire ship for any medals; Pulse Orbs and Flak Burst for all gold; Laser and Energy Wave stashed).
+ * Version 2 added `lastLoadout`. Version 3 added `campaign` (boss snapshots) and `MedalRecord.bonus`. Version 4 changed the Fallen Peace rewards (empire ship for any medals; Pulse Orbs and Energy Bomb for all gold; Laser and Energy Wave stashed).
  *
  * To add a new field: add it to `SaveData`, give it a default in `defaults()`, bump `SAVE_VERSION` and add a step to `MIGRATIONS`.
  */

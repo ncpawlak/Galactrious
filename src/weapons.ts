@@ -283,7 +283,7 @@ const AUX: AuxDef[] = [
   },
   {
     id: 'flak',
-    name: 'Flak Burst',
+    name: 'Energy Bomb',
     slot: 'aux',
     desc: 'One slow shell that bursts on impact in a wide blast.',
     color: '#ff5a4a',
