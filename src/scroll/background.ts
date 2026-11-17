@@ -896,9 +896,9 @@ function drawTile(ctx: CanvasRenderingContext2D, tile: HTMLCanvasElement, off: n
     ctx.drawImage(tile, 0, o);
     return;
   }
-  const STRIP = 48;
+  const STRIP = 32;
   for (let sy = 0; sy < H; sy += STRIP) {
-    const dx = Math.round(Math.sin(time * 0.9 + sy * 0.011 + off * 0.0023) * wobble + Math.sin(time * 1.9 + sy * 0.027) * wobble * 0.4);
+    const dx = Math.round(Math.sin(time * 0.9 + sy * 0.004 + off * 0.0023) * wobble + Math.sin(time * 1.9 + sy * 0.009) * wobble * 0.4);
     const h = Math.min(STRIP, H - sy);
     let src = mod(sy - o, TILE);
     let dy = sy;
