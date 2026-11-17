@@ -80,7 +80,7 @@ export class Hud {
   }
 
   /** Weapon cooldown rings, bottom right above the dodge button: each fills over its cooldown and flashes when it fires. */
-  drawWeapons(ctx: CanvasRenderingContext2D, weapons: WeaponSystem): void {
+  drawWeapons(ctx: CanvasRenderingContext2D, weapons: WeaponSystem, locked = false): void {
     const r = 16;
     const y = H - 130;
     ctx.save();
@@ -89,7 +89,7 @@ export class Hud {
     ctx.textBaseline = 'middle';
     weapons.defs.forEach((d, i) => {
       const x = W - 24 - (weapons.defs.length - 1 - i) * 42;
-      const on = weapons.enabled[d.id];
+      const on = weapons.enabled[d.id] && !locked;
       const p = on ? weapons.progress(d.id) : 0;
       ctx.globalAlpha = on ? 0.9 : 0.4;
       ctx.fillStyle = 'rgba(5, 6, 13, 0.75)';
@@ -116,6 +116,16 @@ export class Hud {
         ctx.stroke();
       }
     });
+    if (locked) {
+      // Weapons locked (chapter 3): a red badge over the rings. The dodge button below stays live.
+      const cx = W - 24 - ((weapons.defs.length - 1) * 42) / 2;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = 'rgba(40, 6, 6, 0.8)';
+      ctx.fillRect(cx - 62, y - r - 26, 124, 18);
+      ctx.fillStyle = '#ff6a5a';
+      ctx.font = 'bold 11px ui-monospace, Consolas, monospace';
+      ctx.fillText('WEAPONS LOCKED', cx, y - r - 17);
+    }
     ctx.restore();
   }
 

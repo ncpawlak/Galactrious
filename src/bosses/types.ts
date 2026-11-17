@@ -70,6 +70,10 @@ export interface BossDefinition {
   coreColor?: [number, number, number];
   /** Opt in to hull regrowth (an anti-spam lever, see src/regrowth.ts). Omitted = the boss never regrows. */
   regrowth?: RegrowthSpec;
+  /** Faction kit this ship belongs to (`src/factions.ts`); placeholder palette data for now. */
+  faction?: string;
+  /** Layers flagged `indestructible` in the layout (armour) become normal carvable layers when true. Default false. Live: `BossFight.armourCarvable`. */
+  armourCarvable?: boolean;
   /** At least one phase. */
   phases: PhaseDefinition[];
 }

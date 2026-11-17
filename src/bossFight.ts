@@ -56,11 +56,24 @@ export class BossFight {
     this.components.vulnerability = () => this.coreVulnerability();
     this.components.applyPhase(this.phase.components);
     this.validateSources();
+    if (def.armourCarvable) this.armourCarvable = true;
     if (def.regrowth) {
       this.regrowth = new Regrowth(this.boss, def.regrowth, (li, x, y) => this.regrowthBlocked(li, x, y));
       this.boss.regrowth = this.regrowth;
     }
   }
+
+  /** True when the armour layers (layout `indestructible`) are carvable like any other layer (chapter 7: you fly their ship now). */
+  get armourCarvable(): boolean {
+    return this.armourOpen;
+  }
+
+  set armourCarvable(on: boolean) {
+    this.armourOpen = on;
+    for (const l of this.boss.layers) if (l.armour) l.indestructible = !on;
+  }
+
+  private armourOpen = false;
 
   /** A regrowth owned by a `repair` room: same rules as the boss's own, driven and drawn by the boss. */
   makeRegrowth(spec: RegrowthSpec): Regrowth {

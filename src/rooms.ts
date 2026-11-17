@@ -144,6 +144,13 @@ export class RoomSystem {
   host: RoomHost | null = null;
   /** Stops every function and cue (a dead unit). */
   halted = false;
+  /**
+   * Objective hook: called once when a room goes offline for real (all consoles destroyed or torn off, not a debug force).
+   * `exploded` = it had a `reactor` function, so it blew up. Also `destroyed(id)` / `destroyedIds`.
+   */
+  readonly onDestroyed: ((room: Room, exploded: boolean) => void)[] = [];
+  /** Ids of rooms destroyed so far, in order. */
+  readonly destroyedIds: string[] = [];
   private pending: Pending[] = [];
   private readonly env: RoomFnEnv;
   private clock = 0;
@@ -224,6 +231,11 @@ export class RoomSystem {
     return this.rooms.filter((r) => keys.includes(roomGroup(r.spec.id))).length;
   }
 
+  /** True once the room with this id was destroyed (all its consoles gone). */
+  destroyed(id: string): boolean {
+    return this.destroyedIds.includes(id);
+  }
+
   find(id: string): Room | undefined {
     return this.rooms.find((r) => r.spec.id === id);
   }
@@ -294,8 +306,13 @@ export class RoomSystem {
   private disable(room: Room, natural: boolean): void {
     room.offline = true;
     const o = this.origin(room);
-    this.components.events.push({ kind: 'roomOffline', x: o.x, y: o.y, name: room.name, blast: natural && room.fns.some((f) => f.spec.kind === 'reactor') });
+    const exploded = natural && room.fns.some((f) => f.spec.kind === 'reactor');
+    this.components.events.push({ kind: 'roomOffline', x: o.x, y: o.y, name: room.name, blast: exploded, id: room.spec.id });
     this.onRoomOffline?.(room);
+    if (natural) {
+      if (!this.destroyedIds.includes(room.spec.id)) this.destroyedIds.push(room.spec.id);
+      for (const f of this.onDestroyed) f(room, exploded);
+    }
     for (const fn of room.fns) fn.handler.onOffline?.(fn, room, this.env, natural);
   }
 

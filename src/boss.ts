@@ -25,6 +25,11 @@ export interface LayerSpec {
   density: number;
   /** Painted canvas: any pixel with alpha > 0 is solid. Not mutated. */
   canvas: HTMLCanvasElement;
+  /**
+   * Armour: bullets and blasts do nothing to this layer (a small spark shows) and it is never carved, chunked or
+   * scorched, so what is below it can only be reached through gaps in it. `BossFight.armourCarvable = true` makes it a normal layer.
+   */
+  indestructible?: boolean;
 }
 
 export interface BossSpec {
@@ -66,6 +71,8 @@ export interface HitResult {
   r: number;
   g: number;
   b: number;
+  /** The bullet struck an indestructible (armour) layer: nothing was carved, the game shows a spark. */
+  blocked?: boolean;
 }
 
 export class Layer {
@@ -86,12 +93,17 @@ export class Layer {
   private readonly shadowCtx: CanvasRenderingContext2D;
   /** Set when pixels were carved since the last connectivity pass. */
   needsCheck = false;
+  /** Live armour state: while true, hits and blasts skip this layer. Starts as `armour` (the spec flag). */
+  indestructible: boolean;
 
   constructor(
     readonly name: string,
     readonly density: number,
     src: HTMLCanvasElement,
+    /** The spec flag: this layer is armour (indestructible until `BossFight.armourCarvable`). */
+    readonly armour = false,
   ) {
+    this.indestructible = armour;
     const w = src.width;
     const h = src.height;
     const sctx = src.getContext('2d', { willReadFrequently: true })!;
@@ -251,7 +263,7 @@ export class Boss {
   ) {
     this.width = spec.width;
     this.height = spec.height;
-    this.layers = spec.layers.map((l) => new Layer(l.name, l.density, l.canvas));
+    this.layers = spec.layers.map((l) => new Layer(l.name, l.density, l.canvas, !!l.indestructible));
     this.core = { ...spec.core };
     this.coreMaxHp = spec.core.hp;
     this.anchors = { ...(spec.anchors ?? {}) };
@@ -460,11 +472,13 @@ export class Boss {
     }
     if (li < 0) return null;
 
-    this.sinceHit = 0;
     const layer = this.layers[li];
     const r = layer.img.data[idx * 4];
     const g = layer.img.data[idx * 4 + 1];
     const b = layer.img.data[idx * 4 + 2];
+    // Armour: the shot is stopped, nothing is carved and the boss does not count as hit.
+    if (layer.indestructible) return { layer: li, carved: 0, spent: 0, core: false, r, g, b, blocked: true };
+    this.sinceHit = 0;
 
     // The core absorbs bullets without carving.
     const innermost = li === this.layers.length - 1;
@@ -539,6 +553,7 @@ export class Boss {
       const li = topmost(idx);
       if (li < 0 || isCore(it.x, it.y, li)) continue;
       const layer = this.layers[li];
+      if (layer.indestructible) continue;
       const cost = layer.density / Math.max(Math.pow(1 - it.d / radius, falloff), 0.08);
       if (e < cost) {
         if (++skips > 60) break;
@@ -561,7 +576,7 @@ export class Boss {
       if (it.x < 0 || it.y < 0 || it.x >= w || it.y >= this.height) continue;
       const idx = it.y * w + it.x;
       const li = topmost(idx);
-      if (li < 0) continue;
+      if (li < 0 || this.layers[li].indestructible) continue;
       const data = this.layers[li].img.data;
       data[idx * 4] *= 0.65;
       data[idx * 4 + 1] *= 0.65;
