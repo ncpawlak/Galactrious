@@ -352,6 +352,13 @@ Status: **design only**, agreed with the owner. The v1 run (fixed 3 levels of wa
 ### Persistence (new; was out of v1 scope)
 - A versioned local save (local storage first): unlocked ships, weapons, cards, medals per campaign level, best times. Cards gain an `unlock` flag; the reward pool only draws unlocked cards. A reset and a debug "unlock all" are needed. Runs themselves are not saved (permadeath).
 
+#### As built: save system and unlock flags (step 1)
+- **`src/save.ts`**: `SaveStore` (singleton `saveStore`). Format: `{ version: 1, unlocks: { cards, ships, weapons: string[] }, medals: { [levelId]: { best?: 'bronze'|'silver'|'gold', bestTimeMs? } }, stats? }`, stored as JSON in `localStorage['galactrious.save']`. Every storage access is try/catch: blocked or throwing storage keeps the state in memory (`degraded = true`); corrupt, unknown or future-version data falls back to defaults. `MIGRATIONS[n]` upgrades version n to n+1 (empty now; to change the format add a field to `SaveData` and `defaults()`, bump `SAVE_VERSION`, add a migration step). Runs are never saved.
+- **API**: `load()`, `save()`, `unlock(kind, id)` (true when new), `isUnlocked(kind, id)`, `setMedal(levelId, medal?, timeMs?)` (keeps the better), `reset()`, `unlockAll(ids)`, `current`, `persistent`.
+- **Cards**: `CardDef.unlock?: string` (+ `unlockHint`). No field = always available (the 16 original cards). With it, `canOffer` (src/upgrades/stats.ts) only offers the card when `isUnlocked('cards', unlock)`. To add an unlock: give the card an `unlock` flag, then call `saveStore.unlock('cards', flag)` from whatever awards it (a campaign medal later). Demo locked cards live in `src/upgrades/demoCards.ts`; delete that file and its line in `cards.ts` to remove them.
+- **Unlocks screen**: title button / [U] (`src/flow/unlocksScreen.ts`, a `Run` phase `unlocks`): paged card list (unlocked, or `???` plus the hint), RESET SAVE with a YES/CANCEL confirm.
+- **Debug**: `game.debug.unlock(kind, id)`, `isUnlocked`, `unlockAll()` (all card flags), `resetSave()`, `save` (the store). The save is **in-memory** under `?nosave` and in `?mode=boss`, so debug sims never read or write the real save. Not done: a debug hotkey.
+
 ### Campaign design notes
 - **Objective node** (a new flow node type next to `wave`, `boss`, `reward`): a goal with a success condition, an optional timer/zone/hazard, a checkpoint at its start, and a result. Candidate objectives: destroy a target, destroy all, survive N seconds, reach a zone, leave a hazard zone before it closes, pick up an item (e.g. a ship), escort or protect something, defeat a boss.
 - **Timer and medals** are data on the level: time thresholds and a death count. The HUD shows the timer and the medal pace.

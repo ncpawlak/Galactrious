@@ -6,6 +6,7 @@ import { EnrageTint } from './enrage';
 import { BOSSES, DEFAULT_BOSS_ID, type BossDefinition } from './bosses';
 import type { CarveShapeName } from './carveShapes';
 import { BLAST, BLAST_DEFAULT_SCALE, H, setBlastScale, TUNING, W, WEAPONS } from './config';
+import { saveStore, type UnlockKind } from './save';
 import { DebugPanel, modifierMult } from './debugControls';
 import { Effects } from './effects';
 import { DEFAULT_RUN } from './flow/defaultRun';
@@ -16,7 +17,7 @@ import { Input } from './input';
 import { MOVEMENT_PRESETS } from './movement';
 import { Dodge, Health } from './player';
 import { TagSystem, type TagSet } from './tags';
-import { CARD_BY_ID } from './upgrades/cards';
+import { CARDS, CARD_BY_ID } from './upgrades/cards';
 import { RewardNode } from './flow/nodes/reward';
 import type { FlowNode, NodeContext } from './flow/node';
 import { Loadout } from './upgrades/stats';
@@ -338,6 +339,13 @@ export class Game {
       /** Effective stat value by key, e.g. debug.stat('rocket.radius'). */
       stat: (key: string) => this.loadout.get(key),
       cardIds: [...CARD_BY_ID.keys()],
+      /** Save/unlock debug. The save is in-memory under ?nosave and ?mode=boss; otherwise it is the real localStorage save. */
+      save: saveStore,
+      unlock: (kind: UnlockKind, id: string) => saveStore.unlock(kind, id),
+      isUnlocked: (kind: UnlockKind, id: string) => saveStore.isUnlocked(kind, id),
+      /** Unlock every card flag (ships and weapons have no content yet). */
+      unlockAll: () => saveStore.unlockAll({ cards: CARDS.flatMap((c) => (c.unlock ? [c.unlock] : [])) }),
+      resetSave: () => saveStore.reset(),
       run: this.run,
       units: this.units,
       /** Spawn one unit by id at (x, y) (default: near the top centre) in the current combat, entering from above. */

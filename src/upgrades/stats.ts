@@ -3,6 +3,7 @@ import { CARVE_SHAPES, type CarveShapeName } from '../carveShapes';
 import type { Upgrade } from '../flow/node';
 import { TAG_IDS, type TagSet } from '../tags';
 import { CARD_BY_ID, CARDS } from './cards';
+import { isUnlocked } from '../save';
 import type { CardDef } from './model';
 
 /**
@@ -109,8 +110,13 @@ export function withCard(held: readonly Upgrade[], card: CardDef): Loadout {
   return new Loadout([...held, card]);
 }
 
+/** True when the card is always available or its unlock flag is set in the save. */
+export function cardUnlocked(card: CardDef): boolean {
+  return !card.unlock || isUnlocked('cards', card.unlock);
+}
+
 export function canOffer(card: CardDef, lo: Loadout): boolean {
-  return lo.stackOf(card.id) < (card.maxStacks ?? 1);
+  return cardUnlocked(card) && lo.stackOf(card.id) < (card.maxStacks ?? 1);
 }
 
 /** Pick up to `n` distinct cards, weighted, without replacement, using the run's seeded `rng`. Cards at max stacks are skipped. */

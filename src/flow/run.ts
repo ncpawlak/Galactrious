@@ -1,10 +1,11 @@
 import { TUNING } from '../config';
 import type { FlowNode, NodeContext, NodeDefinition, NodeHost, NodePosition, RunDefinition, RunState } from './node';
 import { createNode } from './nodes';
-import { drawRunOver, drawRunWon, drawTitle } from './screens';
+import { UNLOCKS_BTN, drawRunOver, drawRunWon, drawTitle } from './screens';
+import { UnlocksScreen } from './unlocksScreen';
 
 /** title -> node (the current level's nodes, then its reward) -> ... -> won; death at any node -> over. */
-export type RunPhase = 'title' | 'node' | 'over' | 'won';
+export type RunPhase = 'title' | 'unlocks' | 'node' | 'over' | 'won';
 
 /** Seconds a result screen ignores input, so the press that ended the last node cannot skip it. */
 const SCREEN_LOCKOUT = 1;
@@ -28,6 +29,7 @@ export class Run {
   phase: RunPhase = 'title';
   state: RunState = this.freshState(0);
   private node: FlowNode | null = null;
+  private unlocksScreen: UnlocksScreen | null = null;
   /** Seconds in the current phase (screen blink and lockout). */
   private phaseTime = 0;
 
@@ -125,11 +127,21 @@ export class Run {
       }
       return;
     }
+    if (this.phase === 'unlocks') {
+      if (this.unlocksScreen!.update(dt, this.host)) this.toTitle();
+      return;
+    }
     // title / over / won: any tap or key continues (result screens after a short lockout).
     const tap = this.host.takeTap();
     const key = this.host.takeKey();
     if (!tap && !key) return;
     if (this.phase === 'title') {
+      const b = UNLOCKS_BTN;
+      if (key === 'KeyU' || (tap && tap.x >= b.x && tap.x <= b.x + b.w && tap.y >= b.y && tap.y <= b.y + b.h)) {
+        this.unlocksScreen = new UnlocksScreen();
+        this.setPhase('unlocks');
+        return;
+      }
       const seed = new URLSearchParams(location.search).get('seed');
       this.start(seed !== null && seed !== '' && !Number.isNaN(+seed) ? +seed : undefined);
     } else if (this.phaseTime > SCREEN_LOCKOUT) this.toTitle();
@@ -146,6 +158,9 @@ export class Run {
     switch (this.phase) {
       case 'title':
         drawTitle(g, this.phaseTime, this.def.levels.length);
+        break;
+      case 'unlocks':
+        this.unlocksScreen!.draw(g);
         break;
       case 'over':
         drawRunOver(g, this.phaseTime, summary);
