@@ -3,13 +3,14 @@
  * campaign select -> (story intro on first open) -> level select -> briefing -> play -> result -> level select.
  */
 import type { NodeHost } from '../flow/node';
+import { applyUnlocks, FALLEN_PEACE_UNLOCKS, UnlockRevealScreen, type UnlockItem } from '../finale/unlocks';
 import { saveStore } from '../save';
 import { CAMPAIGNS, findLevel } from './content';
 import { BriefingScreen, CampaignSelectScreen, LevelSelectScreen, ResultScreen, StoryScreen } from './screens';
 import { CampaignSession } from './session';
 import type { CampaignDefinition, CampaignLevel } from './types';
 
-type Sub = 'campaigns' | 'story' | 'levels' | 'briefing' | 'play' | 'result';
+type Sub = 'campaigns' | 'story' | 'levels' | 'briefing' | 'play' | 'result' | 'unlocks';
 
 /** What the flow needs from `Run`: a clean run state with the campaign's ship, and the player's own selection back afterwards. */
 export interface RunBridge {
@@ -29,6 +30,7 @@ export class CampaignFlow {
   private storyNext: Sub = 'levels';
   private briefing: BriefingScreen | null = null;
   private resultScreen: ResultScreen | null = null;
+  private reveal: UnlockRevealScreen | null = null;
   private level: CampaignLevel | null = null;
   private levelIndex = 0;
   private prepared = false;
@@ -91,6 +93,25 @@ export class CampaignFlow {
     this.sub = 'play';
   }
 
+  /**
+   * Show the unlock reveal screen for a campaign's `unlocks` (the debug trigger; the real flow shows it after the final result). Writes the
+   * unlocks into the save; items that were already unlocked are listed without the NEW tag. "fallen-peace" falls back to `FALLEN_PEACE_UNLOCKS`
+   * until chapter 7 sets `CampaignDefinition.unlocks`.
+   */
+  showUnlocks(campaignId: string): UnlockItem[] {
+    const c = CAMPAIGNS.find((x) => x.id === campaignId);
+    if (!c) throw new Error(`unknown campaign "${campaignId}" (${CAMPAIGNS.map((x) => x.id).join(', ')})`);
+    const specs = c.unlocks ?? (campaignId === 'fallen-peace' ? FALLEN_PEACE_UNLOCKS : []);
+    if (specs.length === 0) throw new Error(`campaign "${campaignId}" has no unlocks`);
+    this.shutdown();
+    this.campaign = c;
+    const items = applyUnlocks(specs);
+    this.reveal = new UnlockRevealScreen(items);
+    this.levels = new LevelSelectScreen(c, () => this.unlockAll);
+    this.sub = 'unlocks';
+    return items;
+  }
+
   /** Debug: start a level by id, skipping the menus. */
   startLevel(levelId: string, objective = 0): void {
     const f = findLevel(levelId);
@@ -151,12 +172,23 @@ export class CampaignFlow {
         const r = this.resultScreen!.update(dt, host);
         if (r === 'retry') this.startPlay(this.campaign!, this.levelIndex);
         else if (r === 'continue') {
+          const fresh = this.session?.result?.newUnlocks;
           this.session = null;
           this.levels = new LevelSelectScreen(this.campaign!, () => this.unlockAll);
-          this.sub = 'levels';
+          if (fresh && fresh.length > 0) {
+            // Already written to the save when the level finished; the reveal only shows them.
+            this.reveal = new UnlockRevealScreen(fresh.map((spec) => ({ spec, isNew: true })));
+            this.sub = 'unlocks';
+          } else this.sub = 'levels';
         }
         return null;
       }
+      case 'unlocks':
+        if (this.reveal!.update(dt, host)) {
+          this.reveal = null;
+          this.sub = 'levels';
+        }
+        return null;
     }
   }
 
@@ -179,6 +211,9 @@ export class CampaignFlow {
         break;
       case 'result':
         this.resultScreen!.draw(g);
+        break;
+      case 'unlocks':
+        this.reveal!.draw(g);
         break;
     }
   }

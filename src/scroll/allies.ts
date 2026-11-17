@@ -36,6 +36,13 @@ function allySprite(): HTMLCanvasElement {
   return canvas;
 }
 
+/** Draw one wingman sprite centred at (x, y) (used by the squad assists, src/finale/assists.ts). `scale` 1 = the size used under the combat layer. */
+export function drawAllySprite(ctx: CanvasRenderingContext2D, x: number, y: number, scale = 1): void {
+  const w = SPRITE_W * 0.85 * scale;
+  const h = SPRITE_H * 0.85 * scale;
+  ctx.drawImage(allySprite(), Math.round(x - w / 2), Math.round(y - h / 2), w, h);
+}
+
 interface Ally {
   i: number;
   /** Seconds since it entered. */

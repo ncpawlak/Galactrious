@@ -4,6 +4,7 @@
  * "Fallen Peace" lives in `fallenPeace.ts` (chapters 1 to 3 built; 4 to 7 come later). "Framework Test" is the two-objective
  * level that proves the framework end to end.
  */
+import { FINALE_TEST } from '../finale/finaleTest';
 import { FALLEN_PEACE } from './fallenPeace';
 import type { CampaignDefinition, CampaignLevel } from './types';
 
@@ -46,7 +47,7 @@ export const FRAMEWORK_TEST: CampaignDefinition = {
   completionUnlock: { kind: 'cards', id: 'campaign-test-framework', label: 'TEST UNLOCK: Framework Test' },
 };
 
-export const CAMPAIGNS: CampaignDefinition[] = [FALLEN_PEACE, FRAMEWORK_TEST];
+export const CAMPAIGNS: CampaignDefinition[] = [FALLEN_PEACE, FRAMEWORK_TEST, FINALE_TEST];
 
 export function findLevel(levelId: string): { campaign: CampaignDefinition; level: CampaignLevel; index: number } | null {
   for (const campaign of CAMPAIGNS) {
