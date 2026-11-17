@@ -1,4 +1,7 @@
 import type { FlybyPreset } from '../enemies/flyby';
+import type { StealthDef } from '../stealth/types';
+import type { StealthSystem } from '../stealth/system';
+import type { UnitPlacement } from '../units';
 import type { WaveDefinition } from '../waves';
 
 /**
@@ -197,6 +200,8 @@ export interface ScrollLevelDef {
   fireScale?: number;
   /** Cosmetic allies from the start. */
   allies?: { count: number; pattern?: AllyPattern };
+  /** Searchlights, cover zones and detection rules (src/stealth, DESIGN.md "As built: stealth systems"). Omitted = no stealth. */
+  stealth?: StealthDef;
   timeline: ScrollEntry[];
 }
 
@@ -212,6 +217,9 @@ export interface ScrollHost {
   spawnBoss(bossId: string): void;
   setWeaponsLocked(locked: boolean): void;
   setEnemyFireScale(k: number): void;
+  /** Stealth (src/stealth): the player's collision radius, and spawning a chaser through the unit pipeline. */
+  hitbox(): number;
+  spawnChaser(unit: string, placement: UnitPlacement): { alive(): boolean };
 }
 
 /** A named event a level emits (timeline `event`/`pickup` entries, plus `level-start`, `level-end`). */
@@ -240,6 +248,8 @@ export interface ScrollRunner {
   draw(ctx: CanvasRenderingContext2D): void;
   /** Set the scroll speed (px/s), easing over `ease` seconds (default 0.6; 0 = at once). The hook scripted beats call. */
   setSpeed(v: number, ease?: number): void;
+  /** The stealth runtime when the level has a `stealth` block (searchlights, cover, detection, patrol sweep), else null. */
+  readonly stealth?: StealthSystem | null;
   /** Subscribe to timeline events. */
   onEvent: ((e: ScrollEvent) => void) | null;
 }

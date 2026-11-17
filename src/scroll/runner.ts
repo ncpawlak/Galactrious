@@ -1,4 +1,5 @@
 import { W } from '../config';
+import { StealthSystem } from '../stealth/system';
 import { AllySystem } from './allies';
 import { ScrollBackground } from './background';
 import { isRockShape, mulberry32, ObstacleSystem, SIZES } from './obstacles';
@@ -93,6 +94,8 @@ export class ScrollRunnerImpl implements ScrollRunner {
   readonly obstacles = new ObstacleSystem();
   readonly allies = new AllySystem();
   background: ScrollBackground | null = null;
+  /** Searchlights, cover and detection when the level has a `stealth` block. */
+  stealth: StealthSystem | null = null;
   def: ScrollLevelDef | null = null;
   distance = 0;
   onEvent: ((e: ScrollEvent) => void) | null = null;
@@ -139,6 +142,7 @@ export class ScrollRunnerImpl implements ScrollRunner {
     this.obstacles.clear();
     this.allies.clear();
     this.log.length = 0;
+    this.stealth = def.stealth ? new StealthSystem(this.host, def.stealth) : null;
     this.background = new ScrollBackground(def.theme, def.weather ?? 0);
     this.background.onThunder = (s) => this.onThunder?.(s);
     this.background.setSkyFlip(!!def.skyFlip);
@@ -191,6 +195,7 @@ export class ScrollRunnerImpl implements ScrollRunner {
     this.obstacles.update(dt, v);
     this.allies.update(dt);
     this.background?.update(dt, v);
+    this.stealth?.update(dt, this.distance);
     if (!wasDone && this.done) this.emit('level-end');
   }
 
@@ -265,6 +270,7 @@ export class ScrollRunnerImpl implements ScrollRunner {
   drawBackground(ctx: CanvasRenderingContext2D): void {
     this.background?.draw(ctx, this.distance, this.curSpeed);
     this.allies.draw(ctx);
+    this.stealth?.drawGround(ctx);
   }
 
   drawObstacles(ctx: CanvasRenderingContext2D): void {

@@ -1,6 +1,7 @@
 import { H, W } from '../config';
 import { makeCanvas } from '../bosses/paint';
 import { mulberry32 } from './obstacles';
+import { BASE_NIGHT } from './themes/baseNight';
 import type { BackgroundLayer, ScrollTheme } from './types';
 
 /**
@@ -66,6 +67,9 @@ export const SCROLL_THEMES: Record<string, ScrollTheme> = {
     ],
   },
 };
+
+// Themes that live in their own files (src/scroll/themes/): registered here.
+SCROLL_THEMES[BASE_NIGHT.id] = BASE_NIGHT;
 
 export function themeById(id: string): ScrollTheme {
   const t = SCROLL_THEMES[id];
