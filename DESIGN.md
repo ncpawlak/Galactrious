@@ -408,3 +408,47 @@ Close weapons (Scatter ~80 px, Blades, Lance, Needler) need the ship near the en
 - **Waves**: `WaveDefinition.lower` (px, optional) shifts every formation slot down in `spawnWave`. Currently level 1 +60, level 2 +80, level 3 +100 (`src/enemies/waveContent.ts`). Entrance paths and dives are derived from the shifted slot.
 - **Bosses**: `lowered(dy, movement)` (`src/movement.ts`) holds a phase `dy` px below the spawn point while the movement plays; the phase blend eases the drop. Used in later phases: Mantis Frenzy +40 / Overdrive +70, Bulwark (both variants) Pressure +40 / Enrage +70, demo-phased phase 2 +40. The default demo boss is unchanged.
 - Not changed: HP, damage, attack timings and projectile speeds. If a closer wave is unfair, reduce its `lower` first.
+
+## Campaign 1: "Fallen Peace" (design, not built)
+Status: **design only**, agreed with the owner. The first campaign, built in three slices on top of the roadmap (see "Roadmap: game modes..."). Slice 1 is chapters 1 to 3.
+
+### Story
+Delta squadron is in a large dogfight above the planet Orini. The player is a rookie pilot of Delta squad. Mission: fight through the dogfight, reach the enemy command ship, and disable its engines by blowing up the engine room. Then retreat through another dogfight, but get shot down and fall through Orini's arctic atmosphere (dodging debris and mountain peaks). Crash behind enemy lines, find an enemy base, commandeer an enemy ship and fly away. Cross the planet's surface shooting turrets, wall defences and air squadrons. Escape into the atmosphere and reunite with the squad, who are in disbelief that the player is in an enemy ship. Finish off the now-disabled command ship with the squad in a boss fight that includes dogfighting, then fly off in victory.
+**Unlock on completing the campaign (gold):** the enemy ship, a new main weapon **Laser**, and a new aux weapon **Energy Wave** (replaces the earlier idea of an electricity card; Chain Lightning can arrive later as a normal card).
+
+### Chapters
+| # | Chapter | What the player does | Needs |
+|---|---|---|---|
+| 1 | Dogfight | Fight through fighter waves, reach the command ship, blow up its engine room | objective nodes; armoured capital ship with an exposed engine room |
+| 2 | Retreat | Escape through another dogfight; the player is shot down at the end | timed objective; **scripted event** (the shoot-down is not a death) |
+| 3 | Freefall | Dodge debris and mountain peaks falling past. **You cannot shoot.** Touching an obstacle destroys the ship | scrolling level; obstacles; weapons locked |
+| 4 | Crash and commandeer | Find the enemy base, take an enemy ship | pickup; ship swap |
+| 5 | Surface run | Long scroll across the surface: turrets, wall defences, air squadrons. Goal: do not die | long scrolling level; terrain; turrets |
+| 6 | Escape and reunion | Reach the atmosphere; meet the squad | short narrative level; cosmetic allies |
+| 7 | Finale | Boss fight with the squad (the disabled command ship), including dogfighting | boss; scripted squad assists |
+
+Delivery in three slices: **slice 1 = chapters 1 to 3**, slice 2 = chapters 4 and 5, slice 3 = chapters 6 and 7 plus the unlock bundle (enemy ship, Laser, Energy Wave). Until the campaign finishes, slice 1 uses a **test unlock** (a flag on completing it) so the unlock flow can be seen working.
+
+### Decisions
+- **Scrolling.** Levels may scroll, but the ship stays on screen and the world moves past it. A scrolling level is a **timeline keyed to scroll distance** (px): spawns, obstacles, terrain and scripted events at distances, with a scroll speed that can change. Closed (non-scrolling) levels with waves are also fine (the first dogfight chapters).
+- **Allies.** Allies are **cosmetic wingmen** flying "underneath" the player layer in the dogfights, fighting on their own with no effect on combat. In the finale boss fight they have **timed scripted assists** (they come through and do something: a strafing run, a distraction), no ally AI.
+- **Medals.** Every chapter is **timed**, with authored thresholds. Gold also needs zero deaths. Chapter 5 gets an **alternate gold objective: destroy all turrets** (medal criteria can include a level-specific objective as well as time and deaths).
+- **Checkpoint.** On death the ship blows up and returns to the start of the current objective with a **full heal**; the enemies, timers and objective reset, the total time keeps running and the death is counted against gold.
+- **Capital ship (chapter 1, reused in chapter 7).** A big unit/boss with an outer **armour** layer that cannot be shot through except in one specific area where the **engine room** sits. Blowing up the engine room (a room with the `engine` function from the room catalog, `explodeOnDisable`) completes the objective. In chapter 7 the same ship is the disabled boss.
+- **Chapter 3.** Weapons are locked; the ship is destroyed on touching an obstacle; no health. Debris and peaks are pixel shapes scrolling past (they could be carvable props in later chapters, not in chapter 3 since you cannot shoot).
+
+### Engine work for slice 1
+1. **Objective node** (new flow node type) with `destroy`, `reach`, `survive`, `escape` and `bossFight` objectives for chapters 1 and 2, a per-objective checkpoint, and a result.
+2. **Campaign framework:** campaign data format, campaign select and level select screens with medals and best times (save system), result screen, the timer and medal pace on the HUD.
+3. **Scripted events and beats:** a small timeline format: show a text beat, force the ship's destruction (no death), lock weapons, set a scroll speed, spawn.
+4. **Scrolling levels:** a distance timeline, scrolling background and an obstacle entity (pixel shapes with touch-kills).
+5. **Armoured capital ship:** an armour layer that cannot be carved, with a gap exposing the engine room.
+6. **Cosmetic allies:** wingmen that fly and shoot with no effect.
+7. **Preset ship** for the campaign (no loadout builder, no cards).
+
+### New weapons (slice 3, first guesses to tune after playing)
+- **Laser** (main): slow and heavy. Cooldown about 0.6 s (about 1.7 shots/s), energy per shot about 5.5 times a chain gun shot, pierce about 0.7, a narrow carve. Roughly 15% more total damage per second than the chain gun but concentrated, so it carves deep.
+- **Energy Wave** (aux): a half-moon energy field fired in a direction (straight up first), cooldown about 4 s, an arc of about 100 degrees out to about 160 px, damage falling off with distance (100% at the ship to about 25% at the edge), a new `wave` carve shape.
+
+### Open
+Final boss design (chapter 7); the enemy ship's name, stats and preset loadout; story text; per-chapter medal thresholds (authored once the levels exist); how many dogfight waves chapters 1 and 2 have; names for the pilot and the squad.
