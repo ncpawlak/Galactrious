@@ -19,6 +19,9 @@ export const ENRAGE_FLASH = 0.45;
  * Runs one fight from a BossDefinition: owns the Boss, the current phase, the phase clocks and the
  * trigger checks, and positions the boss from the phase's movement every frame.
  */
+/** Seconds a lone core takes to burn out (chapter 7). */
+export const CORE_COLLAPSE_TIME = 2.5;
+
 export class BossFight {
   readonly boss: Boss;
   readonly components: ComponentSystem;
@@ -243,6 +246,27 @@ export class BossFight {
     this.onPhaseChange?.(this.phase, i);
   }
 
+  /** Seconds the core has been alone (everything else carved or fallen away); it dies `CORE_COLLAPSE_TIME` s after that starts. */
+  coreAloneFor = 0;
+
+  /** Chapter 7: a core floating in empty space goes critical: its hp drains to 0 so the normal defeat (overload) plays. */
+  private updateCoreCollapse(dt: number): void {
+    if (!this.def.coreCollapse || this.boss.core.hp <= 0) return;
+    this.collapseCheck -= dt;
+    if (this.collapseCheck <= 0) {
+      this.collapseCheck = 0.25;
+      this.collapseAlone = this.boss.coreIsolated();
+    }
+    if (!this.collapseAlone) {
+      this.coreAloneFor = 0;
+      return;
+    }
+    this.coreAloneFor += dt;
+    this.boss.damageCore((this.boss.coreMaxHp / CORE_COLLAPSE_TIME) * dt);
+  }
+  private collapseCheck = 0;
+  private collapseAlone = false;
+
   update(dt: number): void {
     this.fightTime += dt;
     this.phaseTime += dt;
@@ -262,6 +286,7 @@ export class BossFight {
     this.boss.setOffset(off.x + this.extraOffset.x, off.y + this.extraOffset.y);
     if (!this.boss.coreSimple) this.boss.coreVuln = this.coreVulnerability(); // reactor look only
     this.boss.update(dt);
+    this.updateCoreCollapse(dt);
     this.components.update(dt);
     this.rooms.update(dt);
   }
